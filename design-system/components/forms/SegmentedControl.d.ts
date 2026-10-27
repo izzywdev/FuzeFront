@@ -1,36 +1,41 @@
 import * as React from "react";
 
-export interface SegmentedOption<V extends string = string> {
-  /** Unique value — passed to `onChange` and compared with `value`. */
-  value: V;
-  /** Visible label. */
+export type SegmentValue = string | number;
+
+export interface SegmentedControlOption
+  extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "value" | "children" | "type"> {
+  /** Unique, stable value of the segment. */
+  value: SegmentValue;
+  /** Segment content (usually a short text label). */
   label: React.ReactNode;
-  /** Optional decorative leading icon (rendered `aria-hidden`). */
-  icon?: React.ReactNode;
-  /** Inerts just this segment. */
+  /** Not selectable; rendered as a disabled native button. */
   disabled?: boolean;
+  /** Extra attributes (data-*, aria-*…) are forwarded to the segment's button. */
+  [dataAttribute: `data-${string}`]: string | number | boolean | undefined;
+}
+
+export interface SegmentedControlProps
+  extends Omit<React.HTMLAttributes<HTMLDivElement>, "onChange" | "defaultValue" | "children"> {
+  options: SegmentedControlOption[];
+  /** Controlled pressed value. */
+  value?: SegmentValue;
+  /** Initial value when uncontrolled. */
+  defaultValue?: SegmentValue;
+  /** Called with the new value. Not called when the pressed segment is pressed again. */
+  onChange?: (value: SegmentValue) => void;
+  /** Disables every segment. */
+  disabled?: boolean;
+  /** Accessible name for the group — provide this or `ariaLabelledBy`. */
+  ariaLabel?: string;
+  /** Id of the element that labels the group. */
+  ariaLabelledBy?: string;
+  /** Native ref to the `role="group"` element. */
+  ref?: React.Ref<HTMLDivElement>;
 }
 
 /**
- * Compact, controlled 2-3 option toggle. Each segment is a `<button>` with
- * `aria-pressed`; the selected one also carries `data-selected="true"` and an
- * accent fill so selection is not color-only.
+ * A compact single-select button group (`aria-pressed` buttons in a
+ * `role="group"`). Keyboard accessible, RTL-safe, 44px tap targets on touch
+ * devices and below the xs breakpoint.
  */
-export interface SegmentedControlProps<V extends string = string>
-  extends Omit<React.HTMLAttributes<HTMLDivElement>, "onChange"> {
-  options: SegmentedOption<V>[];
-  /** The currently selected value. */
-  value: V;
-  /** Called with the new value when a different segment is activated. */
-  onChange?: (value: V) => void;
-  /** Accessible label for the group. */
-  ariaLabel?: string;
-  /** Inerts every segment (sets `aria-disabled` on the group). */
-  disabled?: boolean;
-  /** Stretch segments to fill the row (default true). */
-  fullWidth?: boolean;
-}
-
-export function SegmentedControl<V extends string = string>(
-  props: SegmentedControlProps<V>
-): React.JSX.Element;
+export function SegmentedControl(props: SegmentedControlProps): React.JSX.Element;

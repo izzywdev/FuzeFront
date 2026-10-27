@@ -2,18 +2,35 @@ import { useEffect, useMemo, useState } from 'react'
 import { useLanguage } from '../contexts/LanguageContext'
 import { useCurrentUser } from '../lib/shared'
 import { authAPI } from '../services/api'
+import type { SessionResult, BrokerClient, SocialProvider } from '../services/api'
 import { invitePath, readPendingInvite } from '../lib/pendingInvite'
-import { mapAuthError } from '../lib/authErrors'
-import type { SessionResult, SocialProvider } from '../services/api'
-import { Alert, AuthCard } from '@fuzefront/design-system'
-import { AuthPanel } from '@fuzefront/auth-ui'
+import { Alert, AuthCard, BrandTokenScope } from '@fuzefront/design-system'
+import { useT } from '@fuzefront/i18n'
+import { AuthPanel, isAuthExperienceEnabled } from '@fuzefront/auth-ui'
 import type {
+  AuthenticatedMeta,
   AuthTransport,
   AuthPanelMode,
   AuthenticatedSession,
   MfaRequiredChallenge,
 } from '@fuzefront/auth-ui'
 import FuzeFrontLogo from '../assets/FuzeFrontLogo.svg'
+import { authError, buildAuthLabels, buildSignupLabels, type TFn } from './authI18n'
+
+/**
+ * Consumer-product sign-in handoff (marketplace token handoff, #238). A
+ * registered broker client (e.g. the Mendys datasets marketplace) sends its
+ * user here with `?client=<key>&redirect_uri=<its callback>`. Read ONCE on
+ * module load (not inside the component) so it survives re-renders and is
+ * stable for the lifetime of the page the same way `mode` above is.
+ */
+function readBrokerParamsFromLocation(): { client: string; redirectUri: string } | null {
+  const params = new URLSearchParams(window.location.search)
+  const client = params.get('client')
+  const redirectUri = params.get('redirect_uri')
+  if (!client || !redirectUri) return null
+  return { client, redirectUri }
+}
 
 /**
  * LoginPage — a thin adapter around `@fuzefront/auth-ui`'s `AuthPanel`.
@@ -28,13 +45,12 @@ import FuzeFrontLogo from '../assets/FuzeFrontLogo.svg'
  *     provider's redirect back to the app) — this is page-load ROUTING, not a
  *     form-submit concern, so it stays here rather than moving into AuthPanel.
  *
- * KNOWN GAP vs. the pre-refactor page (tracked for a fast-follow to
- * @fuzefront/auth-ui, not fixed here): AuthPanel v0.1.0 does not yet implement
- * the signup confirm-password field, the password-policy checklist gating
- * submit, or the inline email-availability check that the old LoginPage had.
- * Those are UI capabilities the reusable component does not yet expose — they
- * are NOT reintroduced as one-off LoginPage markup (that would refork the
- * logic AuthPanel is meant to own). See the PR description for the follow-up.
+ * `fuzefront.auth.experience` (release flag, default OFF): when ON, signup mode renders
+ * the redesigned `SignUpFlow` (optional full name, inline email availability, policy
+ * checklist + strength meter from `AuthMethods.passwordPolicy`, confirm-match,
+ * Turnstile when `AuthMethods.captcha` is present, explicit error states). When OFF the
+ * current form is unchanged apart from the contract's single `name` field. All copy
+ * is routed through i18n (`./authI18n` -> `locales/<lng>/common.json`, `auth.*`).
  */
 
 // `variant="compact"` — the design-system `AuthCard` (design-system/components/layout)
@@ -44,8 +60,68 @@ import FuzeFrontLogo from '../assets/FuzeFrontLogo.svg'
 // innards, which is what belongs inside the page's own card.
 const PANEL_VARIANT = 'compact' as const
 
+/**
+ * Reproduces the previous `handleCredentialsSubmit` catch block's error-message
+ * taxonomy (timeout / provider-outage 503 / rejected-credentials 401 / network
+ * / 500 / fallback) so AuthPanel — which just surfaces `Error.message` as-is —
+ * shows the exact same wording as before. Kept here (not in AuthPanel) because
+ * it is a mapping of THIS app's axios/Security-API error shapes, not a
+ * generic UI concern. Every sentence is routed through i18n (`auth.error.*`).
+ */
+function mapAuthError(err: any, t: TFn): string {
+  const isTimeout = err?.code === 'ECONNABORTED' || err?.name === 'CanceledError'
+  const isNetworkError = !isTimeout && (err?.code === 'NETWORK_ERROR' || !err?.response)
+  const status = err?.response?.status
+
+  if (isTimeout) {
+    // The request was bounded and did not answer in time — this is NOT "you
+    // typed the wrong password"; word it as a service condition.
+    return authError(t, 'timeout')
+  }
+  if (status === 503) {
+    // The Security API distinguishes a provider outage from a rejected
+    // credential (503 PROVIDER_UNAVAILABLE vs 401) — say the true thing and
+    // nothing else, never mention credentials.
+    return err?.response?.data?.code === 'PROVIDER_UNAVAILABLE'
+      ? authError(t, 'providerUnavailable')
+      : err?.response?.data?.error || authError(t, 'serviceUnavailable')
+  }
+  if (status === 401) {
+    // Genuinely means "these credentials were rejected" (outage moved to 503
+    // above). Deliberately doesn't name WHICH field is wrong.
+    return authError(t, 'invalidCredentials')
+  }
+  if (isNetworkError) {
+    return (err?.message || authError(t, 'failed')) + authError(t, 'networkSuffix')
+  }
+  if (status === 500) {
+    return (
+      (err?.response?.data?.error || err?.message || authError(t, 'failed')) +
+      authError(t, 'serverSuffix')
+    )
+  }
+  return err?.response?.data?.error || err?.message || authError(t, 'failed')
+}
+
+/**
+ * The Error the AuthTransport throws: the friendly message PLUS the HTTP `status`
+ * and contract `code`, so the redesigned signup can tell a 409 (account exists), a
+ * weak-password 400/422, a 503 (provider down) and a 429 apart without parsing copy.
+ */
+function toAuthError(err: any, t: TFn): Error {
+  return Object.assign(new Error(mapAuthError(err, t)), {
+    status: err?.response?.status as number | undefined,
+    code: (err?.response?.data?.code as string | undefined) ?? (err?.code as string | undefined),
+  })
+}
+
 function LoginPage() {
   const { t } = useLanguage()
+  // i18next `t` (locales/<lng>/common.json, `auth.*`) for the auth copy; the legacy
+  // `useLanguage().t` above still supplies the two sign-in/sign-up toggle strings.
+  const { t: tr } = useT()
+  const ti = tr as unknown as TFn
+  const experience = isAuthExperienceEnabled()
   // Open in sign-up mode when the user arrived at /signup; sign-in otherwise.
   // Anchored to the start of the path: `includes('signup')` also matched things
   // like /apps/signup-widget. This only works because api.ts no longer redirects
@@ -56,6 +132,27 @@ function LoginPage() {
   )
   const { setUser } = useCurrentUser()
 
+  // Broker handoff context (#238) — read once; `null` for the ordinary
+  // (non-broker) sign-in path, which is unaffected by anything below.
+  const [brokerParams] = useState(readBrokerParamsFromLocation)
+  const [brokerClient, setBrokerClient] = useState<BrokerClient | null>(null)
+  const [brokerError, setBrokerError] = useState('')
+
+  // Resolve the broker client's public branding (name/logo/accent/tagline) up
+  // front so the themed sign-in page can render it BEFORE the user
+  // authenticates. Fails open to default FuzeFront branding on any error
+  // (unknown client, network) — getBrokerClient() never throws.
+  useEffect(() => {
+    if (!brokerParams) return
+    let cancelled = false
+    authAPI.getBrokerClient(brokerParams.client).then(result => {
+      if (!cancelled) setBrokerClient(result)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [brokerParams])
+
   // A FuzePicker email opens its protected mentions route first. Preserve only
   // that same-origin path across sign-in/sign-up so a new recipient lands on
   // the mention they were sent, rather than being dropped on the dashboard.
@@ -65,6 +162,15 @@ function LoginPage() {
     const current = `${window.location.pathname}${window.location.search}`
     if (current.startsWith('/fuzepicker/mentions')) {
       window.sessionStorage.setItem('fuzepicker:return-path', current)
+    }
+    // fuzefront.auth.experience: an expired verify link sends a signed-out user
+    // here with `?next=/signup/verify`. EXACT-match allowlist (never a generic
+    // redirect param) so this cannot become an open redirect.
+    if (
+      isAuthExperienceEnabled() &&
+      new URLSearchParams(window.location.search).get('next') === '/signup/verify'
+    ) {
+      window.sessionStorage.setItem('auth:return-path', '/signup/verify')
     }
   }, [])
 
@@ -85,30 +191,58 @@ function LoginPage() {
   // A `SessionResult` may instead be an `mfa_required` challenge (step-up).
   const completeSession = async (result: SessionResult): Promise<void> => {
     if (result.status === 'mfa_required') {
-      setCallbackNotice(
-        'Additional verification is required to finish signing in. Please complete the verification step to continue.'
-      )
+      setCallbackNotice(buildAuthLabels(ti).mfaNotice ?? '')
       return
     }
     try {
       const user = await authAPI.getCurrentUser()
       setUser(user)
-      const returnPath = window.sessionStorage.getItem('fuzepicker:return-path')
-      window.sessionStorage.removeItem('fuzepicker:return-path')
-      // Org invitations v2: an invitee who left /invitations/:token to sign in
-      // (or came back from a social provider) is returned to it so the accept
-      // flow auto-binds. Only the v2 accept page ever writes the pending token,
-      // so with the flag OFF this is inert. Only an in-app path is built from it.
-      const pendingInvite = readPendingInvite()
-      window.location.href = pendingInvite
-        ? invitePath(pendingInvite)
-        : returnPath?.startsWith('/fuzepicker/mentions')
-          ? returnPath
-          : '/dashboard'
     } catch (err) {
       console.error('Failed to hydrate user after sign-in:', err)
-      setCallbackError('Signed in, but failed to load your profile. Please retry.')
+      setCallbackError(authError(ti, 'profileLoad'))
+      return
     }
+
+    // Broker handoff (#238): a registered consumer product sent this user
+    // here with `?client=&redirect_uri=`. Instead of landing on THIS app's
+    // dashboard, mint a one-time code and send the browser back to the
+    // product's own callback — its BACKEND redeems the code
+    // server-to-server. A handoff failure (unknown client / redirectUri no
+    // longer allowlisted / dead session) is surfaced in place; it never
+    // silently falls through to the FuzeFront dashboard, which would strand
+    // the product's user mid-flow with no way back to where they started.
+    if (brokerParams) {
+      try {
+        const { redirectUri } = await authAPI.brokerHandoff(brokerParams)
+        window.location.href = redirectUri
+      } catch (err: any) {
+        console.error('Broker handoff failed:', err)
+        setBrokerError(
+          err?.response?.data?.error ||
+            'Signed in, but could not hand off to the requesting application. Please try again.'
+        )
+      }
+      return
+    }
+
+    // Ordinary (non-broker) sign-in: honour the allowlisted deep-link stashes
+    // (fuzepicker mention / signup-verify) set on page load, else the dashboard.
+    const returnPath = window.sessionStorage.getItem('fuzepicker:return-path')
+    window.sessionStorage.removeItem('fuzepicker:return-path')
+    const authReturn = window.sessionStorage.getItem('auth:return-path')
+    window.sessionStorage.removeItem('auth:return-path')
+    // Org invitations v2: an invitee who left /invitations/:token to sign in (or
+    // came back from a social provider) is returned to it so the accept flow
+    // auto-binds. Only the v2 accept page ever writes the pending token, so with
+    // the flag OFF this is inert; only an in-app path is ever built from it.
+    const pendingInvite = readPendingInvite()
+    window.location.href = pendingInvite
+      ? invitePath(pendingInvite)
+      : returnPath?.startsWith('/fuzepicker/mentions')
+        ? returnPath
+        : authReturn === '/signup/verify'
+          ? authReturn
+          : '/dashboard'
   }
 
   // Handle a social sign-in round-trip on page load. The provider callback
@@ -118,7 +252,7 @@ function LoginPage() {
       .handleAuthCallback()
       .then(({ result, error: callbackErr }) => {
         if (callbackErr) {
-          setCallbackError(`Authentication failed: ${callbackErr}`)
+          setCallbackError(authError(ti, 'callbackFailed', { error: callbackErr }))
           return
         }
         if (result) {
@@ -128,7 +262,7 @@ function LoginPage() {
       .catch(err => {
         // Backstop: a rejected promise must never freeze the page.
         console.error('Unexpected error in auth-callback handler:', err)
-        setCallbackError('Authentication encountered an unexpected error. Please try again.')
+        setCallbackError(authError(ti, 'callbackUnexpected'))
       })
     // Runs ONCE on mount — this is a page-load handler (social-callback
     // exchange only now; AuthPanel owns its own auth-methods fetch).
@@ -145,14 +279,14 @@ function LoginPage() {
         try {
           return await authAPI.login(req)
         } catch (err) {
-          throw new Error(mapAuthError(err))
+          throw toAuthError(err, ti)
         }
       },
       signup: async req => {
         try {
           const res = await authAPI.signup(req)
           if (!res?.token || !res?.user) {
-            throw new Error('Invalid response from server')
+            throw new Error(authError(ti, 'invalidResponse'))
           }
           return {
             status: 'authenticated',
@@ -161,18 +295,67 @@ function LoginPage() {
             user: res.user,
           }
         } catch (err) {
-          throw new Error(mapAuthError(err))
+          throw toAuthError(err, ti)
         }
       },
       getAuthMethods: () => authAPI.getAuthMethods(),
       // `facebook` is not in the frozen contract's SocialProvider yet; the panel
       // only offers it when the server advertises it, so the cast is the seam.
       startSocial: provider => authAPI.startSocialLogin(provider as SocialProvider),
+      // GET /v1/security/signup/email-available — the new signup's debounced inline
+      // check. Offered only with `fuzefront.auth.experience` ON; it rejects on any
+      // failure and the form renders that as "couldn't check" (fail-open).
+      ...(experience
+        ? {
+            checkEmailAvailable: (email: string, signal?: AbortSignal) =>
+              authAPI.checkSignupEmailAvailable(email, signal),
+          }
+        : {}),
     }),
-    []
+    // `tr` changes with the active language so error copy follows it.
+    [tr, experience]
   )
 
-  const handleAuthenticated = (session: AuthenticatedSession) => {
+  // `fuzefront.auth.experience` (default OFF): a fresh signup whose email is not
+  // yet verified is sent to the check-inbox screen instead of straight into the
+  // app. The signup response carries only the session, so "verification pending"
+  // is derived from the contract: AuthMethods.verification.email (the platform
+  // verifies email) AND GET /verify/status → emailVerified:false. Fail-open: any
+  // error here falls through to today's behaviour rather than blocking sign-up.
+  const routeAfterSignup = async (
+    session: AuthenticatedSession,
+    email: string
+  ): Promise<void> => {
+    try {
+      const methods = await authAPI.getAuthMethods()
+      if (methods.verification?.email) {
+        // Ask with the session this signup just returned, so the check never
+        // depends on which account the vault resolves as active.
+        const status = await authAPI.getVerificationStatus(session.token)
+        if (!status.emailVerified) {
+          // Carry the saved deep link (fuzepicker mention) THROUGH the verification
+          // detour as an allowlisted `next=`, and clear the stash so it can't
+          // hijack a later, unrelated sign-in.
+          const saved = window.sessionStorage.getItem('fuzepicker:return-path')
+          window.sessionStorage.removeItem('fuzepicker:return-path')
+          const next = saved?.startsWith('/fuzepicker/mentions')
+            ? `&next=${encodeURIComponent(saved)}`
+            : ''
+          window.location.href = `/signup/verify?email=${encodeURIComponent(email)}${next}`
+          return
+        }
+      }
+    } catch (err) {
+      console.warn('Could not determine email-verification status after signup:', err)
+    }
+    await completeSession(session)
+  }
+
+  const handleAuthenticated = (session: AuthenticatedSession, meta?: AuthenticatedMeta) => {
+    if (isAuthExperienceEnabled() && meta?.mode === 'signup') {
+      void routeAfterSignup(session, meta.email)
+      return
+    }
     void completeSession(session)
   }
 
@@ -181,38 +364,70 @@ function LoginPage() {
   // to a challenge — nothing further to surface here.
   const handleMfaRequired = (_challenge: MfaRequiredChallenge) => {}
 
-  // Only the mode-toggle strings were ever routed through t() on this page —
-  // the heading/subtitle were always literal English, which is exactly
-  // AuthPanel's default copy, so no override is needed for those.
+  // Every auth label goes through i18n: the panel/sign-in copy and the redesigned
+  // signup copy come from `locales/<lng>/common.json` (`auth.*`, see ./authI18n);
+  // the sign-in <-> sign-up toggle strings still come from the legacy translations
+  // table (`useLanguage().t`), which already carries their en/he wording.
   const labels = useMemo(
     () => ({
+      ...buildAuthLabels(ti),
       toggleToSignUpPrompt: t('signUpMessage'),
       toggleToSignUpCta: t('signUp'),
     }),
-    [t]
+    [t, tr]
+  )
+  const signupLabels = useMemo(
+    () => buildSignupLabels(ti),
+    [tr]
   )
 
-  return (
+  const branding = brokerClient?.branding
+  const pageContent = (
     <AuthCard>
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          marginBottom: 'var(--space-6, 24px)',
+          marginBottom: branding?.tagline ? 'var(--space-2, 8px)' : 'var(--space-6, 24px)',
         }}
       >
-        <img src={FuzeFrontLogo} alt="FuzeFront" style={{ height: '48px', width: 'auto' }} />
+        {/* Per-product theming (FF-EPIC-13 PortalBranding semantics): a
+            registered broker client's logo, or the default FuzeFront
+            lockup — null/missing never renders a broken image. */}
+        {branding?.logo ? (
+          <img src={branding.logo} alt={branding.name} style={{ height: '48px', width: 'auto' }} />
+        ) : (
+          <img src={FuzeFrontLogo} alt="FuzeFront" style={{ height: '48px', width: 'auto' }} />
+        )}
       </div>
 
+      {branding?.tagline && (
+        <p
+          style={{
+            textAlign: 'center',
+            color: 'var(--text-secondary)',
+            fontSize: 'var(--text-sm)',
+            margin: '0 0 var(--space-6, 24px)',
+          }}
+        >
+          {branding.tagline}
+        </p>
+      )}
+
       {callbackError && (
-        <Alert tone="error" title="Authentication Error" style={{ marginBottom: 'var(--space-4, 16px)' }}>
+        <Alert tone="error" title={labels.errorTitle} style={{ marginBottom: 'var(--space-4, 16px)' }}>
           {callbackError}
         </Alert>
       )}
       {callbackNotice && (
         <Alert tone="info" style={{ marginBottom: 'var(--space-4, 16px)' }}>
           {callbackNotice}
+        </Alert>
+      )}
+      {brokerError && (
+        <Alert tone="error" title="Could not complete sign-in" style={{ marginBottom: 'var(--space-4, 16px)' }}>
+          {brokerError}
         </Alert>
       )}
 
@@ -222,9 +437,26 @@ function LoginPage() {
         transport={transport}
         onAuthenticated={handleAuthenticated}
         onMfaRequired={handleMfaRequired}
+        forgotPasswordHref={experience ? '/reset' : undefined}
+        experience={experience}
+        signupLabels={signupLabels}
         labels={labels}
       />
     </AuthCard>
+  )
+
+  // Scope the design-system `--accent-*` tokens to the broker client's
+  // validated brand color (AA-contrast-checked, fail-closed to the base DS
+  // accent on an invalid/missing color) — the SAME primitive the
+  // authenticated white-label portal shell uses (`@fuzefront/portal-branding-ui`'s
+  // `PortalThemeScope`), applied here directly since this pre-auth page has
+  // no portal context to resolve, only the broker client's own branding.
+  return branding?.accent ? (
+    <BrandTokenScope accent={branding.accent} data-broker-client={brokerClient?.client}>
+      {pageContent}
+    </BrandTokenScope>
+  ) : (
+    pageContent
   )
 }
 

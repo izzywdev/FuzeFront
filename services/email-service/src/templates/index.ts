@@ -4,6 +4,8 @@ import { renderOrgInvite } from './org-invite';
 import { renderMembershipChange } from './membership-change';
 import { renderFuzePickerMention } from './fuzepicker-mention';
 import { renderFuzePickerReply } from './fuzepicker-reply';
+import { renderVerifyEmail } from './verify-email';
+import { renderPasswordReset } from './password-reset';
 
 export interface TemplateResult {
   subject: string;
@@ -19,6 +21,8 @@ const renderers: Record<SupportedTemplate, (vars: Record<string, unknown>) => Te
   'membership-change': renderMembershipChange,
   'fuzepicker-mention': renderFuzePickerMention,
   'fuzepicker-reply': renderFuzePickerReply,
+  'verify-email': renderVerifyEmail,
+  'password-reset': renderPasswordReset,
 };
 
 export function renderTemplate(name: SupportedTemplate, vars: Record<string, unknown>): TemplateResult {

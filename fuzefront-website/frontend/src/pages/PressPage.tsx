@@ -2,7 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Mail, Download, Newspaper, Calendar } from 'lucide-react'
-import { IconTile, Container, HeroPatternOverlay, Section } from '@fuzefront/design-system'
+import { IconTile, Container, Text, HeroPatternOverlay, Section } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const pressReleases = [
@@ -10,13 +10,13 @@ const pressReleases = [
     date: 'September 2026',
     title: 'FuzeOne launches public website and unified pricing across all 10 products',
     excerpt:
-      'FuzeOne introduces a single entry point for its full product family — FuzeFront, FuzeAgent, FuzeSocial, FuzeFinance, and more — with transparent, unified pricing.',
+      'FuzeOne introduces a single entry point for its full product family — FuzeFront, FuzeSDLC, FuzeInfra, FuzeAgent, and more — with transparent, unified pricing.',
   },
   {
     date: 'General Availability',
-    title: 'FuzeFront Platform reaches general availability',
+    title: 'FuzeFront reaches general availability',
     excerpt:
-      'The Module Federation host shell behind the FuzeOne family is now generally available, bringing enterprise auth, billing, and AI to every product built on it.',
+      'The Module Federation host shell and portal behind the FuzeOne family is now generally available, bringing enterprise auth, governance, and AI to every product built on it.',
   },
 ]
 
@@ -75,7 +75,7 @@ export const PressPage: React.FC = () => {
                   <Calendar size={13} /> {release.date}
                 </div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">{release.title}</h3>
-                <p className="text-gray-600 text-sm leading-relaxed">{release.excerpt}</p>
+                <Text as="p" tone="secondary" size="sm" leading="relaxed">{release.excerpt}</Text>
               </div>
             ))}
           </div>
@@ -90,7 +90,7 @@ export const PressPage: React.FC = () => {
             <dl className="bg-white rounded-2xl border border-gray-200 divide-y divide-gray-100 shadow-soft">
               {factSheet.map((item) => (
                 <div key={item.label} className="flex justify-between px-5 py-4">
-                  <dt className="text-sm text-gray-600">{item.label}</dt>
+                  <Text as="dt" tone="secondary" size="sm">{item.label}</Text>
                   <dd className="text-sm font-medium text-gray-900">{item.value}</dd>
                 </div>
               ))}
@@ -100,10 +100,15 @@ export const PressPage: React.FC = () => {
           <div>
             <h2 className="text-2xl font-heading font-bold text-gray-900 mb-6">Media kit</h2>
             <div className="bg-white rounded-2xl border border-gray-200 shadow-soft p-6">
-              <p className="text-sm text-gray-600 leading-relaxed mb-5">
+              <Text
+                as="p"
+                tone="secondary"
+                size="sm"
+                style={{ lineHeight: 'var(--leading-relaxed)', marginBlockEnd: 'var(--space-5)' }}
+              >
                 Logos, brand colors, and product screenshots for editorial use. For a custom asset
                 or interview request, reach out to our press team directly.
-              </p>
+              </Text>
               <div className="flex flex-col gap-3">
                 <a
                   href="/logo-icon.svg"

@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Recovery code — MFA step-up (mobile)</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  body { display: grid; place-items: center; background: var(--bg-primary); padding: var(--space-6) 0 var(--space-16); }
+  /* ds-conformance-allow: 375px is the device-mock width (frame chrome, matches frames 01–04), not a product UI value */
+  .phone { width: 375px; background: var(--bg-primary); border: 1px solid var(--border-color);
+    border-radius: var(--radius-xl); overflow: hidden; display: flex; flex-direction: column; box-shadow: var(--shadow-lg);
+    margin-bottom: var(--space-8); }
+  .m-topbar { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--border-color); background: var(--bg-secondary); }
+  .m-topbar .back { color: var(--text-secondary); }
+  .m-topbar .title { font-family: var(--font-display); font-weight: var(--weight-semibold); font-size: var(--text-md); }
+  .m-seam { height: 2px; background: var(--seam); }
+  .m-body { padding: var(--space-6) var(--space-4) calc(var(--space-5) + env(safe-area-inset-bottom)); }
+  .m-sub { color: var(--text-secondary); font-size: var(--text-sm); margin: 0 0 var(--space-5); line-height: 1.5; }
+  .m-sub b { color: var(--text-primary); }
+
+  /* DS CodeField stand-in at touch size */
+  .rc-field { display: grid; gap: var(--space-2); }
+  .rc-field label { font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--text-primary); }
+  .rc-field input { width: 100%; min-height: var(--space-12); font-family: var(--font-mono); font-size: var(--text-lg);
+    letter-spacing: 0.08em; color: var(--text-primary); background: var(--bg-secondary);
+    border: 1px solid var(--border-strong); border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); }
+  .rc-field input:focus { outline: none; border-color: var(--accent-color); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .rc-field input[disabled] { opacity: 0.7; }
+  .rc-field.is-error input { border-color: var(--error-color); }
+  .rc-help { color: var(--text-tertiary); font-size: var(--text-xs); line-height: 1.5; }
+  .field-error { color: var(--error-color); font-size: var(--text-sm); line-height: 1.5; display: flex; gap: var(--space-2); }
+
+  .callout { display: flex; gap: var(--space-3); align-items: flex-start; padding: var(--space-4);
+    margin-bottom: var(--space-5); border-radius: var(--radius-md); border: 1px solid var(--border-color);
+    color: var(--text-secondary); font-size: var(--text-sm); line-height: 1.5; }
+  .callout b { display: block; color: var(--text-primary); font-size: var(--text-md); margin-bottom: var(--space-1); }
+  .callout--warning { background: var(--warning-soft); border-color: var(--warning-color); }
+  .callout--error { background: var(--error-soft); border-color: var(--error-color); }
+  .callout__ico { flex: none; }
+  .callout b.rl-wait { display: inline; margin: 0; font-size: inherit; font-variant-numeric: tabular-nums; }
+  .callout--warning .callout__ico { color: var(--warning-color); }
+  .callout--error .callout__ico { color: var(--error-color); }
+
+  .actions { margin-top: var(--space-5); display: grid; gap: var(--space-3); }
+  .actions .btn { display: inline-flex; align-items: center; width: 100%; min-height: var(--space-12); justify-content: center; text-align: center; text-decoration: none; }
+  .btn[disabled] { opacity: 0.6; cursor: not-allowed; }
+  .spinner { width: var(--space-4); height: var(--space-4); border-radius: var(--radius-pill);
+    border: 2px solid var(--border-strong); border-top-color: var(--text-primary); display: inline-block;
+    vertical-align: middle; margin-right: var(--space-2); animation: rcspin var(--duration-base) linear infinite; }
+  @keyframes rcspin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce){ .spinner { animation: none; } }
+  .links { margin-top: var(--space-4); display: grid; gap: var(--space-3); text-align: center; font-size: var(--text-sm); }
+  .links a { color: var(--accent-color); }
+  .note { margin-top: var(--space-4); font-size: var(--text-xs); color: var(--text-tertiary); line-height: 1.5; }
+  .state-label { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--text-tertiary); margin: var(--space-7) 0 var(--space-3); text-align: center; }
+  .caption { text-align: center; font-size: var(--text-xs); color: var(--text-tertiary); margin-top: var(--space-2); }
+  .caption a { color: var(--accent-color); }
+</style>
+</head>
+<body>
+
+<div class="state-label">Default · recovery-code entry (from “Recovery code” in frame 01; only when recoveryAvailable: true)</div>
+<div class="phone" data-frame="05-recovery-code" data-state="default" data-route="/login/mfa" data-viewport="375">
+  <header class="m-topbar"><a class="back" href="01-choose-factor.html" aria-label="Back">←</a><span class="title">Use a recovery code</span></header>
+  <div class="m-seam"></div>
+  <main class="m-body" data-panel="recovery-code" data-state="idle" data-factor="recovery">
+    <p class="m-sub">Enter one of the recovery codes you saved when you turned on two-factor authentication.</p>
+    <div class="rc-field" data-component="recovery-code-input">
+      <label for="m-rc-1">Recovery code</label>
+      <input id="m-rc-1" type="text" data-field="recovery-code" autocomplete="one-time-code" autocapitalize="none"
+        spellcheck="false" maxlength="64" aria-describedby="m-rc-1-help" />
+      <span class="rc-help" id="m-rc-1-help" data-help="recovery-code">Each code works once. Spaces and dashes are fine — type it the way you saved it.</span>
+    </div>
+    <div class="actions">
+      <button class="btn btn-primary" data-action="verify-recovery" disabled>Verify &amp; continue</button>
+      <a class="btn btn-ghost" href="01-choose-factor.html" data-action="choose-factor">Use a different method</a>
+    </div>
+    <div class="links"><a href="#" data-action="contact-support">Lost your recovery codes too? Contact support</a></div>
+    <p class="note">One full-width text field (not OTP cells), default text keyboard, no auto-capitalise or spellcheck.
+      “Verify” is disabled only while the trimmed value is empty — no format check; the server strips spaces and dashes.</p>
+  </main>
+</div>
+
+<div class="state-label">Verifying · in flight (no double submit)</div>
+<div class="phone" data-frame="05-recovery-code" data-state="verifying">
+  <header class="m-topbar"><span class="back" aria-hidden="true">←</span><span class="title">Use a recovery code</span></header>
+  <div class="m-seam"></div>
+  <main class="m-body" data-panel="recovery-code" data-state="verifying" data-factor="recovery">
+    <p class="m-sub">Enter one of the recovery codes you saved when you turned on two-factor authentication.</p>
+    <div class="rc-field" data-component="recovery-code-input">
+      <label for="m-rc-2">Recovery code</label>
+      <input id="m-rc-2" type="text" data-field="recovery-code" value="7k3m 9qxr 2vhd 8fwb" disabled />
+    </div>
+    <div class="actions">
+      <button class="btn btn-primary" data-action="verify-recovery" disabled aria-busy="true"><span class="spinner" aria-hidden="true"></span>Verifying…</button>
+    </div>
+  </main>
+</div>
+
+<div class="state-label">Error · code didn't work · 401 RECOVERY_CODE_INVALID (stays on screen, retry allowed)</div>
+<div class="phone" data-frame="05-recovery-code" data-state="error-invalid">
+  <header class="m-topbar"><span class="back" aria-hidden="true">←</span><span class="title">Use a recovery code</span></header>
+  <div class="m-seam"></div>
+  <main class="m-body" data-panel="recovery-code" data-state="error-invalid" data-http-status="401" data-factor="recovery">
+    <p class="m-sub">That didn't work. Enter one of your saved recovery codes.</p>
+    <div class="rc-field is-error" data-component="recovery-code-input">
+      <label for="m-rc-3">Recovery code</label>
+      <input id="m-rc-3" type="text" data-field="recovery-code" value="7K3M-9QXR-2VHD-8FWE" aria-invalid="true" aria-describedby="m-rc-3-err" />
+      <span class="field-error" id="m-rc-3-err" data-error="recovery-invalid"><span aria-hidden="true">⚠</span>
+        <span>That recovery code didn't work. Check it for typos, or try another of your codes — each code works only once.</span></span>
+    </div>
+    <div class="actions">
+      <button class="btn btn-primary" data-action="verify-recovery">Try again</button>
+      <a class="btn btn-ghost" href="01-choose-factor.html" data-action="choose-factor">Use a different method</a>
+    </div>
+    <p class="note">Same message for wrong, used and replaced codes (the API does not tell them apart). Nothing about
+      time — this is not an authenticator code.</p>
+  </main>
+</div>
+
+<div class="state-label">Too many attempts · 429 RATE_LIMITED (fail-closed, Retry-After countdown)</div>
+<div class="phone" data-frame="05-recovery-code" data-state="rate-limited">
+  <header class="m-topbar"><span class="back" aria-hidden="true">←</span><span class="title">Use a recovery code</span></header>
+  <div class="m-seam"></div>
+  <main class="m-body" data-panel="recovery-code" data-state="rate-limited" data-http-status="429" data-factor="recovery">
+    <div class="callout callout--warning" role="alert" data-error="rate-limited">
+      <span class="callout__ico" aria-hidden="true">⏳</span>
+      <span><b>Too many attempts</b>
+        For your security we've paused verification. Try again in <b class="rl-wait" data-value="retry-after">4:59</b>. Switching to another method won't skip the wait.</span>
+    </div>
+    <div class="rc-field" data-component="recovery-code-input">
+      <label for="m-rc-4">Recovery code</label>
+      <input id="m-rc-4" type="text" data-field="recovery-code" value="7k3m 9qxr 2vhd 8fwb" />
+    </div>
+    <div class="actions">
+      <button class="btn btn-primary" data-action="verify-recovery" data-state="cooldown" disabled aria-disabled="true">Try again in 4:59</button>
+      <a class="btn btn-ghost" href="#" data-action="back-to-sign-in">Back to sign in</a>
+    </div>
+    <p class="note">Same copy and limiter as frame 02. Wait = 429 <code class="mono">Retry-After</code> (seconds), shown as a live m:ss countdown; “Try again” disabled until it
+      hits zero. Header missing/invalid → “Wait a few minutes, then try again.”, button enabled. Code kept, not marked red.</p>
+  </main>
+</div>
+
+<div class="state-label">Sign-in expired · 401 NOT_ACTIVE (challenge dead — restart; no claim about the code)</div>
+<div class="phone" data-frame="05-recovery-code" data-state="error-expired">
+  <header class="m-topbar"><span class="back" aria-hidden="true">←</span><span class="title">Use a recovery code</span></header>
+  <div class="m-seam"></div>
+  <main class="m-body" data-panel="recovery-code" data-state="error-expired" data-http-status="401" data-factor="recovery">
+    <div class="callout callout--error" role="alert" data-error="challenge-expired">
+      <span class="callout__ico" aria-hidden="true">⚠</span>
+      <span><b>Your sign-in expired</b>
+        Start again to sign in.</span>
+    </div>
+    <div class="actions">
+      <a class="btn btn-primary" href="#" data-action="restart-sign-in">Back to sign in</a>
+    </div>
+  </main>
+</div>
+
+<div class="state-label">Error · couldn't check the code (network / 5xx / unrecognised)</div>
+<div class="phone" data-frame="05-recovery-code" data-state="error-generic">
+  <header class="m-topbar"><span class="back" aria-hidden="true">←</span><span class="title">Use a recovery code</span></header>
+  <div class="m-seam"></div>
+  <main class="m-body" data-panel="recovery-code" data-state="error-generic" data-factor="recovery">
+    <div class="callout callout--error" role="alert" data-error="recovery-generic">
+      <span class="callout__ico" aria-hidden="true">⚠</span>
+      <span><b>We couldn't check your code</b>
+        Something went wrong while checking it. Check your connection and try again.</span>
+    </div>
+    <div class="rc-field" data-component="recovery-code-input">
+      <label for="m-rc-6">Recovery code</label>
+      <input id="m-rc-6" type="text" data-field="recovery-code" value="7k3m 9qxr 2vhd 8fwb" />
+    </div>
+    <div class="actions">
+      <button class="btn btn-primary" data-action="verify-recovery">Try again</button>
+    </div>
+    <p class="note">Does not claim the code is still unused — if the reply was lost after the server accepted it,
+      the code is spent.</p>
+  </main>
+</div>
+
+<p class="caption">Frame <b>05</b> · Recovery code · <code class="mono">/login/mfa</code> — 375px (Android TWA) · <a href="index.html">All frames</a></p>
+</body>
+</html>

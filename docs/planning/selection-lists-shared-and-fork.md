@@ -1,13 +1,24 @@
 # Selection lists — shared lists, common (platform) lists and copy-on-write forks
 
-**Status:** contract FROZEN in `services/selection-list-service/openapi.yaml`
-**4.1.0** (byte-identical Helm copy), `@fuzeone/selection-list-client` **2.1.0**,
-`fuzefront-selection-list-client` **2.1.0**, `@fuzefront/shared` **1.3.0**
+**Status (updated 2026-10-26, `origin/master` @ `bac173471`; 4.2.0 amendment
+2026-10-27):** contract FROZEN in `services/selection-list-service/openapi.yaml`
+**4.2.0** (byte-identical Helm copy), `@fuzeone/selection-list-client` **2.2.0**,
+`fuzefront-selection-list-client` **2.2.0**, `@fuzefront/shared` **1.3.0**
 (`/kafka`), Permit schema-as-code (`backend/src/permit/schema.ts`,
-`backend/security/src/permit/schema.ts`). **Nothing below is implemented in
-`selection-list-service` yet** — this document is the design the
-implementation wave (§10) builds against. If this document and the spec
-disagree, **the spec wins** and this document is stale.
+`backend/security/src/permit/schema.ts`).
+**The 4.1.0 service side (§10 tasks 1-11) is implemented and merged, and ships dark**: every
+user-visible behaviour is behind the release flag `fuzefront.selection-lists.shared-lists`
+(default OFF, additionally requires `fuzefront.selection-lists.service`). **Amended by 4.2.0**
+(`SelectionList.revision`, clients **2.2.0**): contract only — the service work it needs is §13
+(task 17); until it lands, responses omit `revision`, clients read *unknown* and the "behind
+source" comparison shows "comparison unavailable". **Not built:** the UI stages (§10 tasks 14-15;
+the frames of task 13 are approved), the 4.2.0 service work (task 17), the rollout data jobs (§9
+steps 4 and 6) and a platform pack v2. Section 10 below carries a status table per task. The text
+of sections 2-9 is the **design** as decided; where it says "the service wave will…" it has since
+been built, and the as-built behaviour, status codes and caveats are in
+`docs/guides/SELECTION_LIST_SERVICE.md` § "Shared lists, common lists and forks". If this
+document and the spec disagree, **the spec wins** and this document is stale; if it and the
+code disagree on behaviour, the code wins and this document needs a fix.
 
 Related: `selection-lists-permit-actions.md` (authorization matrix, amended for
 4.1.0), `selection-lists-events.md` (event contract), the consumer guides
@@ -95,10 +106,18 @@ Concrete flaws of `null` that this avoids:
 seeding (`system:selection-list-service`).
 
 The service learns the platform org's wire id from configuration
-(`SELECTION_LIST_PLATFORM_ORG_ID`, the `org_…` TypeID of `ROOT_ORG_ID`), with a
-fallback to the `selection_list_ref_index` row whose `org_type = 'platform'`;
-if neither resolves, every platform feature **fails closed** (no `platform`
-lists are served or created, nothing else changes).
+(`SELECTION_LIST_PLATFORM_ORG_ID`, the `org_…` TypeID of `ROOT_ORG_ID`) and
+**only** from configuration. There is deliberately **no** fallback to the
+`selection_list_ref_index` row whose `org_type = 'platform'`: that column comes
+from `identity.org.created.type`, which a logged-in user controls
+(`POST /api/organizations {type: 'platform'}`), so "the org the projection calls
+platform" is attacker-chosen and would let any user publish common lists into
+every tenant. The projection is only a **veto** on a configured value (a row
+saying the configured org is not an active platform org, or is deleted, makes it
+untrusted; the boot check refuses to start on that contradiction). If the
+variable is unset or does not resolve, every platform feature **fails closed**
+(no `platform` list is served, created, promoted or resolved, nothing else
+changes).
 
 ### D3 ⚠ — `SelectionListCatalog:read_shared` for every **customer** tenant role (not `developer`)
 
@@ -305,15 +324,21 @@ subscriptions, which this feature does not alter (verified: the gate passes).
 - A **platform** pack list may declare `platform`: it is then seeded **once**
   into the platform org (as a common list), and **skipped** for per-org
   application. `org` in a platform pack seeds per-org copies readable by members.
-- **This PR does not change seeding behaviour.** Until the service wave lands,
-  the field is accepted by the schema and ignored (lists are seeded `private`).
+- **As built:** seed-list `visibility` is honoured only while the shared-lists flag is ON for the
+  org (`src/seed/apply.ts`, `honorVisibility`); with the flag OFF the field is accepted by the schema and
+  ignored (lists are seeded `private`). `platform` lists are created only in the platform org and skipped
+  for every other org; if the platform org does not resolve they are skipped everywhere except that a
+  possible platform-org target is refused retryably instead of recording the pack version. The shipped
+  `platform-defaults.v1.json` declares no `visibility`; §9 steps 4-6 (pack v2, `org` data migration,
+  retro-fork) are not built.
 
 ### D13 — `GET /v1/selection-lists` gains `include_shared` (default `false`) and `visibility`
 
 Default `false` keeps the 4.0.0 result set byte-for-byte. A picker passes
 `true`. `visibility` filters to one value and disables shadowing. Pagination is
 unchanged (cursor, `limit` 1–200). Rows carry `visibility`, `forked_from`,
-`editable` (optional at 4.1.0 until the service wave emits them — D14).
+`editable` (optional at 4.1.0 until the service wave emits them — D14; as built the service always emits
+`visibility`, `forked_from` and `origin_item_id`, and `editable` only while the flag is ON).
 
 `editable` is a **caller-relative hint**, not an authorization: `true` when the
 caller holds a write role on the list. By the role table every write role
@@ -333,8 +358,8 @@ holds no write action, so the service computes it with **one bulk check of
   2 optional request properties, 11 non-success statuses added, 277 optional
   response properties added, 0 required response properties added).
 - **The new response fields are optional at 4.1.0, not required.** The contract
-  freezes before the service wave (§9 step 2), so the running service still
-  answers with 4.0.0 shapes and omits `SelectionList.visibility`,
+  froze before the service wave (§9 step 2), when the running service still
+  answered with 4.0.0 shapes and omitted `SelectionList.visibility`,
   `forked_from`, `editable` and `SelectionListItem.origin_item_id`; declaring
   them required made the frozen spec false for the live service (the
   contract/acceptance suites validate real responses against it). Absent means
@@ -342,8 +367,9 @@ holds no write action, so the service computes it with **one bulk check of
   `origin_item_id` = `null`, `editable` = unknown (no hint — behave as at 4.0.0
   and let each mutation's own authorization decide; never read absence as
   `false`). Both clients encode exactly that. The service wave then always
-  emits them (§7: with the flag OFF it emits the `private`/`null` defaults), and
-  a **later MINOR** adds the four to `required` — adding a property to a
+  emits `visibility`, `forked_from` and `origin_item_id` (§7: with the flag OFF it emits the
+  `private`/`null` defaults) and `editable` while the flag is ON (as built, OFF omits it), and
+  a **later MINOR** adds the four to `required` (not yet done: the spec still types them optional) — adding a property to a
   response's `required` is additive for readers.
 - Contrast with 4.0.0 (MAJOR): there, existing responses changed meaning
   (`created_by` stopped being always a user) and an existing role lost a
@@ -477,6 +503,46 @@ Authorization never routes through the flag (Permit stays the authority).
   minted only by the service; `404` (never `403`) for unreadable lists.
 - Tenant roles confer no `SelectionList:*` action; no admin → owner derivation.
 
+**Platform organization lifecycle (suspend writes, never break reads).** The configured value must be a codec-valid
+`org_…` TypeID (`parseId` decodes it and re-encoding gives the same string); anything else is a fatal boot error, not
+an "unconfirmed" state. Because the platform org owns every common list, the org lifecycle consumers treat it as
+immutable: no event deletes, archives or tombstones it, and a type change away from `platform` is refused. A
+**deactivation** (`identity.org.deleted` soft or hard, or `org.updated`/`org.created` with `isActive:false`) is split into
+its two effects: **reads stay available** to every tenant (list reads, items, resolve, fork, ids), and **writes fail
+closed** — the projection row records `suspended_at`, and while it is set `publish_platform`, every mutation of a
+`platform` list (list, items, translations, grants), purge of a platform list or item, and seeding of platform lists are
+refused, the state read fresh per request (never from the platform-org cache). A legitimate reactivation (`isActive:true`,
+type `platform`) clears it. The suspend/resume state machine is ORDERED by the envelope's ORIGINAL time (future-dated envelopes beyond `SELECTION_LIST_EVENT_FUTURE_SKEW_SECONDS`, default 300, are rejected and ignored, never clamped: a clamp re-orders the same event on every redelivery; `snapshot_at` for applied snapshots,
+`suspended_event_at` for the deactivation that suspended): a deactivation suspends only if strictly newer than the newest
+applied snapshot (stale and same-instant ones are ignored, ties go to active), an activation resumes only if not older than
+the suspending deactivation. The write gate is flag-independent (like the purge guard): with the shared-lists flag OFF a
+suspended platform org still refuses every mutation of a platform row it owns and the seeding of packs into it. The gate is
+keyed by the OWNER of the platform row (the projection's `suspended_at` of the org owning the `visibility = 'platform'` row
+being mutated or seeded), never by `SELECTION_LIST_PLATFORM_ORG_ID`, so removing the variable after common rows exist does not
+lift a suspension. It is race-free: the deactivation recording and the resume take the per-org outbox lock that every mutating
+transaction takes first, and each mutating transaction re-checks the suspension fresh under that lock before writing
+(`assertPlatformWritable`; the request-level check is only the fast path). A forged
+event can therefore at worst pause platform publishing; recovery steps are in
+`docs/runbooks/selection-lists-rollout.md` §10.3. Protected = the configured platform org, the root platform org, or any
+org owning a `visibility = 'platform'` row (the fallback when unconfigured); never the projection's user-controllable
+`org_type`.
+
+**One effective list per key.** `(organization_id, key)` is unique per *stored string*, so one org could hold a key under both
+renderings of its id. Two rules close that:
+- *Creation is blocked, flag ON or OFF.* Creating or renaming a list is a 409 (the usual key-taken code) when the key exists
+  for the same org under ANY rendering of its id, checked under the per-org outbox lock (so concurrent creates through
+  different renderings admit exactly one). This is a deliberate change to the flag-OFF create path (the service had never
+  been enabled in production); every other flag-OFF behaviour and response shape is unchanged. Data that already holds a
+  duplicate is handled by the audit and reconciliation in `docs/runbooks/selection-lists-rollout.md` §10.1–10.2.
+- *Reads pick ONE row, Permit-aware.* With the flag ON every key-resolving consumer (the listing and its `?key=` lookup,
+  the fork lookups, the resolve fork redirect, shadowing) applies the same rule to the rows the caller can actually READ:
+  an active row over an archived one, then the row stored under the caller's claim, then the oldest, then the smallest id
+  (`pickWinner` / `readableWinners` in `services/sharedReads.ts`). An unreadable private winner therefore never hides a
+  readable duplicate under the other rendering, and a key with no readable candidate has no effective row and does not
+  suppress a common list. The decision for a row depends only on that row and its (few: one per rendering) duplicates, so a
+  paged walk shows each effective list once; readability is checked once per request (bulk, chunked); a Security API failure
+  fails closed (nothing is shown).
+
 ## 9. Rollout and migration of existing data
 
 Order matters (fail-closed authz): **Permit schema → service → flag → data**.
@@ -513,6 +579,16 @@ Order matters (fail-closed authz): **Permit schema → service → flag → data
 Existing app packs (`seed.requested`) keep seeding `private` until each app opts
 into `visibility: org` in a new pack version.
 
+**Implemented (task 10).** Steps 4 and 6, and the pre-flag duplicate audit and reconcile, are idempotent,
+flag-independent CLI jobs in the service image (`services/selection-list-service/src/rollout/`; operator procedure,
+dry-run output and rollback for each in `docs/runbooks/selection-lists-rollout.md` §10.0–10.5):
+`visibility-org` (step 4), `retro-forks` (step 6), `audit` and `reconcile-duplicates`. Two points the design text above
+leaves open, settled by the code: (1) step 6 converts a copy only when its **current key equals the common list's key** and
+its seed provenance matches — the `list.forked` contract says a fork keeps its source key, so a copy a user renamed cannot be
+announced as a fork and is reported instead; (2) step 6 emits a synthetic `selection-lists.list.forked` (with the `itemMap` of
+code-matched items) for each converted copy, so read models learn the provenance. Step 5 (publishing the common lists) and the
+pack-version bump of step 4 are **not** part of these jobs.
+
 ## 10. Implementation wave — ordered task list
 
 Every stream gates on this contract PR being **merged**.
@@ -528,13 +604,41 @@ Every stream gates on this contract PR being **merged**.
 | 7 | `backend-engineer` | Resolve: platform ids + fork redirect + `effective_item_id`; keep one round trip; cache key unchanged except fork presence (ETag must vary) | resolve tests incl. private-fork no-redirect |
 | 8 | `backend-engineer` | Events: add both topics to `PRODUCED_TOPICS`; emitters for `list.forked` / `visibility.changed`; snapshots carry `visibility`/`forkedFrom`/`originItemId` | `outbox.*` tests; payloads validate via `SCHEMA_BY_TOPIC` |
 | 9 | `backend-engineer` | Seeding: honour seed-list `visibility` (`org` per org; `platform` once into the platform org, skipped per org); refuse `platform` from apps (schema already does) | seed tests; ledger semantics unchanged |
-| 10 | `backend-engineer` + `database-engineer` | Rollout data migrations §9.4 and §9.6 as idempotent, flag-independent jobs with dry-run | dry-run report on staging; re-run is a no-op |
+| 10 | `backend-engineer` + `database-engineer` | Rollout data migrations §9.4 and §9.6 as idempotent, flag-independent jobs with dry-run. **Plus, before the flag is turned on:** the read-only duplicate-key audit (the same key, or the same fork, held by one org under both renderings of its id) and its reconciliation (winner = active, then oldest, then smallest id; loser renamed and archived, never deleted) — the exact queries and statements are in `docs/runbooks/selection-lists-rollout.md` §10.1–10.2. The service resolves such duplicates deterministically at read time with the same rule, so the audit is for cleanliness, not correctness | dry-run report on staging; re-run is a no-op; the audit returns 0 rows before the flag goes ON |
 | 11 | `test-engineer` | `tests/selection-list-service/contract` + `security`: shared-read allow/deny per tenant role (incl. `developer` 403/404), cross-org `404`, fork 201/200/409×3, precedence, resolve redirect, `fork_required` body, visibility lock, purge needs operator; `helpers/fake-security-api.mjs` evaluates `publish_platform` with tenant = platform org | suites green against the running service, both flag states |
 | 12 | `docs-maintainer` | Drop the "contract only" banners from the guides/skill once the service ships; runbook entries for §9 jobs | docs match code |
 | 13 | `product-designer` | Frames for: shared/common badge + read-only list detail, "fork to edit" CTA on `fork_required`, fork confirmation (visibility choice), fork provenance + "behind source" indicator, picker unchanged except effective-list lookup; loading/empty/error/`fork_exists`/quota states | frames PR approved per flow (`gate-frames-first`) |
 | 14 | `frontend-engineer` (after 13) | `@fuzeone/selection-lists-ui`: picker uses `getEffectiveList`; list management shows `visibility`/`editable`, fork flow; visibility control for owners | e2e per approved frames; console-clean |
 | 15 | `frontend-test-engineer` | Playwright specs RED-first from the approved frames, then verify | e2e green |
 | 16 | `mcp-maintainer` | Gateway overrides for `forkSelectionList` (and the pre-existing override-key drift noted in the skill) | gateway exposes the op correctly |
+| 17 | `backend-engineer` → `test-engineer` | **4.2.0:** emit `SelectionList.revision` — the work list in §13.4 | §13.4 "done when" |
+
+### Implementation status per task (2026-10-26, `origin/master` @ `bac173471`)
+
+| # | State | Evidence / what is missing |
+|---|---|---|
+| 1 | **Done** | `selectionListService.platformOrgId` -> env `SELECTION_LIST_PLATFORM_ORG_ID` (`deploy/helm/fuzefront/values.yaml`, `templates/selection-list-service-deployment.yaml`); both topics in `kafkaTopics` (`values.yaml`); production pinned to the root platform org by `values-prod.yaml` and enforced by `gate-platform-org-pin` (not in the original task) |
+| 2 | **Done (create only)** | `FLAG_KEYS.SELECTION_LISTS_SHARED_LISTS`, `WEB_EXPOSED_FLAGS` (`packages/feature-flags/src/catalog.ts`), `flag-registry.yaml`; `prod-unleash-ops` `selection-lists-create` creates it OFF. No workflow enables it (deliberate; see the flag runbook) |
+| 3 | **Done** | migration `20261005_000011_shared_lists_and_forks.ts` (with `down`); `20261015_000013_ref_index_suspended.ts` adds the platform-org suspension column; `tests/migrations.shared-lists.db.test.ts` |
+| 4 | **Done** | `src/routes/lists.ts`, `src/services/sharedReads.ts`, `src/middleware/listAccess.ts`, `src/routes/listShape.ts` (flag-gated); `tests/authz.shared-lists.matrix.test.ts`, `tests/shared-lists.read.db.test.ts` |
+| 5 | **Done** | create/PATCH `visibility` checks, one-way lock, `fork_required`/`403`, purge needs `publish_platform`; platform-org suspension gate added beyond the task (`src/events/platformGuard.ts`) |
+| 6 | **Done** | `src/routes/fork.ts`, `src/services/fork.service.ts`; `tests/shared-lists.fork.db.test.ts` |
+| 7 | **Done** | `src/routes/resolve.ts` (one query, `effective_item_id`, ETag varies with the redirect) |
+| 8 | **Done** | `emitForkEvents`, `emitVisibilityChanged`, snapshots carry `visibility`/`forkedFrom`/`originItemId` (`src/events/emitters.ts`, `outbox.ts`) |
+| 9 | **Done** | `src/seed/apply.ts` (`applyVisibilityRules`); `tests/seed.visibility.db.test.ts` |
+| 10 | **Partly** | The duplicate-key audit and reconciliation are written down as runbook SQL (`docs/runbooks/selection-lists-rollout.md` §10.1-10.2); the service resolves duplicates at read time. **Not built:** the idempotent §9.4 (`org` on seeded lists) and §9.6 (retro-fork) jobs with dry-run, and platform pack v2 |
+| 11 | **Done** | `tests/selection-list-service/contract/shared-lists-*.test.ts`, the fake Security API's platform-tenant `publish_platform`, CI instances on ports 3012-3015 (`.github/workflows/ci.yml`) |
+| 12 | **Done in this pass** | banners dropped from the guides, skill, READMEs and runbooks; runbook entries for the §9 jobs that exist (audit, suspension). The §9.4/9.6 job runbook entries are **not** written because the jobs are not built |
+| 13 | **Done** | `design/frames/selection-lists-shared/` — five flows, all `approved: true` (2026-10-20) |
+| 14 | **Not merged** | `packages/selection-lists-ui/src/shared-lists/` does not exist on master (stage 1 "core infrastructure" was an open PR on 2026-10-26). The picker still uses the exact-match `?key=` lookup, not `getEffectiveList` |
+| 15 | **Not merged** | RED Playwright specs for the five flows were an open PR on 2026-10-26; no shared-lists spec exists on master |
+| 16 | **Partly** | `mcp/tools-selection-lists.json` lists `forkSelectionList` and the gateway derives tools from the spec; the explicit override + override-key guard were an open PR on 2026-10-26 |
+| 17 | **Service done (4.2.0 conformance PR)** | `src/routes/listShape.ts` selects `sl.revision` and `formatList` emits it unconditionally; `GET .../items?status=all` implemented. Tests: `tests/list-shape.revision.test.ts`, `tests/list-revision.db.test.ts`, `tests/items.status-all.db.test.ts`. Still open: §13.4 items 6-8 as acceptance-suite tests (`test-engineer`), then the MINOR that moves `revision` into `required` |
+
+Known gap behind task 13's "behind source" indicator (closed on the service side by task 17): `forked_from.revision`
+is the source revision at copy time (never updated), and until 4.2.0 the spec's `SelectionList` had no `revision`
+to compare it with. Contract 4.2.0 (§13) adds it as an optional field; the service now always emits it, so a client
+of a service that predates task 17 still reads *unknown* ("comparison unavailable").
 
 ## 11. Test plan (acceptance, summarised)
 
@@ -568,9 +672,148 @@ Every stream gates on this contract PR being **merged**.
   `ux_sli_origin` and the partial fork index keep it O(ids); benchmark in task 7.
 - **Common-list edits ripple to every tenant** that has not forked — operators
   should treat a common list like a public API (translations reviewed,
-  archive rather than relabel semantics). `forked_from.revision` lets a UI show
-  "your fork is behind the common list"; no automatic merge is offered (by
-  design: copy-on-write, not sync).
+  archive rather than relabel semantics). `forked_from.revision` was meant to let a UI show
+  "your fork is behind the common list", but `SelectionList` exposes no `revision` to compare it with
+  (contract gap; see the task-13 note in §10), so today the indicator reads "comparison unavailable"; no
+  automatic merge is offered (by design: copy-on-write, not sync).
 - **Platform org identification** is configuration; a wrong
   `SELECTION_LIST_PLATFORM_ORG_ID` would let that org publish — the boot check
-  must confirm the configured org's projection type is `platform`.
+  must confirm the configured org's projection type is `platform`. As built: an invalid value or one the
+  projection contradicts refuses to start; an unset or not-yet-confirmed value disables every platform
+  feature until the projection confirms it (`src/lib/sharedLists.ts`); production is additionally pinned by
+  `gate-platform-org-pin`.
+- **Forged identity events (ACCEPTED RESIDUAL; broker ACLs are the control).** Owner decision: the service does NOT
+  authenticate the producer of `identity.*` / seed topics in-process (no first-writer-wins owner hardening, no Security-API
+  confirmation before a destructive org cascade). Producer authentication is an infrastructure control: broker ACLs on the
+  `identity.*` topics (FuzeInfra#1394) are a **hard prerequisite before the service is enabled in production**
+  (`docs/runbooks/selection-lists-rollout.md` P6). Until they are verified, a principal that can publish to the broker can:
+  (1) `identity.org.deleted` for an ORDINARY org (soft or hard cascade): archive or purge that tenant's lists, items,
+  translations and grants (the platform org is immune: it is suspended, never deleted); (2) `identity.user.deleted`:
+  anonymise a user's authorship and revoke that user's list grants; (3) `identity.org.created`: project an organization
+  with a chosen owner, so the owner id used for seeded-list owner grants can be swapped (a later `org.created` replaces the recorded owner:
+  there is no first-writer-wins hardening); (4) `selection-lists.seed.requested`: amplify writes up to
+  the per-source caps and quotas (requests carry a bearer attestation that is verified, but a flood of valid-looking
+  requests is bounded only by those caps); (5) plain flooding of any consumed topic (retry budgets and the DLQ bound the
+  damage, not the volume). Mitigations that DO exist in-service: the platform org can only be suspended (writes) never
+  deleted, future-dated envelopes are rejected, deactivation is ordered by envelope time, all consumers are idempotent. Those
+  five stay accepted until the broker ACLs are verified.
+
+## 13. Fork "behind source" — `SelectionList.revision` (contract 4.2.0)
+
+### 13.1 The gap
+
+The approved fork-provenance frames (`design/frames/selection-lists-shared/`,
+flow `fork-provenance`, `BehindSourceIndicator`) compare "the source's revision
+when we forked" with "the source's revision now". 4.1.0 froze the first half —
+`forked_from.revision` — but a `SelectionList` response carried no current
+revision, so only the "comparison unavailable" state was reachable. The frames
+record this as `contractGaps[SelectionList.revision]` / the flow's
+`contractDependency`.
+
+### 13.2 What 4.2.0 freezes
+
+| Artifact | Change |
+|---|---|
+| `openapi.yaml` (+ Helm copy) | **4.1.0 → 4.2.0.** `SelectionList.revision`: read-only `integer`, `minimum: 1`, **optional**; description of `SelectionListForkProvenance.revision` now points at it; changelog + a "Is a fork behind its source?" paragraph |
+| `@fuzeone/selection-list-client` 2.1.1 → **2.2.0** | `SelectionList.revision?: number`; `compareForkToSource(fork, source)` → `ForkSourceComparison` (`'behind' \| 'up-to-date' \| 'unknown'`) |
+| `fuzefront-selection-list-client` 2.1.0 → **2.2.0** | `SelectionList.revision: int \| None` (absent / non-positive / non-integer → `None`); `compare_fork_to_source` + `ForkSourceComparison` |
+| Events | **none** — `listRevision` already rides every revisioned `selection-lists.*` event, and `list.forked.source.listRevision` already records the copy-time revision |
+| Pagination wording (doc only, no wire change) | `listSelectionLists` + `Page`: a page may be shorter than `limit` — even empty — while `hasMore` is `true` (the per-row readability filter runs after SQL cuts the page). Both 2.2.0 clients' `getEffectiveList` / `get_effective_list` follow the same query's cursor through empty non-terminal pages, bounded to 10 (`EffectiveLookupIncompleteError`, never "no list"); mirrors `@fuzeone/selection-lists-ui` (#1702) |
+
+### 13.3 Decisions
+
+- **R1 — one field, the existing counter.** `revision` *is* `selection_lists.revision`
+  (migration `20260810_000006`: `BIGINT NOT NULL DEFAULT 1`, `ck_sl_revision_positive`,
+  monotonic trigger), the value `bumpListRevision` (`src/events/outbox.ts`) assigns to each
+  revisioned event. HTTP and Kafka therefore speak one number: a response's `revision`
+  equals the `listRevision` of the latest revisioned event committed for that list.
+- **R2 — no new fork-time field.** The brief asked whether provenance needs a
+  `forked_from_revision`-like capture. It already has one: `forked_from.revision` (4.1.0),
+  stored as `selection_lists.forked_from_revision` (migration `20261005_000011`) and written by
+  `src/services/fork.service.ts` from the source row read `FOR SHARE` in the copying
+  transaction — so it is the revision of exactly the content that was copied, and
+  `list.forked.source.listRevision` carries the same value. Adding a second field would be
+  a synonym.
+- **R3 — optional, absent = unknown** (as `editable` at 4.1.0). The running service does
+  not emit it; the contract suites validate real responses against the spec with Ajv
+  (`tests/selection-list-service/contract/response-shape.test.ts`), so declaring it
+  `required` would make the frozen spec false for the live service. A client reading no
+  `revision` reports the comparison as unavailable and **never** derives one from
+  `updated_at` (the list row's own timestamp: item and translation changes do not move it,
+  and housekeeping writes that publish no event do). A later MINOR adds it to `required` once §13.4 ships.
+- **R4 — not flag-gated.** The counter predates shared lists (it has been on every event
+  since migration 6) and nothing server-side branches on it, so the service emits it in
+  **both** states of `fuzefront.selection-lists.shared-lists`. With the flag OFF every
+  `forked_from` is `null`, so no comparison is reachable anyway; gating the field would only
+  block tightening it to `required`. The UI that consumes it is behind the flag already.
+- **R5 — semantics.** "Behind" means *changed since*, not "these items differ": any
+  revisioned event counts (list fields, status, visibility, items incl. reorder, list/item
+  translations, seeding, autofill). Access grants do not bump it. Two housekeeping writers
+  change rows **without** an event or a bump: the user-deleted authorship anonymisation
+  (`src/events/user-deleted.handler.ts`) and the org-deleted **soft** cascade, which sets
+  `status = 'archived'` on the org's lists without a `list.archived` event
+  (`src/events/org-deleted.handler.ts`, soft branch). Neither affects the fork comparison (a
+  common list lives in the platform org, which can only be suspended, never deleted; a
+  foreign `created_by` already renders as `system:platform`), so the spec states the
+  exception rather than widening the counter. The org-deleted cascade's missing event is a
+  pre-existing event-parity gap for **every** `list.archived` consumer → `backend-engineer`
+  (emit `list.archived` per list through the outbox, or record why not).
+- **R6 — not a concurrency token.** No request accepts `revision`; using it for
+  `If-Match`-style optimistic concurrency would be a separate, deliberate contract change.
+
+### 13.4 Service work list (implementation PR, after this contract merges)
+
+`backend-engineer`:
+
+1. `src/routes/listShape.ts` — add `revision: number | string` to `ListRow`, `sl.revision`
+   to `LIST_COLUMNS`, and `revision: Number(row.revision)` to `formatList`,
+   **unconditionally** (not inside the `ctx.shared` branch). Every `SelectionList` response
+   already goes through `LIST_COLUMNS` + `formatList` (`src/routes/lists.ts` list / create /
+   get / PATCH / DELETE-archive / archive; `src/routes/fork.ts` 201 and 200), so this one
+   file covers all of them. `BIGINT` arrives as a string from `pg`; `Number()` is exact
+   below 2^53.
+2. Mutation responses re-read the row **after** the transaction commits, so a response's
+   `revision` is at least the mutation's last event's `listRevision` (a PATCH that changes
+   fields *and* visibility bumps twice and must report the second). Keep it that way — do
+   not return a revision captured before the emitters run.
+3. **No migration** (`database-engineer`: nothing to do) — the column, its check and its
+   monotonic trigger exist; `forked_from_revision` exists.
+4. **Fork-time capture: already correct** — keep `forked_from_revision = src.revision` read
+   `FOR SHARE`; the fork's own `revision` is the final value `emitForkEvents` stores.
+5. Unit tests: `formatList` emits `revision` in both flag states; a row with
+   `revision = '7'` renders `7`.
+
+`test-engineer` (`tests/selection-list-service/contract`):
+
+6. Every `SelectionList` response carries an integer `revision >= 1` (flag ON and OFF —
+   extend `shared-lists-flag-off.test.ts`).
+7. **Event parity:** after each mutation (create; PATCH fields; PATCH fields + visibility;
+   archive; item create / update / reorder / archive / purge; list and item translation
+   upsert / delete; autofill), `GET` the list and assert `revision` equals the highest
+   `listRevision` among that list's outbox rows (`outbox-events.test.ts` helpers), and that
+   an access grant leaves it unchanged.
+8. **Fork:** `forked_from.revision` equals the source's `revision` read just before the fork;
+   after one change to the source, the source's `revision` is greater (the "behind" case);
+   with no change, equal ("up-to-date").
+9. Response-shape (Ajv) already accepts the field; no harness change needed.
+
+**Done when** items 1–9 are green in CI; then `contract-designer` cuts the MINOR that
+moves `revision` into `SelectionList.required` (with `visibility`, `forked_from` and
+`SelectionListItem.origin_item_id`; `editable` stays optional while the flag-OFF path omits
+it), and `product-designer` retires the frames' `contractGaps` / `contractDependency` entry
+in a frames-only PR (this contract PR may not touch `design/frames/**`), after which
+`frontend-engineer` wires `BehindSourceIndicator` to `compareForkToSource`.
+
+### 13.5 Implementation notes (service PR for 4.2.0)
+
+- **No migration, as §13.4 item 3 predicted.** The existing `selection_lists.revision` column (BIGINT NOT NULL DEFAULT 1,
+  check `>= 1`, monotonic trigger) is bumped by `bumpListRevision` under the per-organization outbox advisory lock in the
+  same transaction as the change, so concurrent writers neither skip nor duplicate a value; every existing row already
+  holds its true counter (backfill = nothing to do). `data-contract.json` is unchanged (no new stored field).
+- **Semantics chosen: exactly R1/R5** (response `revision` == the list's stored counter == latest committed
+  `listRevision`; access grants and the two event-less housekeeping writers do not move it).
+- **Org-deleted soft cascade (R5, last sentence) is deliberately NOT changed here.** The frozen 4.2.0 text lists "an
+  organization-deletion cascade" among the writes that do *not* change `revision` and publish no list event. Emitting
+  `list.archived` per list (and so bumping `revision`) would contradict that sentence and therefore needs a contract
+  amendment first (plus a decision on the event `actor` for a system cascade and on batching for orgs with many lists);
+  it stays an open pre-existing event-parity gap for `contract-designer` + `backend-engineer`.

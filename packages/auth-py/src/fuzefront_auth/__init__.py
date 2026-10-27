@@ -1,6 +1,6 @@
 """fuzefront-auth -- consumable authN for Python FuzeFront-family services.
 
-Python peer of ``@fuzefront/auth``. See README.md and
+Python peer of ``@izzywdev/fuzefront-auth``. See README.md and
 ``packages/auth/docs/TOKEN_CONTRACT.md`` for the contract.
 """
 

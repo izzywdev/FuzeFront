@@ -11,10 +11,10 @@ name: Image reproducibility
 # from images exactly this way.
 #
 # `build-images` is the expensive one, and it exists because static checks
-# cannot prove an image runs. release.yml builds these same files on push to
-# master, and master is DEPLOY-ON-PUSH — so without a pre-merge build, a broken
-# Dockerfile is discovered by production. It runs only when something that can
-# affect an image build changes.
+# cannot prove an image runs. The platform and product release workflows build
+# these same files on push to master, and master is DEPLOY-ON-PUSH — so without
+# a pre-merge build, a broken Dockerfile is discovered by production. It runs
+# only when something that can affect an image build changes.
 #
 # That matrix was hand-maintained against release.yml and silently drifted to
 # covering 8 of 18 released images. The gap WIDENED with each new service —
@@ -36,14 +36,23 @@ on:
       # that adds an image there must run it — otherwise the one check that
       # catches a new uncovered image never fires on the PR that adds it.
       - '.github/workflows/release.yml'
+      - '.github/workflows/fuzequality-release.yml'
+      # FuzeQuality has a dedicated two-target image release. Source, tests,
+      # contracts, and chart assets can all affect those production targets.
+      - 'FuzeQuality/**'
 
 permissions:
   contents: read
+
+concurrency:
+  group: image-reproducibility-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lockfile-discipline:
     name: Dockerfiles install from the lockfile
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -57,6 +66,7 @@ jobs:
   build-images:
     name: Build ${{ matrix.name }}
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     needs: lockfile-discipline
     strategy:
       # Build every image rather than stopping at the first failure — knowing
@@ -126,6 +136,17 @@ jobs:
           - name: devportal-frontend
             context: devportal-frontend
             file: devportal-frontend/Dockerfile
+          # One Dockerfile produces two independently released targets. Build
+          # both: `service` verifies the API runtime while `web` also executes
+          # the full verification stage before packaging the federated remote.
+          - name: fuzequality-backend
+            context: .
+            file: FuzeQuality/docker/Dockerfile
+            target: service
+          - name: fuzequality-frontend
+            context: .
+            file: FuzeQuality/docker/Dockerfile
+            target: web
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
@@ -134,6 +155,7 @@ jobs:
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.file }}
+          target: ${{ matrix.target || '' }}
           push: false
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}

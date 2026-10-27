@@ -380,7 +380,7 @@ describe('P1: no event for a rejected request, and none for a request that chang
       out['patchSame'] = (await call('PATCH', L(id), { name: 'Stable' })).status;
       out['itemPatchSame'] = (await call('PATCH', `${L(id)}/items/${item}`, { label: 'Label NOOP' })).status;
       out['accessSame'] = (await call('PUT', `${L(id)}/access/${USER_B}`, { role: 'list-viewer' })).status;
-      out['revokeMissing'] = (await call('DELETE', `${L(id)}/access/usr_01test0000000outboxnogrant00`)).status;
+      out['revokeMissing'] = (await call('DELETE', `${L(id)}/access/${testUser('outboxnogrant')}`)).status;
       out['translationMissing'] = (await call('DELETE', `${L(id)}/translations/ja`)).status;
       return out;
     });

@@ -64,6 +64,8 @@ spec:
               value: "true"
             - name: PORT
               value: {{ .Values.securityService.port | quote }}
+            - name: TRUST_PROXY_HOPS
+              value: {{ .Values.securityService.trustProxyHops | quote }}
             - name: DB_HOST
               value: {{ .Values.fuzeinfra.postgres.host | quote }}
             - name: DB_PORT
@@ -138,6 +140,15 @@ spec:
             {{- if .Values.emailService.enabled }}
             - name: EMAIL_SERVICE_URL
               value: "http://fuzefront-email-service:{{ .Values.emailService.port }}"
+            # Bearer for email-service POST /send: the SAME Secret key email-service
+            # reads as EMAIL_AUTH_SECRET. optional so a missing sealed key does not
+            # block the security pod; without it dispatch is rejected (401) and logged.
+            - name: EMAIL_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: EMAIL_AUTH_SECRET
+                  optional: true
             {{- end }}
             {{- if .Values.smsService.enabled }}
             - name: SMS_SERVICE_URL
@@ -295,6 +306,26 @@ spec:
                   name: {{ .Values.securityService.featureFlags.tokenSecretName | default (include "fuzefront.secretName" .) | quote }}
                   key: {{ .Values.securityService.featureFlags.tokenSecretKey | quote }}
                   optional: true
+            {{- end }}
+            {{- if .Values.securityService.turnstile.siteKey }}
+            # Cloudflare Turnstile CAPTCHA (backend/security/src/services/
+            # turnstile.ts). Renders ONLY when a site key is configured; absent
+            # (the default in every overlay) = captcha OFF, nothing below renders.
+            # The service advertises AuthMethods.captcha only if BOTH the site key
+            # and the secret key are non-empty, so a missing/empty secret degrades
+            # to captcha OFF rather than failing the pod (optional: true).
+            - name: TURNSTILE_SITE_KEY
+              value: {{ .Values.securityService.turnstile.siteKey | quote }}
+            - name: TURNSTILE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.securityService.turnstile.secretName | default (include "fuzefront.secretName" .) | quote }}
+                  key: {{ .Values.securityService.turnstile.secretKey | quote }}
+                  optional: true
+            {{- if .Values.securityService.turnstile.verifyTimeoutMs }}
+            - name: TURNSTILE_VERIFY_TIMEOUT_MS
+              value: {{ .Values.securityService.turnstile.verifyTimeoutMs | quote }}
+            {{- end }}
             {{- end }}
           readinessProbe:
             httpGet:

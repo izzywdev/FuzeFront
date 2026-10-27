@@ -4,9 +4,13 @@ import { GoogleGlyph } from './GoogleGlyph'
 import { FacebookGlyph } from './FacebookGlyph'
 
 export interface SocialButtonProps {
-  provider: SocialProviderSlug
-  /** Visible + accessible label ("Continue with Facebook"). */
+  /** `google` (the contract's `SocialProvider`) or `facebook` (shown only when the server advertises it). */
+  provider?: SocialProviderSlug
+  /** Idle label, e.g. "Continue with Google". Also the accessible name. */
   label: string
+  /** Label while the redirect is starting. */
+  pendingLabel?: string
+  pending?: boolean
   disabled?: boolean
   onClick: () => void
 }
@@ -17,12 +21,20 @@ const GLYPHS: Record<SocialProviderSlug, React.ComponentType> = {
 }
 
 /**
- * One social sign-in button. Provider-specific only in its glyph and
- * `data-action` hook (`social-google` / `social-facebook`, per
- * design/frames/org-invitations-v2/04-accept-signup-bind.html); layout and
- * states come from the shared `fzf-auth-panel__social-button` style.
+ * SocialButton — the secondary "continue with <provider>" button. The caller gates
+ * it on `AuthMethods.social` (never render it for a provider the platform does not
+ * advertise). Test hook: `data-action="social-google"` / `social-facebook`. No vendor
+ * identity-provider name is ever rendered — only the social provider's own brand
+ * mark, which each provider's identity guidelines require.
  */
-export function SocialButton({ provider, label, disabled, onClick }: SocialButtonProps) {
+export function SocialButton({
+  provider = 'google',
+  label,
+  pendingLabel,
+  pending = false,
+  disabled = false,
+  onClick,
+}: SocialButtonProps) {
   const Glyph = GLYPHS[provider]
   return (
     <button
@@ -34,7 +46,7 @@ export function SocialButton({ provider, label, disabled, onClick }: SocialButto
       aria-label={label}
     >
       <Glyph />
-      {label}
+      {pending && pendingLabel ? pendingLabel : label}
     </button>
   )
 }

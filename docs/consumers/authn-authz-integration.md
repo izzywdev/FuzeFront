@@ -139,9 +139,19 @@ consent host. No FuzeFront-internal identity host is visible or named.
 
 ### 2.4 Signup — `POST /api/v1/security/signup`
 
-Body `{ email, password, firstName?, lastName?, tenantName? }`. The user sees
-only FuzeFront-branded UI — never a provider's raw enrollment page. On success a
-session is established (`201` → `LoginResponse`). `409` if the email exists.
+Body `{ email, password, name?, turnstileToken?, tenantName? }` (contract
+`@fuzefront/security-client` **1.1.0**; `bindToken?` is also accepted for
+invitation signup). The user sees only FuzeFront-branded UI — never a provider's
+raw enrollment page. On success a session is established (`201` →
+`LoginResponse`). Errors: `400 MALFORMED`, `400 CAPTCHA_FAILED` (bad/missing
+Turnstile token), `409` if the email exists, `422 PASSWORD_POLICY`, `503`.
+
+`firstName`/`lastName` were **removed** in 1.0.0 in favour of one optional `name`;
+`turnstileToken` is required only when `GET /methods` reports `captcha`. These
+stricter rules apply when the `fuzefront.auth.experience` flag is ON for the
+environment (default OFF; OFF keeps the legacy shim). Migration steps, the new
+`GET /signup/email-available`, and `AuthMethods.captcha`/`passwordPolicy`:
+[`docs/guides/AUTH_EXPERIENCE_SIGNUP.md`](../guides/AUTH_EXPERIENCE_SIGNUP.md).
 
 ### 2.5 Session lifecycle
 

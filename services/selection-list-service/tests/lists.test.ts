@@ -12,6 +12,7 @@ import request from 'supertest';
 import jwt from 'jsonwebtoken';
 import { createApp } from '../src/app';
 import { setFlagClient } from '../src/flags';
+import { allFlagsExceptShared } from './helpers/flagClient';
 
 // ─── DB mock ─────────────────────────────────────────────────────────────────
 
@@ -22,11 +23,23 @@ const mockTrx = {
 };
 const mockTransaction = jest.fn(async (cb: (t: typeof mockTrx) => Promise<void>) => cb(mockTrx));
 
+// The platform-org suspension reads (a tiny projection query, see lib/sharedLists.suspendedOrgs) are out of scope
+// for this mocked 4.0.0 suite: nothing is suspended. Their real behaviour is pinned against Postgres in
+// shared-lists.platform-org-guard / suspension-race / suspension-owner.
+jest.mock('../src/lib/sharedLists', () => ({
+  ...jest.requireActual('../src/lib/sharedLists'),
+  suspendedOrgs: async () => [],
+  suspendedOrgsFor: async () => [],
+  orgWritesSuspended: async () => false,
+}));
+
+// `db('selection_lists').where(..).first(..)` is the purge guard's visibility lookup (listAccess.lookupList), which
+// runs whatever the shared-lists flag says; in these 4.0.0 suites no list is a common list.
 jest.mock('../src/db', () => ({
-  db: {
+  db: Object.assign(() => ({ where: () => ({ first: async () => undefined }) }), {
     raw: (...args: any[]) => mockRaw(...args),
     transaction: (...args: any[]) => mockTransaction(...args),
-  },
+  }),
 }));
 
 // ─── Identity mock (mintId) ───────────────────────────────────────────────────
@@ -121,7 +134,7 @@ let app: ReturnType<typeof createApp>;
 beforeAll(() => {
   process.env.JWT_SECRET = JWT_SECRET;
   // Inject a flag client that returns ON by default for all non-flag-OFF tests.
-  setFlagClient({ getBooleanValue: async () => true });
+  setFlagClient({ getBooleanValue: allFlagsExceptShared });
   app = createApp();
 });
 
@@ -143,14 +156,14 @@ beforeEach(() => {
   mockCheckActiveListQuota.mockReset().mockResolvedValue(undefined);
   mockCheckLocaleQuota.mockReset().mockResolvedValue(undefined);
   mockGrantListOwner.mockReset().mockResolvedValue(undefined);
-  setFlagClient({ getBooleanValue: async () => true });
+  setFlagClient({ getBooleanValue: allFlagsExceptShared });
 });
 
 // ─── Feature flag OFF ─────────────────────────────────────────────────────────
 
 describe('Feature flag OFF — lists routes', () => {
   beforeEach(() => { setFlagClient({ getBooleanValue: async () => false }); });
-  afterEach(() => { setFlagClient({ getBooleanValue: async () => true }); });
+  afterEach(() => { setFlagClient({ getBooleanValue: allFlagsExceptShared }); });
 
   it('GET / returns 404', async () => {
     const res = await request(app)

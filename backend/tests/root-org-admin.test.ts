@@ -59,6 +59,36 @@ describe('ensureRootOrgAdmins', () => {
     expect(rec.calls).toContainEqual({ userId: adminId, orgId: ROOT_ORG_ID })
   })
 
+  // REGRESSION: migration 015 seeds the root org in Postgres only; nothing ever
+  // created its Permit resource INSTANCE, so assignOrgAdminRebac targeted a
+  // nonexistent `Organization:<root>` and platform admins never derived `manage`
+  // (read-only on the portals directory). The bootstrap must seed the instance
+  // BEFORE granting any role on it.
+  it('seeds the root Organization Permit instance before granting org-admin', async () => {
+    const adminId = await createUser(['admin'])
+    const order: string[] = []
+
+    const granted = await ensureRootOrgAdmins({
+      db,
+      ensureOrgInstance: async (orgId: string) => {
+        order.push(`instance:${orgId}`)
+        return true
+      },
+      assignOrgAdmin: async (userId: string, orgId: string) => {
+        order.push(`grant:${userId}:${orgId}`)
+        return true
+      },
+    })
+
+    expect(granted).toContain(adminId)
+    expect(order).toContain(`instance:${ROOT_ORG_ID}`)
+    expect(order).toContain(`grant:${adminId}:${ROOT_ORG_ID}`)
+    // The instance must exist before the role is assigned on it.
+    expect(order.indexOf(`instance:${ROOT_ORG_ID}`)).toBeLessThan(
+      order.indexOf(`grant:${adminId}:${ROOT_ORG_ID}`)
+    )
+  })
+
   it('does not grant to non-admin users', async () => {
     const plainId = await createUser(['user'])
     const rec = recorder()
@@ -318,5 +348,28 @@ describe('configured root admins (PLATFORM_ROOT_ADMIN_EMAILS)', () => {
 
     expect(granted).toEqual([listed])
     expect(rec.calls.map(c => c.userId)).not.toContain(otherAdmin)
+  })
+
+  it('ensureConfiguredRootAdmins seeds the root Permit instance before granting', async () => {
+    const listed = await createUser(['user'])
+    const order: string[] = []
+
+    await ensureConfiguredRootAdmins({
+      db,
+      rootAdminEmails: [await emailOf(listed)],
+      ensureOrgInstance: async (orgId: string) => {
+        order.push(`instance:${orgId}`)
+        return true
+      },
+      assignOrgAdmin: async (userId: string, orgId: string) => {
+        order.push(`grant:${userId}:${orgId}`)
+        return true
+      },
+    })
+
+    expect(order.indexOf(`instance:${ROOT_ORG_ID}`)).toBeGreaterThanOrEqual(0)
+    expect(order.indexOf(`instance:${ROOT_ORG_ID}`)).toBeLessThan(
+      order.indexOf(`grant:${listed}:${ROOT_ORG_ID}`)
+    )
   })
 })

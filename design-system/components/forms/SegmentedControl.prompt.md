@@ -1,17 +1,21 @@
-A compact toggle for choosing ONE value from a short, mutually-exclusive set of 2-3 options — the invitee kind (existing / external), the delivery channel (email / WhatsApp), the member type (employee / customer). Use `Tabs` for navigating sub-views and `Select` for longer lists; use this when the choice changes a form's shape in place.
+A compact single-select button group for filtering or switching a view — "Any / Private / Organization / Common". Choose it over `Select` when there are only a handful of short options that should all be visible at once; choose `Tabs` when the choice swaps a panel of content.
 
 ```jsx
-const [channel, setChannel] = useState("email");
-
 <SegmentedControl
-  ariaLabel="Send via"
-  value={channel}
-  onChange={setChannel}
+  ariaLabel="Visibility"
+  value={visibility}
+  onChange={setVisibility}
   options={[
-    { value: "email", label: "Email", icon: "✉️" },
-    { value: "whatsapp", label: "WhatsApp", icon: "💬" },
+    { value: "any", label: "Any" },
+    { value: "private", label: "Private" },
+    { value: "org", label: "Organization" },
+    { value: "platform", label: "Common" },
   ]}
 />
 ```
 
-Each segment is a real button with `aria-pressed`; the selected one is also filled with the accent tint and carries `data-selected="true"`, so the state is not color-only. Left/Right/Home/End move focus (direction-aware under RTL); Enter/Space commits. Pass `disabled` to inert the whole control (e.g. a member type that is fixed by context) — it renders `aria-disabled="true"` on the group and the selected segment stays visible.
+Props: `options` (`{ value, label, disabled?, ...data-*/aria-* }[]`), `value` / `defaultValue` / `onChange(value)`, `disabled` (whole control), `ariaLabel` or `ariaLabelledBy` (one is required for an accessible group name), `ref` (the group element). Extra keys on an option (`data-*`) are forwarded to its button.
+
+Behaviour: a `role="group"` of native `<button>`s, each with `aria-pressed`; exactly one is pressed. Pressing the pressed segment is a no-op and does not call `onChange` — a segmented control cannot be cleared, so add an explicit "Any" segment for that. Every segment is its own tab stop and Space/Enter activate it. Disabled segments are native `disabled` buttons.
+
+Segments are separated by a hairline using logical properties (mirrors in RTL); the pressed segment is tinted `--accent-soft`; the focus ring is drawn inside the segment so the group's rounded clip never cuts it off. Segments grow to 44px (`--touch-target`) on touch devices and below the xs breakpoint (480px).

@@ -58,9 +58,11 @@ import {
   systemEventContext,
   type EventContext,
 } from '../events/emitters';
+import { isSharedListsEnabled } from '../flags';
 import { enqueueEvent, lockOrgOutbox, mintEventId, wireOrgId } from '../events/outbox';
 import { logger } from '../lib/logger';
-import { getQuota, lockQuotaScope } from '../services/quota.service';
+import { canonicalOrgId, configuredPlatformOrgId, orgRenderings, orgWritesSuspended, resolvePlatformOrgId, ROOT_PLATFORM_ORG_WIRE, sameOrg, type Visibility } from '../lib/sharedLists';
+import { getQuota, getQuotaAcross, lockQuotaScope } from '../services/quota.service';
 import { canonicalJson, computeSourceHash, hashCanonical, hashText } from './canonical';
 import {
   hashItemContent,
@@ -322,8 +324,90 @@ type ListPlan =
   | { kind: 'archive'; key: string; row: SeedListRow; current: ListContent }
   | { kind: 'noop'; key: string; row: SeedListRow };
 
+/**
+ * What `visibility` means for THIS request and THIS target org (design record D12):
+ *   - an app source may never ask for `platform` (VALIDATION_ERROR), whatever the flag says;
+ *   - honouring OFF: nothing is read, every list is seeded private (4.0.0);
+ *   - honouring ON: each list is created with its declared visibility, except that a `platform` list is
+ *     created (as `platform`) only in the platform organization and is SKIPPED everywhere else — and,
+ *     if the platform organization does not resolve, skipped everywhere (fail closed).
+ * `applied` is the lists to plan for this org; `visibilityByKey` the visibility to create them with.
+ */
+async function applyVisibilityRules(
+  trx: Trx,
+  req: SeedApplyRequest,
+  all: SelectionListSeedListSpecV1[],
+): Promise<{ applied: SelectionListSeedListSpecV1[]; visibilityByKey: Map<string, Visibility>; platformSkipped: Set<string> }> {
+  if (req.source.app !== PLATFORM_SEED_SOURCE) {
+    const bad = all.map((l, i) => ({ l, i })).filter(({ l }) => l.visibility === 'platform');
+    if (bad.length > 0) {
+      throw new SeedFailure(
+        'VALIDATION_ERROR',
+        'An app seed request cannot create a platform (common) list; use "org" or "private".',
+        bad.slice(0, MAX_DETAILS).map(({ l, i }) => ({ listKey: l.key, path: `lists.${i}.visibility` })),
+      );
+    }
+  }
+  const visibilityByKey = new Map<string, Visibility>();
+  const platformSkipped = new Set<string>();
+  if (req.honorVisibility !== true) return { applied: all, visibilityByKey, platformSkipped };
+
+  const hasPlatformLists = all.some((l) => l.visibility === 'platform');
+  const platformOrg = hasPlatformLists ? await resolvePlatformOrgId(trx) : null;
+  if (hasPlatformLists && platformOrg === null) {
+    // Unresolved platform org (unset, or not yet confirmed by the org projection). Skipping the common lists
+    // is right for an ordinary org, but THIS org may be the platform org itself; skipping there would record
+    // the pack version as applied with its common lists missing, permanently. So if the target could be the
+    // platform org (the root org's TypeID, the CONFIGURED platform org in any rendering - whose projection may not
+    // have arrived yet - or an org the projection types 'platform': a claim that can only make
+    // this org's OWN seeding fail), refuse retryably instead of recording the version.
+    const proj = await readOrgProjection(trx, req.organizationId);
+    const configured = configuredPlatformOrgId();
+    if (sameOrg(req.organizationId, ROOT_PLATFORM_ORG_WIRE) || (configured !== null && sameOrg(req.organizationId, configured)) || proj?.orgType === 'platform') {
+      throw new SeedFailure(
+        'INTERNAL_ERROR',
+        'The platform organization is not resolved yet, so its common lists cannot be seeded; nothing was written. Retry once SELECTION_LIST_PLATFORM_ORG_ID is configured and the org projection confirms it.',
+        [],
+        true,
+      );
+    }
+  }
+  const targetIsPlatform = platformOrg !== null && sameOrg(req.organizationId, platformOrg);
+  if (hasPlatformLists && targetIsPlatform && (await orgWritesSuspended(trx, req.organizationId))) {
+    // The platform org is SUSPENDED (deactivation recorded): publishing its common lists is a platform write, so it
+    // fails closed - retryably, nothing written - until the org is reactivated.
+    throw new SeedFailure(
+      'INTERNAL_ERROR',
+      'The platform organization is suspended (a deactivation was recorded), so its common lists cannot be seeded; nothing was written. Retry once it is reactivated.',
+      [],
+      true,
+    );
+  }
+  for (const spec of all) {
+    const v: Visibility = spec.visibility ?? 'private';
+    if (v === 'platform' && !targetIsPlatform) platformSkipped.add(spec.key);
+    else visibilityByKey.set(spec.key, v);
+  }
+  return { applied: all.filter((l) => !platformSkipped.has(l.key)), visibilityByKey, platformSkipped };
+}
+
+async function refuseWhenPlatformSuspended(trx: Trx, organizationId: string): Promise<void> {
+  // Keyed by the org that OWNS the common rows, not by configuration: with SELECTION_LIST_PLATFORM_ORG_ID removed
+  // after common rows exist, their owner is still suspended and still refused. Fresh read, under the org lock
+  // taken by runSeed (the deactivation recording takes the same lock).
+  if (!(await orgWritesSuspended(trx, organizationId))) return;
+  const owns = await trx('selection_lists').where({ visibility: 'platform' }).whereIn('organization_id', orgRenderings(organizationId)).first('id');
+  if (!owns) return; // no common list to rewrite (a first publication is gated in applyVisibilityRules)
+  throw new SeedFailure(
+    'INTERNAL_ERROR',
+    'The platform organization is suspended (a deactivation was recorded), so nothing can be seeded into its common lists; nothing was written. Retry once it is reactivated.',
+    [],
+    true,
+  );
+}
+
 async function runSeed(trx: Trx, req: SeedApplyRequest): Promise<SeedResult> {
-  const lists = validateRequest(req);
+  const requested = validateRequest(req);
   const org = req.organizationId;
   const source = req.source.app;
   const pack = req.pack;
@@ -335,13 +419,20 @@ async function runSeed(trx: Trx, req: SeedApplyRequest): Promise<SeedResult> {
 
   // 2. Trust: the source's allowlist row (section 8), then the org (section 7.2 step 5).
   const sourceDef = await authorizeSource(trx, req);
-  enforceSourceRules(sourceDef, lists);
+  enforceSourceRules(sourceDef, requested);
   await checkOrg(trx, req);
+  // A SUSPENDED platform org (deactivation recorded) takes no seed writes into its common lists - whatever the
+  // shared-lists flag says: a pack upgrade also rewrites an existing seeded list, and that list may already be a
+  // `platform` row. Retryable, nothing written; resumes with the org's reactivation.
+  await refuseWhenPlatformSuspended(trx, req.organizationId);
+  // Visibility (4.1.0): which of the requested lists apply to THIS org, and with what visibility. The ledger
+  // below is keyed and hashed on the REQUESTED content, so its semantics do not depend on the target org.
+  const { applied: lists, visibilityByKey, platformSkipped } = await applyVisibilityRules(trx, req, requested);
 
   // 3. Version check against the ledger (section 9 step 1).
   // A pack that says its translations are machine output is a different content from one that says they are
   // reviewed (provenance is part of what the version means); 'human' keeps the historic hash of `lists` alone.
-  const contentHash = hashCanonical(isMachinePack(req) ? { translationProvenance: 'machine', lists } : lists);
+  const contentHash = hashCanonical(isMachinePack(req) ? { translationProvenance: 'machine', lists: requested } : requested);
   const ledger: Array<{ version: number; content_hash: string; manifest: Record<string, string[]>; result: SeedListResult[] }> = await trx(
     'selection_list_seed_ledger',
   )
@@ -362,13 +453,13 @@ async function runSeed(trx: Trx, req: SeedApplyRequest): Promise<SeedResult> {
   const outcome: SeedOutcome = vmax === undefined ? 'applied' : 'upgraded';
 
   // 4. Plan (reads only) - every refusal happens here or in the quota step, before any write.
-  const planned = await planLists(trx, req, lists, ledger);
+  const planned = await planLists(trx, req, lists, ledger, platformSkipped);
   await enforceQuota(trx, org, planned);
 
   // 5. Write.
   const ctx = systemEventContext(org, source, req.correlationId);
   const results: SeedListResult[] = [];
-  for (const plan of planned) results.push(await writePlan(trx, req, ctx, plan));
+  for (const plan of planned) results.push(await writePlan(trx, req, ctx, plan, visibilityByKey));
 
   const manifest: Record<string, string[]> = {};
   for (const l of lists) manifest[l.key] = l.items.map((i) => i.code);
@@ -480,6 +571,7 @@ async function planLists(
   req: SeedApplyRequest,
   lists: SelectionListSeedListSpecV1[],
   ledger: Array<{ manifest: Record<string, string[]> }>,
+  platformSkipped: ReadonlySet<string> = new Set(),
 ): Promise<ListPlan[]> {
   const org = req.organizationId;
   const source = req.source.app;
@@ -493,7 +585,8 @@ async function planLists(
   const listContents = await readListContents(trx, seededRows.map((r) => r.id));
 
   const specKeys = lists.map((l) => l.key);
-  const keyRows: Array<{ id: string; key: string }> = await trx('selection_lists').where({ organization_id: org }).whereIn('key', specKeys).select('id', 'key');
+  // (all renderings of the org id: a list an operator created under the other rendering still holds its key)
+  const keyRows: Array<{ id: string; key: string }> = await trx('selection_lists').whereIn('organization_id', orgRenderings(org)).whereIn('key', specKeys).select('id', 'key');
   const keyTaken = new Set(keyRows.map((r) => r.key));
 
   const itemRows: SeedItemRow[] = seededRows.length
@@ -603,6 +696,13 @@ async function planLists(
   for (const key of Object.keys(prevManifest)) {
     if (newKeys.has(key)) continue;
     const row = byListKey.get(key);
+    if (platformSkipped.has(key)) {
+      // The pack now declares this list COMMON (served once from the platform org). A per-org copy an earlier
+      // version seeded here is NOT "dropped from the pack": leave it exactly as it is (it keeps its id, its
+      // edits and its visibility; the rollout job turns it into a fork of the common list).
+      if (row) plans.push({ kind: 'noop', key, row });
+      continue;
+    }
     if (!row) {
       plans.push({ kind: 'skip-deleted', key });
       continue;
@@ -620,11 +720,19 @@ async function planLists(
 // ---------------------------------------------------------------------------
 
 async function enforceQuota(trx: Trx, org: string, plans: ListPlan[]): Promise<void> {
-  const quota = await getQuota(org, trx);
-  await lockQuotaScope(trx, `org_lists:${org}`);
+  // Shared lists ON: the org is ONE org whatever rendering of its id a list or an override was stored under (a
+  // bare-UUID list or override written through the HTTP API belongs to the same organization as this TypeID-targeted
+  // seed event). So, exactly like the HTTP write paths: ONE canonical quota lock, the most restrictive override across
+  // every rendering, and the active lists counted across every rendering. OFF: the 4.0.0 exact id (unchanged).
+  const shared = await isSharedListsEnabled({ organizationId: org });
+  const renderings = shared ? orgRenderings(org) : null;
+  // (the org outbox lock is already held by runSeed: outbox lock -> quota lock, the order the HTTP paths use)
+  await lockQuotaScope(trx, `org_lists:${renderings ? canonicalOrgId(org) ?? org : org}`);
+  const quota = renderings ? await getQuotaAcross(renderings, trx) : await getQuota(org, trx);
   const details: SeedFailureDetail[] = [];
 
-  const [{ count }] = await trx('selection_lists').where({ organization_id: org, status: 'active' }).count('id as count');
+  const activeLists = trx('selection_lists').where({ status: 'active' });
+  const [{ count }] = await (renderings ? activeLists.whereIn('organization_id', renderings) : activeLists.where({ organization_id: org })).count('id as count');
   const current = parseInt(String(count), 10);
   const newlyActive = plans.filter((p) => p.kind === 'create' || (p.kind === 'update' && p.reactivate)).length;
   if (current + newlyActive > quota.maxLists) {
@@ -665,7 +773,13 @@ const emptyResult = (key: string, listId: string | null, action: SeedListResult[
   ...extra,
 });
 
-async function writePlan(trx: Trx, req: SeedApplyRequest, ctx: EventContext, plan: ListPlan): Promise<SeedListResult> {
+async function writePlan(
+  trx: Trx,
+  req: SeedApplyRequest,
+  ctx: EventContext,
+  plan: ListPlan,
+  visibilityByKey: ReadonlyMap<string, Visibility>,
+): Promise<SeedListResult> {
   switch (plan.kind) {
     case 'skip-deleted':
       return emptyResult(plan.key, null, 'skipped-user-deleted');
@@ -675,7 +789,7 @@ async function writePlan(trx: Trx, req: SeedApplyRequest, ctx: EventContext, pla
       if (!plan.row.seed_user_modified) await trx('selection_lists').where({ id: plan.row.id }).update({ seed_user_modified: true }); // persist the hash verdict
       return emptyResult(plan.key, plan.row.id, 'skipped-user-edited', { itemsSkipped: plan.itemsSkipped });
     case 'create':
-      return createList(trx, req, ctx, plan.spec);
+      return createList(trx, req, ctx, plan.spec, visibilityByKey.get(plan.spec.key) ?? 'private');
     case 'update':
       return updateList(trx, req, ctx, plan);
     case 'archive':
@@ -753,7 +867,13 @@ async function insertItem(trx: Trx, listId: string, list: SelectionListSeedListS
   return itemId;
 }
 
-async function createList(trx: Trx, req: SeedApplyRequest, ctx: EventContext, spec: SelectionListSeedListSpecV1): Promise<SeedListResult> {
+async function createList(
+  trx: Trx,
+  req: SeedApplyRequest,
+  ctx: EventContext,
+  spec: SelectionListSeedListSpecV1,
+  visibility: Visibility,
+): Promise<SeedListResult> {
   const listId = mintId('selectionList');
   await trx('selection_lists').insert({
     id: listId,
@@ -763,6 +883,7 @@ async function createList(trx: Trx, req: SeedApplyRequest, ctx: EventContext, sp
     status: 'active',
     created_by: SEED_PRINCIPAL,
     revision: 1,
+    visibility,
     seed_source: req.source.app,
     seed_key: req.pack.key,
     seed_list_key: spec.key,

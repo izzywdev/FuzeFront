@@ -22,6 +22,7 @@ import { RetryBudget } from '../src/events/retryBudget';
 import { _setAuthzClientForTesting, makeNoOpProxy } from '../src/middleware/authz';
 import { _setGrantTokenProviderForTesting } from '../src/lib/machineIdentity';
 import { ownerlessListsTotal, grantCleanupFailedTotal } from '../src/lib/metrics';
+import { permitKey } from './helpers/ids';
 
 const ORG_A = fromUuid('organization', '0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7a01');
 const ORG_B = fromUuid('organization', '0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7a02');
@@ -110,8 +111,8 @@ dbDescribe('identity.user.deleted -> list grants (real Postgres)', () => {
     await handleUserDeleted(event());
 
     expect(revoke).toHaveBeenCalledTimes(2);
-    expect(revoke).toHaveBeenCalledWith({ subject: GONE, tenant: ORG_A, role: 'list-viewer', resource: res(a) }, MACHINE);
-    expect(revoke).toHaveBeenCalledWith({ subject: GONE, tenant: ORG_B, role: 'list-editor', resource: res(b) }, MACHINE);
+    expect(revoke).toHaveBeenCalledWith({ subject: permitKey(GONE), tenant: permitKey(ORG_A), role: 'list-viewer', resource: res(a) }, MACHINE);
+    expect(revoke).toHaveBeenCalledWith({ subject: permitKey(GONE), tenant: permitKey(ORG_B), role: 'list-editor', resource: res(b) }, MACHINE);
     expect(await mirror(a)).toEqual([expect.objectContaining({ user_id: PEER, role: 'list-owner' })]);
     expect(await mirror(b)).toEqual([expect.objectContaining({ user_id: PEER, role: 'list-owner' })]);
 
@@ -139,12 +140,12 @@ dbDescribe('identity.user.deleted -> list grants (real Postgres)', () => {
   it('matches a mirror row stored under EITHER rendering of the user id and revokes under the STORED subject', async () => {
     const a = await list(ORG_A, [[GONE_UUID, 'list-viewer'], [PEER, 'list-owner']]); // the bare-UUID rendering
     await handleUserDeleted(event(GONE_UUID));
-    expect(revoke).toHaveBeenCalledWith({ subject: GONE_UUID, tenant: ORG_A, role: 'list-viewer', resource: res(a) }, MACHINE);
+    expect(revoke).toHaveBeenCalledWith({ subject: permitKey(GONE_UUID), tenant: permitKey(ORG_A), role: 'list-viewer', resource: res(a) }, MACHINE);
     expect(await mirror(a)).toHaveLength(1);
 
     const b = await list(ORG_A, [[GONE, 'list-viewer'], [PEER, 'list-owner']]); // the TypeID rendering
     await handleUserDeleted(event(GONE_UUID));
-    expect(revoke).toHaveBeenCalledWith({ subject: GONE, tenant: ORG_A, role: 'list-viewer', resource: res(b) }, MACHINE);
+    expect(revoke).toHaveBeenCalledWith({ subject: permitKey(GONE), tenant: permitKey(ORG_A), role: 'list-viewer', resource: res(b) }, MACHINE);
   });
 
   it('a previously revoked mirror row is simply removed: no Security API call, no event', async () => {
@@ -184,7 +185,7 @@ dbDescribe('identity.user.deleted -> list grants (real Postgres)', () => {
 
       expect(revoke).toHaveBeenCalledTimes(1);
       expect(bulkCheck).toHaveBeenCalledWith(
-        [{ subject: PEER, tenant: ORG_A, resource: res(a), action: 'manage_access' }],
+        [{ subject: permitKey(PEER), tenant: permitKey(ORG_A), resource: res(a), action: 'manage_access' }],
         MACHINE,
       );
       expect(await mirror(a)).toEqual([expect.objectContaining({ user_id: PEER })]);
@@ -197,7 +198,7 @@ dbDescribe('identity.user.deleted -> list grants (real Postgres)', () => {
 
       await handleUserDeleted(event());
 
-      expect(revoke).toHaveBeenCalledWith({ subject: GONE, tenant: ORG_A, role: 'list-owner', resource: res(a) }, MACHINE);
+      expect(revoke).toHaveBeenCalledWith({ subject: permitKey(GONE), tenant: permitKey(ORG_A), role: 'list-owner', resource: res(a) }, MACHINE);
       expect((await mirror(a)).map((r: any) => r.user_id)).toEqual([PEER]);
       expect(await metric(ownerlessListsTotal, { cause: 'user_deleted' })).toBe(flagged + 1);
     });

@@ -53,6 +53,9 @@ jest.mock('../src/flags', () => {
         }
       });
     },
+    // The shared-lists release flag (4.1.0) is pinned OFF in this suite: it pins the 4.0.0 behaviour. The
+    // ON behaviour (common lists, fork redirect) is pinned in resolve.shared-lists.test.ts.
+    isSharedListsEnabled: jest.fn(async () => false),
     FLAGS: { SELECTION_LISTS_SERVICE: 'fuzefront.selection-lists.service' },
   };
 });

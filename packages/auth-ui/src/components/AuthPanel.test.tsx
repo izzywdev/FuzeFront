@@ -49,21 +49,22 @@ describe('AuthPanel', () => {
     await waitFor(() =>
       expect(transport.login).toHaveBeenCalledWith({ email: 'a@b.com', password: 'hunter2' }),
     )
-    expect(onAuthenticated).toHaveBeenCalledWith(AUTHENTICATED)
+    expect(onAuthenticated).toHaveBeenCalledWith(AUTHENTICATED, { mode: 'signin', email: 'a@b.com' })
   })
 
-  it('submits signup with first/last name only in signup mode', async () => {
+  it('submits signup with the single optional full name only in signup mode (flag OFF = current form)', async () => {
     const transport = makeTransport()
     const onAuthenticated = vi.fn()
     render(
       <AuthPanel variant="compact" mode="signup" transport={transport} onAuthenticated={onAuthenticated} />,
     )
 
-    expect(screen.getByLabelText('First name')).toBeInTheDocument()
-    expect(screen.getByLabelText('Last name')).toBeInTheDocument()
+    // ONE name input (autoComplete=name); first/last are gone from the contract (1.0.0).
+    expect(screen.getByLabelText('Full name')).toHaveAttribute('autocomplete', 'name')
+    expect(screen.queryByLabelText('First name')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Last name')).not.toBeInTheDocument()
 
-    fireEvent.change(screen.getByLabelText('First name'), { target: { value: 'Ada' } })
-    fireEvent.change(screen.getByLabelText('Last name'), { target: { value: 'Lovelace' } })
+    fireEvent.change(screen.getByLabelText('Full name'), { target: { value: 'Ada Lovelace' } })
     fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'ada@ex.com' } })
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'S3cret!!!!' } })
     fireEvent.click(screen.getByRole('button', { name: 'Create account' }))
@@ -72,17 +73,26 @@ describe('AuthPanel', () => {
       expect(transport.signup).toHaveBeenCalledWith({
         email: 'ada@ex.com',
         password: 'S3cret!!!!',
-        firstName: 'Ada',
-        lastName: 'Lovelace',
+        name: 'Ada Lovelace',
       }),
     )
-    expect(onAuthenticated).toHaveBeenCalledWith(AUTHENTICATED)
+    expect(onAuthenticated).toHaveBeenCalledWith(AUTHENTICATED, { mode: 'signup', email: 'ada@ex.com' })
   })
 
-  it('does not render first/last name fields in sign-in mode', () => {
+  it('does not render the name field in sign-in mode', () => {
     render(<AuthPanel variant="compact" transport={makeTransport()} onAuthenticated={vi.fn()} />)
-    expect(screen.queryByLabelText('First name')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Last name')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Full name')).not.toBeInTheDocument()
+  })
+
+  it('omits an empty name from the signup request rather than sending ""', async () => {
+    const transport = makeTransport()
+    render(<AuthPanel variant="compact" mode="signup" transport={transport} onAuthenticated={vi.fn()} />)
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'ada@ex.com' } })
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'S3cret!!!!' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create account' }))
+    await waitFor(() =>
+      expect(transport.signup).toHaveBeenCalledWith({ email: 'ada@ex.com', password: 'S3cret!!!!', name: undefined }),
+    )
   })
 
   it('surfaces an mfa_required result via onMfaRequired and a notice, without calling onAuthenticated', async () => {
@@ -173,11 +183,11 @@ describe('AuthPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Sign up' }))
     expect(screen.getByRole('button', { name: 'Create account' })).toBeInTheDocument()
-    expect(screen.getByLabelText('First name')).toBeInTheDocument()
+    expect(screen.getByLabelText('Full name')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Back to sign in' }))
     expect(screen.getByRole('button', { name: 'Sign In' })).toBeInTheDocument()
-    expect(screen.queryByLabelText('First name')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Full name')).not.toBeInTheDocument()
   })
 
   it('shows per-action pending labels while a submit is in flight', async () => {
@@ -264,5 +274,95 @@ describe('AuthPanel', () => {
       />,
     )
     expect(screen.getByRole('button', { name: 'Enter' })).toBeInTheDocument()
+  })
+
+  describe('Forgot password? link (fuzefront.auth.experience)', () => {
+    it("is absent by default - flag OFF is today's panel", () => {
+      render(<AuthPanel variant="compact" transport={makeTransport()} onAuthenticated={vi.fn()} />)
+      expect(screen.queryByRole('link', { name: /forgot password/i })).not.toBeInTheDocument()
+    })
+
+    it('renders in sign-in mode when forgotPasswordHref is set, and calls the SPA handler', () => {
+      const onForgot = vi.fn()
+      render(
+        <AuthPanel
+          variant="compact"
+          transport={makeTransport()}
+          onAuthenticated={vi.fn()}
+          forgotPasswordHref="/reset"
+          onForgotPassword={onForgot}
+        />,
+      )
+      const link = screen.getByRole('link', { name: /forgot password/i })
+      expect(link).toHaveAttribute('href', '/reset')
+      fireEvent.click(link)
+      expect(onForgot).toHaveBeenCalled()
+    })
+
+    it('is hidden in sign-up mode', () => {
+      render(
+        <AuthPanel
+          variant="compact"
+          mode="signup"
+          transport={makeTransport()}
+          onAuthenticated={vi.fn()}
+          forgotPasswordHref="/reset"
+        />,
+      )
+      expect(screen.queryByRole('link', { name: /forgot password/i })).not.toBeInTheDocument()
+    })
+  })
+})
+
+describe('AuthPanel — fuzefront.auth.experience (both flag states)', () => {
+  it('flag OFF (default): signup renders the CURRENT form — no checklist, no confirm field, no experience hooks', () => {
+    const { container } = render(
+      <AuthPanel variant="compact" mode="signup" transport={makeTransport()} onAuthenticated={vi.fn()} />,
+    )
+    expect(screen.getByRole('button', { name: 'Create account' })).toBeEnabled()
+    expect(container.querySelector('[data-form="signup"]')).toBeNull()
+    expect(container.querySelector('[data-pwreq]')).toBeNull()
+    expect(screen.queryByLabelText('Confirm password')).not.toBeInTheDocument()
+  })
+
+  it('flag ON: signup renders SignUpFlow (frame hooks) and sign-in is untouched', async () => {
+    const transport = makeTransport({ getAuthMethods: vi.fn().mockResolvedValue(baseMethods({ social: ['google'] })), startSocial: vi.fn() })
+    const { container } = render(
+      <AuthPanel variant="compact" mode="signup" experience transport={transport} onAuthenticated={vi.fn()} />,
+    )
+    expect(container.querySelector('[data-frame="01-signup"]')).not.toBeNull()
+    expect(container.querySelector('[data-form="signup"]')).not.toBeNull()
+    expect(container.querySelector('[data-field="full-name"]')).toHaveAttribute('autocomplete', 'name')
+    expect(container.querySelector('[data-pwreq]')).not.toBeNull()
+    // submit starts disabled until the checklist passes (empty/initial state)
+    expect(container.querySelector('[data-action="submit"]')).toBeDisabled()
+    await waitFor(() => expect(container.querySelector('[data-action="social-google"]')).not.toBeNull())
+  })
+
+  it('flag ON: "Sign in" in the signup experience switches the panel to sign-in mode', async () => {
+    render(<AuthPanel variant="compact" mode="signup" experience transport={makeTransport()} onAuthenticated={vi.fn()} />)
+    fireEvent.click(screen.getByRole('link', { name: 'Sign in' }))
+    expect(await screen.findByRole('button', { name: 'Sign In' })).toBeInTheDocument()
+    expect(document.querySelector('[data-form="signup"]')).toBeNull()
+  })
+
+  it('flag ON: an mfa_required sign-in renders the frame mfa-required handoff (title + text)', async () => {
+    const transport = makeTransport({ login: vi.fn().mockResolvedValue(MFA_CHALLENGE) })
+    render(<AuthPanel variant="compact" experience transport={transport} onAuthenticated={vi.fn()} />)
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'a@b.com' } })
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'hunter2' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Sign In' }))
+    const note = await screen.findByRole('alert')
+    expect(note).toHaveAttribute('data-state', 'mfa-required')
+    expect(note).toHaveTextContent('One more step.')
+  })
+
+  it('flag OFF: an mfa_required sign-in keeps the current notice copy', async () => {
+    const transport = makeTransport({ login: vi.fn().mockResolvedValue(MFA_CHALLENGE) })
+    render(<AuthPanel variant="compact" transport={transport} onAuthenticated={vi.fn()} />)
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'a@b.com' } })
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'hunter2' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Sign In' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/additional verification/i)
   })
 })

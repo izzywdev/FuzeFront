@@ -1,9 +1,20 @@
+import type { ReactNode } from 'react'
 import { SegmentedControl } from '@fuzefront/design-system'
 import { useIdentityI18n } from '../../../i18n/IdentityI18nProvider'
 import type { InvitationChannel, MemberType } from '../../../api/invitationsClient'
 import { ChannelGlyph } from '../shared/InviteTags'
 
 export type InviteeKind = 'existing' | 'external'
+
+/** A segment label with a leading decorative glyph (the DS SegmentedControl takes a label node only). */
+function withGlyph(glyph: ReactNode, text: string): ReactNode {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+      {glyph}
+      {text}
+    </span>
+  )
+}
 
 /** Existing account-holder vs external person. `[data-field="invitee-kind"]`. */
 export function InviteeKindToggle({
@@ -23,7 +34,7 @@ export function InviteeKindToggle({
       data-field="invitee-kind"
       ariaLabel={m.kindLabel}
       value={value}
-      onChange={onChange}
+      onChange={(v) => onChange(v as InviteeKind)}
       options={[
         { value: 'existing', label: m.kindExisting, disabled: existingDisabled },
         { value: 'external', label: m.kindExternal },
@@ -47,10 +58,10 @@ export function InviteChannelToggle({
       data-field="channel"
       ariaLabel={m.channelLabel}
       value={value}
-      onChange={onChange}
+      onChange={(v) => onChange(v as InvitationChannel)}
       options={[
-        { value: 'email', label: m.channelEmail, icon: <ChannelGlyph channel="email" /> },
-        { value: 'whatsapp', label: m.channelWhatsapp, icon: <ChannelGlyph channel="whatsapp" /> },
+        { value: 'email', label: withGlyph(<ChannelGlyph channel="email" />, m.channelEmail) },
+        { value: 'whatsapp', label: withGlyph(<ChannelGlyph channel="whatsapp" />, m.channelWhatsapp) },
       ]}
     />
   )
@@ -81,8 +92,9 @@ export function MemberTypeToggle({
       data-field="member-type"
       ariaLabel={m.memberTypeLabel}
       value={value}
-      onChange={onChange}
+      onChange={(v) => onChange?.(v as MemberType)}
       disabled={locked}
+      aria-disabled={locked || undefined}
       options={locked ? all.filter((o) => o.value === value) : all}
     />
   )

@@ -22,6 +22,13 @@ jest.mock('../src/db', () => ({
   },
 }));
 
+// The platform-org guard has its own real-Postgres suite (shared-lists.platform-org-guard.db.test.ts); this suite
+// pins the cascade SQL shape of an ordinary org, so the guard is stubbed to "not the platform org".
+jest.mock('../src/events/platformGuard', () => ({
+  isProtectedPlatformOrg: async () => false,
+  snapshotBreaksPlatformOrg: () => false,
+}));
+
 import { fromUuid } from '@izzywdev/fuzefront-identity';
 import { handleOrgDeleted } from '../src/events/org-deleted.handler';
 import { handleUserDeleted } from '../src/events/user-deleted.handler';
@@ -90,6 +97,7 @@ describe('handleOrgDeleted — hard cascade', () => {
       'delete:selection_lists',
       'delete:selection_list_org_quota',
       'delete:selection_list_seed_ledger',
+      'delete:selection_list_rollout_marks',
       'tx:commit',
     ]);
   });
@@ -114,7 +122,8 @@ describe('handleOrgDeleted — hard cascade', () => {
   it('is idempotent: an org with no lists is a no-op except clearing its quota row; no list tables touched', async () => {
     state.rec = makeRecordingDb({ pluck: { 'selection_lists.id': [] } });
     await expect(handleOrgDeleted(orgEvent('hard'))).resolves.toBeUndefined();
-    expect(state.rec.ops).toEqual(['tx:begin', 'pluck:selection_lists.id', 'delete:selection_list_org_quota', 'delete:selection_list_seed_ledger', 'tx:commit']);
+    expect(state.rec.ops).toEqual(['tx:begin', 'pluck:selection_lists.id', 'delete:selection_list_org_quota', 'delete:selection_list_seed_ledger',
+      'delete:selection_list_rollout_marks', 'tx:commit']);
     // Replaying the same event again is equally harmless.
     state.rec = makeRecordingDb({ pluck: { 'selection_lists.id': [] } });
     await expect(handleOrgDeleted(orgEvent('hard'))).resolves.toBeUndefined();

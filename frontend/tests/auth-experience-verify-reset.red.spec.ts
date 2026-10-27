@@ -38,14 +38,23 @@ const json = (route: Route, status: number, body?: unknown) =>
   })
 
 /** Unauthenticated boot: the session probe answers 401, flag forced ON/OFF pre-auth. */
-async function boot(page: Page, flag: boolean) {
+async function boot(page: Page, flag: boolean, signedIn = false) {
   await page.addInitScript(on => {
-    ;(window as unknown as { __FF_AUTH_EXPERIENCE__?: boolean }).__FF_AUTH_EXPERIENCE__ = on
+    const w = window as unknown as { __FF_AUTH_EXPERIENCE__?: boolean }
+    w.__FF_AUTH_EXPERIENCE__ = on
   }, flag)
+  if (signedIn) {
+    // A bare legacy `authToken` is migrated into the account vault on boot.
+    await page.addInitScript(() => localStorage.setItem('authToken', 'tok_session'))
+  }
   await page.route(`${SEC}/session`, route =>
-    route.request().method() === 'GET'
-      ? json(route, 401, { error: 'no token', code: 'NO_TOKEN' })
-      : route.fallback(),
+    route.request().method() !== 'GET'
+      ? route.fallback()
+      : signedIn
+        ? json(route, 200, {
+            user: { id: 'u1', email: 'ada@lovelace.io', firstName: 'Ada', lastName: 'L', roles: [] },
+          })
+        : json(route, 401, { error: 'no token', code: 'NO_TOKEN' }),
   )
   await page.route(`${SEC}/methods`, route =>
     json(route, 200, {
@@ -61,7 +70,7 @@ async function boot(page: Page, flag: boolean) {
 // verify-email · 03-check-inbox  (/signup/verify)
 // ─────────────────────────────────────────────────────────────────────────────
 test.describe('verify-email — check inbox (frame 03-check-inbox)', () => {
-  test.beforeEach(async ({ page }) => boot(page, true))
+  test.beforeEach(async ({ page }) => boot(page, true, true))
 
   test('shows the target email and a disabled resend button during cooldown', async ({ page }) => {
     await page.goto('/signup/verify?email=ada%40lovelace.io', { waitUntil: 'domcontentloaded' })
@@ -91,21 +100,50 @@ test.describe('verify-email — check inbox (frame 03-check-inbox)', () => {
     await expect(resend).toHaveAttribute('data-state', 'cooldown')
   })
 
-  test('429 on resend surfaces a rate-limited message and keeps the button usable later', async ({ page }) => {
+  test('resend sends no address, and check-inbox offers Continue instead of an edit-address action', async ({ page }) => {
+    let body: unknown = 'unset'
+    await page.route(`${SEC}/verify/email/start`, route => {
+      body = route.request().postDataJSON()
+      return json(route, 202)
+    })
+    await page.clock.install()
+    await page.goto('/signup/verify?email=ada%40lovelace.io', { waitUntil: 'domcontentloaded' })
+    await expect(page.locator("[data-action='resend']")).toBeDisabled()
+    await expect(page.getByText(/go back and edit/i)).toHaveCount(0)
+    await expect(page.locator("[data-action='continue']")).toHaveAttribute('href', '/dashboard')
+    await page.clock.fastForward(61_000)
+    await page.locator("[data-action='resend']").click()
+    await expect.poll(() => body).toEqual({})
+  })
+
+  test('429 on resend surfaces a rate-limited message and keeps cooling down', async ({ page }) => {
     await page.route(`${SEC}/verify/email/start`, route =>
       json(route, 429, { error: 'Too many requests', code: 'RATE_LIMITED' }),
     )
     await page.clock.install()
     await page.goto('/signup/verify?email=ada%40lovelace.io', { waitUntil: 'domcontentloaded' })
+    const resend = page.locator("[data-action='resend']")
+    await expect(resend).toBeDisabled() // mounted and cooling down before time moves
     await page.clock.fastForward(61_000)
-    await page.locator("[data-action='resend']").click()
+    await resend.click()
     await expect(page.locator("[data-state='rate-limited']")).toBeVisible()
+    await expect(resend).toHaveAttribute('data-state', 'cooldown')
   })
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
 // verify-email · 04-verify-landing  (/verify/email?token=…)
 // ─────────────────────────────────────────────────────────────────────────────
+test.describe('verify-email — check inbox, signed out', () => {
+  test('no resend button, a sign-in link instead (resend needs the session)', async ({ page }) => {
+    await boot(page, true, false)
+    await page.goto('/signup/verify?email=ada%40lovelace.io', { waitUntil: 'domcontentloaded' })
+    await expect(page.locator("[data-frame='03-check-inbox']")).toBeVisible()
+    await expect(page.locator("[data-action='resend']")).toHaveCount(0)
+    await expect(page.locator("[data-action='sign-in-for-link']")).toBeVisible()
+  })
+})
+
 test.describe('verify-email — link landing (frame 04-verify-landing)', () => {
   test.beforeEach(async ({ page }) => boot(page, true))
 
@@ -125,15 +163,37 @@ test.describe('verify-email — link landing (frame 04-verify-landing)', () => {
   })
 
   for (const code of ['EXPIRED', 'INVALID_CODE']) {
-    test(`${code} → expired state offering a new link`, async ({ page }) => {
+    test(`${code} → expired state; signed-out users are sent to sign in, never an anonymous resend`, async ({ page }) => {
       await page.route(`${SEC}/verify/email/confirm`, route =>
         json(route, 400, { error: 'bad link', code }),
       )
       await page.goto('/verify/email?token=tok_old', { waitUntil: 'domcontentloaded' })
       await expect(page.locator("[data-state='expired']")).toBeVisible()
-      await expect(page.locator("[data-action='resend']")).toBeVisible()
+      await expect(page.locator("[data-action='resend']")).toHaveCount(0)
+      await expect(page.locator("[data-action='sign-in-for-link']")).toHaveAttribute(
+        'href',
+        '/login?next=/signup/verify',
+      )
     })
   }
+
+  test('the single-use token never reaches an API/telemetry request Referer', async ({ page }) => {
+    const referers: string[] = []
+    // App-issued calls only (API + telemetry). The HTML's own static asset
+    // fetches (module scripts, fonts) are same-origin and fire before any JS can
+    // run, so no client code can scrub their Referer; they never leave the origin.
+    page.on('request', req => {
+      const r = req.headers()['referer']
+      if (r && /\/(v1|api)\//.test(new URL(req.url()).pathname)) referers.push(r)
+    })
+    await page.route(`${SEC}/verify/email/confirm`, route =>
+      json(route, 200, { emailVerified: true, phoneVerified: false }),
+    )
+    await page.goto('/verify/email?token=tok_secret', { waitUntil: 'domcontentloaded' })
+    await expect(page.locator("[data-state='verified']")).toBeVisible()
+    expect(page.url()).not.toContain('tok_secret')
+    expect(referers.filter(r => r.includes('tok_secret'))).toEqual([])
+  })
 
   test('a missing token lands on the expired/invalid state without calling the API', async ({ page }) => {
     let called = false
@@ -250,9 +310,21 @@ test.describe('password-reset — confirm (frame 05-password-reset, steps confir
     expect(body).toEqual({ token: 'rst_123', newPassword: STRONG })
   })
 
-  test('an expired/used token (400) shows confirm-expired; restart returns to the request form', async ({ page }) => {
+  test('a password-policy rejection keeps the form with an inline error (not "expired")', async ({ page }) => {
     await page.route(`${SEC}/session/password/reset-confirm`, route =>
-      json(route, 400, { error: 'Password reset failed', code: 'MALFORMED' }),
+      json(route, 422, { error: 'weak', code: 'PASSWORD_POLICY' }),
+    )
+    await page.goto('/reset?token=rst_123', { waitUntil: 'domcontentloaded' })
+    await page.locator(`${confirmForm} input[name='newPassword']`).fill(STRONG)
+    await page.locator(`${confirmForm} input[name='confirm']`).fill(STRONG)
+    await page.locator(`${confirmForm} [data-action='submit']`).click()
+    await expect(page.getByText(/does not meet the password policy/i)).toBeVisible()
+    await expect(page.locator("[data-step='confirm-expired']")).toHaveCount(0)
+  })
+
+  test('an expired/used token (400 TOKEN_EXPIRED) shows confirm-expired; restart returns to the request form', async ({ page }) => {
+    await page.route(`${SEC}/session/password/reset-confirm`, route =>
+      json(route, 400, { error: 'Token expired', code: 'TOKEN_EXPIRED' }),
     )
     await page.goto('/reset?token=rst_used', { waitUntil: 'domcontentloaded' })
     await page.locator(`${confirmForm} input[name='newPassword']`).fill(STRONG)

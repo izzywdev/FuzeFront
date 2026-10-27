@@ -43,9 +43,29 @@ export interface paths {
         put?: never;
         /**
          * Exchange an opaque broker code for a session
-         * @description Exchanges the FuzeFront-minted opaque `code` issued by `GET /v1/security/social/callback` for a session. The code is single-use and short-lived. Returns a `SessionResult`: an authenticated session, or an `mfa_required` challenge when the account requires step-up. Fail-closed on an unknown/expired code.
+         * @description Exchanges the FuzeFront-minted opaque `code` issued by `GET /v1/security/social/callback` for a session. The code is single-use and short-lived. Returns a `SessionResult`: an authenticated session, or an `mfa_required` challenge when the account has an active MFA factor. Social sign-in never bypasses MFA: no session is minted until the challenge is completed via `POST /mfa/verify`, and the challenge is bound to the user who signed in. Fail-closed on an unknown/expired or already-redeemed code.
          */
         post: operations["exchangeSessionCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/session/workspaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List active workspaces available to the current session
+         * @description Returns canonical personal and organization workspace choices backed by the caller's direct active memberships. Discovery is available before a tenant is selected; callers must still prove the chosen workspace with GET /session?tenant= before using tenant-scoped APIs.
+         */
+        get: operations["listSessionWorkspaces"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -83,7 +103,7 @@ export interface paths {
         put?: never;
         /**
          * Confirm a password reset with a token (unauthenticated)
-         * @description Completes password reset by presenting the single-use `token` from the reset message together with a `newPassword`. Fail-closed on an unknown/expired/consumed token or a password that fails policy.
+         * @description Completes password reset by presenting the single-use `token` from the reset message together with a `newPassword`. Fail-closed: an expired/already-used token is `400 TOKEN_EXPIRED`, an unknown token is `400 TOKEN_INVALID`, and a password rejected by the identity provider is `422 PASSWORD_POLICY` (the token is NOT consumed, so the caller may retry with a compliant password).
          */
         post: operations["confirmPasswordReset"];
         delete?: never;
@@ -106,6 +126,26 @@ export interface paths {
          * @description Adds a password sign-in method to the authenticated account (e.g. an account created via social login that has no password yet). Returns 409 if a password already exists — use the reset flow to change an existing one. Fail-closed on a password that fails policy.
          */
         post: operations["setPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/password/change": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change the password of an account that already has one
+         * @description Verifies `currentPassword`, applies the password policy to `newPassword`, sets it, and revokes every OTHER session of the account (the calling session survives), matching the reset-confirm posture. Accounts with no password get `409 NO_PASSWORD` — send the user to `POST /v1/security/password` (set-first). Failed attempts are rate-limited (`429 RATE_LIMITED`).
+         */
+        post: operations["changePassword"];
         delete?: never;
         options?: never;
         head?: never;
@@ -151,6 +191,34 @@ export interface paths {
          * @description Revokes a single active session belonging to the authenticated user. Idempotent — revoking an absent/already-revoked session still returns 204. A user may revoke their current session (equivalent to logout).
          */
         delete: operations["revokeSession"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/sessions/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Validate that a session is still active (service-to-service)
+         * @description Answers one question for a downstream service: *has this session been revoked or expired?* A FuzeFront session token stays cryptographically valid until its `exp` (24h) even after the user logs out or revokes the device, and only the session store knows. A service that has already verified a session token's signature calls this with the token's `userId` and `sessionId` claims to close that gap.
+         *
+         *     **Caller.** A machine (service-to-service) caller only: the `Authorization` bearer MUST be a `fuze-workload` token carrying the `sessions:validate` scope (see `@izzywdev/fuzefront-service-auth`). A user session token is not accepted here, so a browser can never use this endpoint to probe sessions.
+         *
+         *     **Answer.** `{ active: true }` only when the session exists, has not expired, AND belongs to the supplied `userId`. Every other case, an unknown id, a revoked or expired session, or a session owned by a different user, is the same `200 { active: false }`, with no reason given, so the endpoint cannot be used to learn which of the two identifiers was wrong. This operation does NOT verify any token signature; the caller must already have done that.
+         *
+         *     **Tenant.** Every tenant's sessions are signed with the same secret, so a signature alone cannot tell two tenants' tokens apart; the token's `tid` claim plus the tenant serving the request is what separates them. Send the token's `tid` as `tenantId`. When multi-tenant identity is enabled a session is active only for the tenant that minted it: the answer is `{ active: false }` unless `tenantId` equals the tenant that serves this request (selected by the request `Host`, so call the host of the tenant your service belongs to). A token with no `tid` is active only in single-tenant mode, where `tenantId` may be omitted.
+         *
+         *     **Fail-closed.** A store outage is `503`, never `{ active: true }` and never `{ active: false }`. A consumer MUST treat `503` as a retryable service condition, not as a revoked session: refusing every user because the store blinked is an outage, not a revocation. A consumer MUST treat anything other than a well-formed `{ active: true }` as inactive.
+         */
+        post: operations["validateSession"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -280,6 +348,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/security/signup/email-available": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inline signup email-availability check
+         * @description Public, unauthenticated inline check for the signup form: is this email free to register? Backs the debounced "available / already registered" adornment on the create-account field. Consults the SAME source of truth `POST /v1/security/signup` uses to reject a duplicate, so the answer cannot disagree with signup. The email is normalized (trimmed + lowercased) server-side before checking.
+         *
+         *     **Fail-open (client contract).** This endpoint is a UX convenience, never a gate: the client MUST treat any error (timeout, 4xx, 5xx, network) as "unknown/available" and NEVER block submit on it. Authoritative duplicate-rejection happens at `POST /v1/security/signup` (`409`).
+         *
+         *     **Enumeration posture.** It intentionally reveals whether an address is registered (the product requires inline feedback), so the enumeration control is PER-IP RATE-LIMITING so it cannot be used as a bulk account-enumeration oracle beyond the signup UX. The backend enforces the limit; this contract specifies the requirement. Exceeding it returns `429`. It is NOT captcha-gated: the check fires per keystroke on a debounce and Turnstile tokens are single-use, so a captcha cannot gate a repeated, interactive check. Captcha applies only to the authoritative `POST /v1/security/signup` action.
+         */
+        get: operations["getSignupEmailAvailable"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/security/methods": {
         parameters: {
             query?: never;
@@ -311,7 +403,7 @@ export interface paths {
          * Check whether an email is available to register
          * @description Public, unauthenticated inline check for the signup form: is this email free to register? Consults the SAME source of truth `signup` uses to reject a duplicate, so the answer cannot disagree with signup. The email is normalized (trimmed + lowercased) before checking and echoed back.
          *
-         *     This endpoint intentionally reveals whether an address is registered (product requires inline "available / already registered" feedback), so it is per-IP rate-limited (20/min/IP) as the deliberate mitigation for the resulting enumeration exposure. Exceeding the limit returns 429.
+         *     This endpoint intentionally reveals whether an address is registered (product requires inline "available / already registered" feedback), so the enumeration control is per-IP rate-limiting (20/min/IP) as the deliberate mitigation for the resulting enumeration exposure. Exceeding the limit returns 429. It is NOT captcha-gated: the check fires per keystroke on a debounce and Turnstile tokens are single-use, so a captcha cannot gate it; captcha applies only to the authoritative `signup` action.
          */
         get: operations["getEmailAvailable"];
         put?: never;
@@ -789,7 +881,7 @@ export interface paths {
         post?: never;
         /**
          * Remove an MFA factor
-         * @description Removes an enrolled factor. Idempotent.
+         * @description Removes an enrolled factor. Idempotent. Refused with `409 LAST_FACTOR` when it is the user's last active factor.
          */
         delete: operations["removeMfaFactor"];
         options?: never;
@@ -804,11 +896,15 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Get the current user's recovery-code status
+         * @description Returns how many of the caller's current recovery codes are still unused, and the size of the set they came from. Never returns the codes themselves (they are stored hashed and shown once, at generation). A user who has never generated codes gets `{ remaining: 0, total: 0 }`. A code redeemed at sign-in (`POST /mfa/verify` with `recoveryCode`) decrements `remaining`; regenerating replaces the set and resets both counts.
+         */
+        get: operations["getRecoveryCodesStatus"];
         put?: never;
         /**
          * (Re)generate one-time recovery codes
-         * @description Generates a fresh set of single-use recovery codes, invalidating any prior set. The codes are returned ONCE and never retrievable again.
+         * @description Generates a fresh set of single-use recovery codes, invalidating any prior set. The codes are returned ONCE and never retrievable again. Each code is redeemable exactly once at sign-in step-up via `POST /mfa/verify` with `{ challengeId, recoveryCode }`.
          */
         post: operations["regenerateRecoveryCodes"];
         delete?: never;
@@ -848,7 +944,12 @@ export interface paths {
         put?: never;
         /**
          * Verify an MFA challenge and complete login
-         * @description Verifies the one-time `code` for a `challengeId`/`factorId`. On success returns the authenticated `LoginResponse`. Fail-closed on bad/expired code.
+         * @description Completes login step-up for a `challengeId` (from an `mfa_required` `SessionResult`) by ONE of two proofs, selected by body shape (`MfaVerifyRequest` is a `oneOf`):
+         *
+         *     - **Factor code** — `{ challengeId, factorId, code }`: the one-time code for an enrolled factor (after `POST /mfa/challenge` for SMS/email).
+         *     - **Recovery code** — `{ challengeId, recoveryCode }`: one of the user's single-use recovery codes (`POST /mfa/recovery-codes`). No `POST /mfa/challenge` call is needed first. Only offer this when the challenge advertised `recoveryAvailable: true`. The code is consumed atomically with the successful verification: a code can satisfy at most one challenge, ever, even under concurrent submissions; a failed attempt consumes nothing. On success `GET /mfa/recovery-codes` reports one fewer `remaining`.
+         *
+         *     On success either proof returns the same authenticated `LoginResponse` and the challenge is consumed. Fail-closed: an unknown/expired challenge is `401 NOT_ACTIVE` (unchanged); a wrong factor code is `401`; a wrong, already-used, or superseded (regenerated) recovery code is `401 RECOVERY_CODE_INVALID` — the three recovery failure causes are deliberately indistinguishable. Both proofs share ONE failed-attempt limiter (per IP and per challenge), so alternating between them does not buy extra guesses; exceeding it is `429 RATE_LIMITED`.
          */
         post: operations["verifyMfa"];
         delete?: never;
@@ -868,7 +969,7 @@ export interface paths {
         put?: never;
         /**
          * Send an email verification link/code
-         * @description Sends a verification link/code. Targets the current user's email when authenticated, or a signup-scoped address supplied in the body.
+         * @description Sends a verification link/code. When authenticated, the target is ALWAYS the current user's own email; a body `email` is ignored. When unauthenticated, the account is resolved server-side from the body `email`; an unknown address is a silent no-op. Always 202 for an unauthenticated caller (no account enumeration).
          */
         post: operations["startEmailVerification"];
         delete?: never;
@@ -888,7 +989,7 @@ export interface paths {
         put?: never;
         /**
          * Confirm email ownership
-         * @description Confirms via `{ token }` (link) or `{ code }` (OTP). Fail-closed on invalid/expired.
+         * @description Confirms via `{ token }` (link) or `{ code }` (OTP). Fail-closed: an expired/already-used challenge is `400 TOKEN_EXPIRED`; an unknown challenge (or one that no longer matches the account's email) is `400 TOKEN_INVALID`. Never reports `emailVerified: true` unless a user was actually updated.
          */
         post: operations["confirmEmailVerification"];
         delete?: never;
@@ -928,7 +1029,7 @@ export interface paths {
         put?: never;
         /**
          * Confirm phone ownership
-         * @description Confirms `{ phone, code }`. Fail-closed on invalid/expired code.
+         * @description Confirms `{ phone, code }` for the **calling session's own account only**. Requires a bearer session; the number is marked verified solely for the account resolved from the token, and only when `phone` is that account's current number (set by `startPhoneVerification`). Other accounts holding the same number are never affected. Fail-closed on invalid/expired code or a number that is not the caller's.
          */
         post: operations["confirmPhoneVerification"];
         delete?: never;
@@ -1259,7 +1360,7 @@ export interface components {
             sessionId?: string;
             user: components["schemas"]["User"];
         };
-        /** @description MFA-required variant of `SessionResult`. The client picks a factor and completes step-up via `/mfa/challenge` + `/mfa/verify`, referencing `challengeId`. */
+        /** @description MFA-required variant of `SessionResult`. The client picks a factor and completes step-up via `/mfa/challenge` + `/mfa/verify`, referencing `challengeId` — or, when `recoveryAvailable` is true, redeems a recovery code via `/mfa/verify` directly. */
         MfaRequiredChallenge: {
             /**
              * @description discriminator enum property added by openapi-typescript
@@ -1268,13 +1369,17 @@ export interface components {
             status: "mfa_required";
             challengeId: string;
             factors: components["schemas"]["MfaFactorRef"][];
+            /** @description True when the user holds at least one unused recovery code, so `POST /mfa/verify` with `recoveryCode` can succeed. Offer the "use a recovery code" choice ONLY when this is `true`; treat `false` or ABSENT (a server predating contract 1.4.0) as not available (fail-closed). A snapshot at challenge time: a code used or regenerated elsewhere afterwards is still rejected with `401 RECOVERY_CODE_INVALID`. Carries no count, so the pre-auth response leaks nothing beyond "has codes". */
+            recoveryAvailable?: boolean;
         };
         SignupRequest: {
             /** Format: email */
             email: string;
             password: string;
-            firstName?: string;
-            lastName?: string;
+            /** @description Optional display name. Maps 1:1 to the identity store's single `name` field (i18n-safe), REPLACING the former `firstName`/`lastName` split — many names do not decompose into given/family parts. A client that still sends `firstName`/`lastName` is rejected (`additionalProperties: false`): this is the breaking change behind the 1.0.0 major bump. */
+            name?: string;
+            /** @description Cloudflare Turnstile token for server-side (anti-abuse) captcha verification. REQUIRED when `GET /v1/security/methods` reports `AuthMethods.captcha` (captcha enabled); omitted when captcha is disabled. The condition depends on SERVER configuration (`AuthMethods.captcha`), not on another field of this request body, so it cannot be expressed as a static JSON-Schema constraint here and is enforced server-side (fail-closed: a missing/invalid token when captcha is enabled rejects the signup). `turnstile`/`turnstileToken` is a DELIBERATE, approved exception to the vendor-name rule: a captcha is a browser widget the client must load with the vendor's own script + `siteKey`, so — unlike the hidden IDENTITY provider — the captcha vendor is necessarily consumer-visible. */
+            turnstileToken?: string;
             /** @description Optional tenant/organization name to provision on signup. */
             tenantName?: string;
             /** @description Optional single-use invitation bind token (from the `202` accept response, `InvitationEnrollResponse.bindToken`). When present, the server verifies the signup identity matches the invited channel identity, then auto-binds the invited membership (with its `memberType`/`role`) as part of signup — redeeming the invite without a second round-trip. Mismatch or an expired token fails signup-bind closed (the account may still be created; the bind is rejected). */
@@ -1319,6 +1424,17 @@ export interface components {
             identity: components["schemas"]["Identity"];
             user: components["schemas"]["User"];
         };
+        /** @description A canonical active workspace the session identity may select. */
+        SessionWorkspace: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** @enum {string} */
+            type: "personal" | "organization";
+        };
+        SessionWorkspaceList: {
+            workspaces: components["schemas"]["SessionWorkspace"][];
+        };
         /** @description Result of the public inline email-availability check. `available` is the negation of "an account already exists"; `email` is the normalized (trimmed + lowercased) address that was actually checked. */
         EmailAvailability: {
             /** @description True when no account exists for the email and it is free to register. */
@@ -1328,6 +1444,11 @@ export interface components {
              * @description The normalized address that was checked (echoed back).
              */
             email: string;
+        };
+        /** @description Result of the inline signup email-availability check (`GET /v1/security/signup/email-available`). `available` is false when an account already exists for the normalized email. The client treats any error as "available" and never blocks submit on this (fail-open). */
+        SignupEmailAvailability: {
+            /** @description True when no account exists for the email and it is free to register. */
+            available: boolean;
         };
         /** @description Neutral auth capability descriptor. Replaces `oidcConfigured`. Lets the UI render affordances (password form, social buttons, MFA, contact verification) without knowing any provider. */
         AuthMethods: {
@@ -1344,6 +1465,29 @@ export interface components {
             verification: {
                 email: boolean;
                 sms: boolean;
+            };
+            /** @description Captcha capability for pre-auth forms (signup / sign-in). PRESENT only when captcha is enabled; ABSENT when disabled. When present, `SignupRequest.turnstileToken` is required and the client renders the captcha widget. `provider`/`siteKey` is a DELIBERATE, approved exception to the vendor-name rule: the captcha is a browser widget the client must load with the vendor's own script + public `siteKey`, so the captcha vendor is necessarily consumer-visible (unlike the hidden identity provider). */
+            captcha?: {
+                /**
+                 * @description Captcha widget provider. `turnstile` = Cloudflare Turnstile.
+                 * @enum {string}
+                 */
+                provider: "turnstile";
+                /** @description Public site key for the captcha widget. Safe to expose to the browser (it is designed to be public); the secret key lives only server-side for verification. */
+                siteKey: string;
+            };
+            /** @description Authoritative password policy so the client renders the REAL rules (strength meter + per-rule checklist) instead of a hard-coded, drift-prone client copy. Advisory for UX; the server independently enforces the same policy and is the source of truth (`422 PASSWORD_POLICY`). */
+            passwordPolicy?: {
+                /** @description Minimum password length (currently 12). */
+                minLength: number;
+                /** @description Requires at least one uppercase letter. */
+                requireUpper: boolean;
+                /** @description Requires at least one lowercase letter. */
+                requireLower: boolean;
+                /** @description Requires at least one digit. */
+                requireDigit: boolean;
+                /** @description Requires at least one symbol. */
+                requireSymbol: boolean;
             };
         };
         /**
@@ -1742,6 +1886,13 @@ export interface components {
         RecoveryCodes: {
             codes: string[];
         };
+        /** @description Counts for the caller's current recovery-code set. Never contains codes. */
+        RecoveryCodesStatus: {
+            /** @description Unused codes left in the current set. `0` means recovery is unavailable at sign-in. */
+            remaining: number;
+            /** @description Codes issued in the current set (`0` if none was ever generated). */
+            total: number;
+        };
         MfaChallengeRequest: {
             challengeId: string;
             factorId: string;
@@ -1752,16 +1903,26 @@ export interface components {
             /** @description True when an OTP was dispatched; false/omitted for TOTP prompts. */
             delivered?: boolean;
         };
-        MfaVerifyRequest: {
+        /** @description Step-up proof for `POST /mfa/verify`: EITHER a factor code (`MfaFactorVerifyRequest`) OR a recovery code (`MfaRecoveryVerifyRequest`). Exactly one must match: the variants are distinguished by their required keys (`factorId` + `code` vs `recoveryCode`), the factor variant may not carry `recoveryCode`, and the recovery variant forbids any other key, so no body matches both. */
+        MfaVerifyRequest: components["schemas"]["MfaFactorVerifyRequest"] | components["schemas"]["MfaRecoveryVerifyRequest"];
+        /** @description Factor-code proof — the pre-1.4.0 `MfaVerifyRequest` shape. Unchanged except that it may not also carry `recoveryCode` (a key with no meaning before 1.4.0), so a mixed body is rejected rather than silently ignoring the recovery code. Deliberately NOT closed with `additionalProperties: false`, which would reject other extra keys a 1.3.1 server accepted. */
+        MfaFactorVerifyRequest: {
             challengeId: string;
             factorId: string;
             code: string;
+        };
+        /** @description Recovery-code proof. Single-use: consumed atomically with the successful verification. The server normalizes before comparison (trims, strips spaces and hyphens, case-folds), so the user may type the code as displayed. The code is opaque — clients must not validate its format beyond non-empty. */
+        MfaRecoveryVerifyRequest: {
+            /** @description From the `mfa_required` `SessionResult`. Server-minted. */
+            challengeId: string;
+            /** @description One of the user's unused recovery codes. */
+            recoveryCode: string;
         };
         /** @description Optional body; omit when verifying the authenticated user's email. */
         EmailVerifyStartRequest: {
             /**
              * Format: email
-             * @description Signup-scoped address to verify when unauthenticated.
+             * @description Address used to look up the account when unauthenticated. Ignored when a bearer token is present (the account's own email is used).
              */
             email?: string;
         };
@@ -1804,6 +1965,13 @@ export interface components {
             /** @description The password to set; must satisfy the account password policy. */
             newPassword: string;
         };
+        /** @description Change the password of an account that already has one. */
+        ChangePasswordRequest: {
+            /** @description The account's current password (verified before the change). */
+            currentPassword: string;
+            /** @description The new password; must satisfy the account password policy. */
+            newPassword: string;
+        };
         /** @description One active session for the current user, describing the device/agent it was established from. `current: true` marks the session making the request. */
         SessionDevice: {
             /** @description Session id; pass to `DELETE /v1/security/sessions/{id}` to revoke. */
@@ -1822,6 +1990,20 @@ export interface components {
             lastSeenAt?: number;
             /** @description True for the session making this request. */
             current: boolean;
+        };
+        /** @description The session to check, taken verbatim from the `userId` and `sessionId` claims of an already-verified FuzeFront session token. Both identify EXISTING entities (references, not identity being created), and both are required: the session only counts as active for the user it belongs to. */
+        SessionValidateRequest: {
+            /** @description The `userId` claim of the session token. */
+            userId: string;
+            /** @description The `sessionId` claim of the session token. */
+            sessionId: string;
+            /** @description The `tid` claim of the session token, if it has one. Required for a session to count as active when multi-tenant identity is enabled (it must equal the tenant serving the request). Omit it only for a token that carries no `tid`, which is valid only in single-tenant mode. */
+            tenantId?: string;
+        };
+        /** @description Whether the session is still active. A consumer MUST treat anything other than a well-formed `{ "active": true }` as inactive. */
+        SessionValidation: {
+            /** @description True only if the session exists, has not expired, and belongs to the supplied `userId`. False in every other case, with no reason given. */
+            active: boolean;
         };
         /** @description Result of beginning a social-link handshake. The SPA navigates the browser to `redirectUrl` (the same-host authorize path); the browser never sees an internal identity host. */
         SocialLinkStart: {
@@ -2021,11 +2203,11 @@ export interface components {
             items: components["schemas"]["Portal"][];
             page: components["schemas"]["PageInfo"];
         };
-        /** @description Stable error body. Fail-closed; provider-neutral codes. */
+        /** @description Stable error body. Fail-closed; provider-neutral codes. TOKEN_EXPIRED (past TTL or already used) and TOKEN_INVALID (matches nothing) are returned as 400 by the email-verify and password-reset confirm operations; they are NOT session failures and clients must not treat them as 401 session expiry. PASSWORD_POLICY (422) is returned by reset-confirm when the identity provider rejects the new password (and by `POST /v1/security/signup` when the chosen password fails the policy); the reset token stays live so a compliant retry succeeds. CAPTCHA_FAILED (400) is returned by `POST /v1/security/signup` when the supplied Cloudflare Turnstile token is rejected, invalid, or missing — a distinct, explicit failure from a generic MALFORMED body. A rejected captcha is a 400 (client-correctable: fetch a fresh token and retry); Cloudflare being unreachable is instead 503 PROVIDER_UNAVAILABLE (fail-closed), never CAPTCHA_FAILED. RECOVERY_CODE_INVALID (401) is returned by `POST /v1/security/mfa/verify` when a submitted recovery code is wrong, already used, or from a superseded set (the causes are deliberately indistinguishable); the challenge stays live. */
         ErrorBody: {
             error: string;
             /** @enum {string} */
-            code: "NO_TOKEN" | "MALFORMED" | "INVALID_SIGNATURE" | "EXPIRED" | "NOT_ACTIVE" | "INVALID_ISSUER" | "INVALID_AUDIENCE" | "MISSING_CLAIM" | "JWKS_UNAVAILABLE" | "VERIFIER_UNAVAILABLE" | "INVALID_CREDENTIALS" | "INVALID_CODE" | "REDIRECT_URI_NOT_ALLOWED" | "CONFLICT" | "FORBIDDEN" | "NOT_FOUND" | "PROVIDER_UNAVAILABLE" | "UNKNOWN";
+            code: "NO_TOKEN" | "MALFORMED" | "INVALID_SIGNATURE" | "EXPIRED" | "NOT_ACTIVE" | "INVALID_ISSUER" | "INVALID_AUDIENCE" | "MISSING_CLAIM" | "JWKS_UNAVAILABLE" | "VERIFIER_UNAVAILABLE" | "INVALID_CREDENTIALS" | "INVALID_CODE" | "REDIRECT_URI_NOT_ALLOWED" | "CONFLICT" | "FORBIDDEN" | "NOT_FOUND" | "PROVIDER_UNAVAILABLE" | "TOKEN_EXPIRED" | "TOKEN_INVALID" | "PASSWORD_POLICY" | "CAPTCHA_FAILED" | "LAST_FACTOR" | "NO_PASSWORD" | "RATE_LIMITED" | "RECOVERY_CODE_INVALID" | "UNKNOWN";
         };
     };
     responses: {
@@ -2235,6 +2417,28 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
+    listSessionWorkspaces: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active workspace choices for the current identity. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionWorkspaceList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
     requestPasswordReset: {
         parameters: {
             query?: never;
@@ -2280,7 +2484,24 @@ export interface operations {
                     "application/json": components["schemas"]["PasswordResetResult"];
                 };
             };
-            400: components["responses"]["BadRequest"];
+            /** @description Malformed body (`MALFORMED`), or the token is expired/already used (`TOKEN_EXPIRED`) or unknown (`TOKEN_INVALID`). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The identity provider rejected the new password (`PASSWORD_POLICY`). The token remains live. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
         };
     };
     setPassword: {
@@ -2309,6 +2530,65 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             /** @description A password sign-in method already exists on this account. */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    changePassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangePasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Password changed; other sessions revoked. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Malformed body (`MALFORMED`), or `currentPassword` is wrong (`INVALID_CREDENTIALS`). Sessions are untouched. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description The account has no password (`NO_PASSWORD`); use set-first. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description `PASSWORD_POLICY` — the new password fails the password policy. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Too many failed attempts (`RATE_LIMITED`). */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2381,6 +2661,34 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    validateSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SessionValidateRequest"];
+            };
+        };
+        responses: {
+            /** @description The session's state. `active` is `false` for an unknown, revoked or expired session and for a user mismatch. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionValidation"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     linkSocial: {
@@ -2570,7 +2878,15 @@ export interface operations {
                     "application/json": components["schemas"]["LoginResponse"];
                 };
             };
-            400: components["responses"]["BadRequest"];
+            /** @description The request is rejected before account creation. `code: MALFORMED` for a malformed/invalid body; `code: CAPTCHA_FAILED` when the supplied Cloudflare Turnstile token is rejected, invalid, or missing (distinct from MALFORMED so the client can prompt for a fresh captcha and retry rather than treating it as a generic bad request). Cloudflare being unreachable is NOT a 400 — it fails closed as `503 PROVIDER_UNAVAILABLE`. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description An account with that email already exists. */
             409: {
                 headers: {
@@ -2580,7 +2896,57 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description The chosen password fails the authoritative password policy (`code: PASSWORD_POLICY`), distinct from 409 email-exists and 503 provider errors. The server independently enforces the same policy advertised by `AuthMethods.passwordPolicy`; the client may render the per-rule checklist and let the user retry with a compliant password. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getSignupEmailAvailable: {
+        parameters: {
+            query: {
+                /** @description The email address to check. Normalized (trim + lowercase) server-side. */
+                email: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Availability result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignupEmailAvailability"];
+                };
+            };
+            /** @description The `email` query param is missing or malformed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Rate limit exceeded (per-IP enumeration guard). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
         };
     };
     getAuthMethods: {
@@ -3436,6 +3802,36 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            /** @description `LAST_FACTOR` — this is the user's last ACTIVE factor, so removing it would silently disable two-factor for the account. The factor is NOT removed. Add another method first. The count-and-delete is atomic, so two concurrent removals cannot both succeed. Pending (unactivated) factors can always be removed. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    getRecoveryCodesStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller's recovery-code status. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecoveryCodesStatus"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
         };
     };
     regenerateRecoveryCodes: {
@@ -3498,7 +3894,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description MFA satisfied; authenticated session returned. */
+            /** @description MFA satisfied (factor code or recovery code); authenticated session returned. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3507,8 +3903,35 @@ export interface operations {
                     "application/json": components["schemas"]["LoginResponse"];
                 };
             };
-            400: components["responses"]["BadRequest"];
-            401: components["responses"]["Unauthorized"];
+            /** @description `MALFORMED` — the body matches neither `MfaVerifyRequest` variant (e.g. `recoveryCode` sent together with `factorId`/`code`, or a required field missing). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Step-up not satisfied; no session issued. `NOT_ACTIVE` — the `challengeId` is unknown, expired, or already completed (start a new login). For a factor-code attempt, the factor/code is invalid. For a recovery-code attempt, `RECOVERY_CODE_INVALID` — the code is wrong, already used, or from a superseded set (indistinguishable by design); the challenge stays live so the user can retry, subject to the limiter. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description `RATE_LIMITED` — too many failed step-up attempts for this IP or challenge. One limiter covers both factor-code and recovery-code attempts. `Retry-After` gives the wait; clients show it and must not retry sooner. */
+            429: {
+                headers: {
+                    /** @description Whole seconds until the exhausted limiter counter resets (rounded up, never less than 1). Always sent with this 429. */
+                    "Retry-After": number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
         };
     };
     startEmailVerification: {
@@ -3556,7 +3979,15 @@ export interface operations {
                     "application/json": components["schemas"]["VerificationStatus"];
                 };
             };
-            400: components["responses"]["BadRequest"];
+            /** @description Malformed body (`MALFORMED`), or the challenge is expired/already used (`TOKEN_EXPIRED`) or unknown/mismatched (`TOKEN_INVALID`). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
         };
     };
     startPhoneVerification: {
@@ -3606,6 +4037,7 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
         };
     };
     getVerificationStatus: {

@@ -82,6 +82,26 @@ export const FLAG_KEYS = {
    */
   SELECTION_LISTS_SEED_DEFAULTS: 'fuzefront.selection-lists.seed-defaults',
   /**
+   * SL9 — shared/common selection lists + copy-on-write forks (selection-lists
+   * 4.1.0; docs/planning/selection-lists-shared-and-fork.md section 7). Gates
+   * list `visibility`/shared read, `include_shared`, the fork operation,
+   * `fork_required`, resolve of common lists + the fork redirect, the
+   * `list.forked`/`visibility.changed` events and seed-list `visibility`.
+   * Default OFF. Release flag. Owner: izzywdev.
+   * Removal criterion: ON for all orgs for 30 days with no fork / shared-read
+   * incident (then delete the flag, this key, the WEB_EXPOSED_FLAGS entry and
+   * every off-path branch in selection-list-service).
+   * Web-exposed (WEB_EXPOSED_FLAGS): the selection-lists UI gates the common
+   * badge / fork flow on it. NOTE: GET /api/flags evaluates browser flags
+   * with no `orgId`, so an org-only Unleash constraint would not match in the
+   * browser (service ON, UI OFF); a user constraint splits the other way (the
+   * browser sends the DB UUID, the service a usr_ TypeID). Enable globally
+   * until that endpoint carries an active-org context and the ids are aligned. Real authorization stays in Permit — this flag is
+   * never a boundary. Independent of, and additionally requires,
+   * SELECTION_LISTS_SERVICE.
+   */
+  SELECTION_LISTS_SHARED_LISTS: 'fuzefront.selection-lists.shared-lists',
+  /**
    * Portals Directory (backend S1 #640 / frontend S3 #642).
    * Gates the /portals page + SidePanel "Portals" nav entry (UI-side) and
    * the identityMode/launchUrl fields on GET /api/v1/admin/portals
@@ -202,37 +222,46 @@ export const FLAG_KEYS = {
   // Owner: feature-flags-engineer (billing domain).
 
   /**
+   * fuzefront.billing.plan-free
+   * Type: permission. Default: TRUE (all orgs can use Free-tier features).
+   * Gates: single application, community support only.
+   * Owner: feature-flags-engineer.
+   * Removal criterion: retire only if the Free tier is removed from the product.
+   */
+  BILLING_PLAN_FREE: 'fuzefront.billing.plan-free',
+  /**
    * fuzefront.billing.plan-starter
-   * Type: permission. Default: TRUE (every org on the lowest tier gets starter features).
-   * Gates: basic features, up to 5 members.
+   * Type: permission. Default: TRUE (every org on the base paid tier gets Starter features).
+   * Gates: core features, up to 5 users, 1 workspace, email support.
    * Owner: feature-flags-engineer.
    * Removal criterion: retire only if the Starter tier is removed from the product.
    */
   BILLING_PLAN_STARTER: 'fuzefront.billing.plan-starter',
   /**
-   * fuzefront.billing.plan-professional
-   * Type: permission. Default: FALSE (gate Pro features; enabled per-org by billing sync).
-   * Gates: advanced features, SSO, API access, up to 25 members.
+   * fuzefront.billing.plan-growth
+   * Type: permission. Default: FALSE (gate Growth features; enabled per-org by billing sync).
+   * Gates: up to 25 users, 3 workspaces, API access, priority support.
    * Owner: feature-flags-engineer.
-   * Removal criterion: retire only if Professional tier is removed from the product.
+   * Removal criterion: retire only if the Growth tier is removed from the product.
    */
-  BILLING_PLAN_PROFESSIONAL: 'fuzefront.billing.plan-professional',
-  /**
-   * fuzefront.billing.plan-scale
-   * Type: permission. Default: FALSE (gate Scale features; enabled per-org by billing sync).
-   * Gates: full platform, all products, up to 100 members.
-   * Owner: feature-flags-engineer.
-   * Removal criterion: retire only if Scale tier is removed from the product.
-   */
-  BILLING_PLAN_SCALE: 'fuzefront.billing.plan-scale',
+  BILLING_PLAN_GROWTH: 'fuzefront.billing.plan-growth',
   /**
    * fuzefront.billing.plan-enterprise
    * Type: permission. Default: FALSE (gate Enterprise features; enabled per-org by billing sync).
-   * Gates: unlimited members, on-premise option, custom SLA.
+   * Gates: unlimited members, custom SLAs, SSO/SAML, compliance exports, dedicated CSM.
    * Owner: feature-flags-engineer.
    * Removal criterion: retire only if Enterprise tier is removed from the product.
    */
   BILLING_PLAN_ENTERPRISE: 'fuzefront.billing.plan-enterprise',
+  // Deprecated aliases — kept for zero-downtime migration. These still check
+  // the ORIGINAL Unleash flag keys so existing consumers keep working until:
+  //   1. billing-sync backfill enables plan-growth per-org for all affected orgs
+  //   2. all consumers are updated to BILLING_PLAN_GROWTH
+  // Remove these once both conditions are met.
+  /** @deprecated Use BILLING_PLAN_GROWTH. Checks original 'plan-professional' key until migration completes. */
+  BILLING_PLAN_PROFESSIONAL: 'fuzefront.billing.plan-professional',
+  /** @deprecated Use BILLING_PLAN_GROWTH. Checks original 'plan-scale' key until migration completes. */
+  BILLING_PLAN_SCALE: 'fuzefront.billing.plan-scale',
   /**
    * fuzefront.billing.sso-enabled
    * Type: permission. Default: FALSE.
@@ -269,6 +298,41 @@ export const FLAG_KEYS = {
    * Removal criterion: retire if MF hosting becomes available on all tiers.
    */
   BILLING_MODULE_FEDERATION: 'fuzefront.billing.module-federation',
+  /**
+   * Configuration Management Console UI (EPIC-19-S3/S4). Gates the top-level
+   * "Configuration" left-nav item (SidePanel) AND the `/config` settings-editor
+   * route. Default OFF. Release flag. Owner: feature-flags-engineer.
+   * Web-exposed (WEB_EXPOSED_FLAGS) — required for the browser to see it;
+   * without it `useFlag()` reads the hardcoded default (false) and the feature
+   * stays dark regardless of Unleash. Independent of the server-only
+   * `fuzefront.platform.config-management` (consumers reading FROM config-service).
+   * Removal criterion: console GA for all orgs at 100% rollout for 30 days.
+   */
+  CONFIG_MANAGEMENT_CONSOLE: 'fuzefront.config.management-console',
+  /**
+   * Config key catalog admin surface (EPIC-19-S4). Gates the
+   * `/admin/config/catalog` + `/admin/config/catalog/:key` routes and the
+   * catalog entry on AdminPage. Default OFF. Release flag. Web-exposed.
+   * Owner: feature-flags-engineer.
+   */
+  CONFIG_KEY_CATALOG: 'fuzefront.config.key-catalog',
+  /**
+   * Config secret + audit-history surface (EPIC-19-S4). Gates the
+   * `/admin/config/keys/:key/history` route. Default OFF. Release flag.
+   * Web-exposed. Owner: feature-flags-engineer.
+   */
+  CONFIG_SECRETS_AUDIT: 'fuzefront.config.secrets-audit',
+  /**
+   * fuzefront.billing.plan-flag-sync-enabled
+   * Type: release. Default: FALSE (dark deploy).
+   * SERVER-ONLY: gates whether billing-service's UnleashFlagSyncService calls
+   * the Unleash Admin API to maintain per-org plan-tier permission flag states.
+   * Flip via prod-unleash-ops.yml (billing-plan-flag-sync option).
+   * Owner: feature-flags-engineer (billing domain) / backend-engineer.
+   * Removal criterion: after per-org flag sync has run in production for >= 2
+   * sprints with no regression, remove this flag and the dead OFF-path.
+   */
+  BILLING_PLAN_FLAG_SYNC_ENABLED: 'fuzefront.billing.plan-flag-sync-enabled',
 } as const;
 
 /**
@@ -285,10 +349,14 @@ export const FLAG_KEYS = {
  * must always go through Permit (permit.check) — never rely on a flag alone.
  */
 export const PLAN_FLAGS = {
+  FREE: 'fuzefront.billing.plan-free',
   STARTER: 'fuzefront.billing.plan-starter',
-  PROFESSIONAL: 'fuzefront.billing.plan-professional',
-  SCALE: 'fuzefront.billing.plan-scale',
+  GROWTH: 'fuzefront.billing.plan-growth',
   ENTERPRISE: 'fuzefront.billing.plan-enterprise',
+  /** @deprecated Use PLAN_FLAGS.GROWTH. Checks original 'plan-professional' key until migration completes. */
+  PROFESSIONAL: 'fuzefront.billing.plan-professional',
+  /** @deprecated Use PLAN_FLAGS.GROWTH. Checks original 'plan-scale' key until migration completes. */
+  SCALE: 'fuzefront.billing.plan-scale',
 } as const;
 
 export const WEB_EXPOSED_FLAGS: readonly FlagDescriptor[] = [
@@ -303,6 +371,7 @@ export const WEB_EXPOSED_FLAGS: readonly FlagDescriptor[] = [
     type: 'release',
     default: false,
   },
+  { key: FLAG_KEYS.SELECTION_LISTS_SHARED_LISTS, type: 'release', default: false },
   { key: FLAG_KEYS.PORTALS_DIRECTORY, type: 'release', default: false },
   // FF-EPIC-17 identity UI flags — read in the browser via `useFlag()`. Without
   // these entries the backend `GET /api/flags` never discloses them, so flipping
@@ -335,17 +404,30 @@ export const WEB_EXPOSED_FLAGS: readonly FlagDescriptor[] = [
   // surfaces (upgrade prompts, locked nav items). Real authorization always
   // lives in Permit on the server — these flags are convenience only.
   //
-  // plan-starter defaults TRUE: every org can access Starter-tier features by
-  // default (fail-open for the base tier).
+  // plan-free and plan-starter default TRUE: these are the baseline tiers, and
+  // existing orgs must not lose access in client-side degraded/disconnected mode
+  // before BILLING_PLAN_FLAG_SYNC_ENABLED is turned ON and per-org Unleash
+  // strategies are backfilled. Changing either to false is a breaking change for
+  // current customers — gate behind the sync flag first.
+  { key: FLAG_KEYS.BILLING_PLAN_FREE, type: 'permission', default: true },
   { key: FLAG_KEYS.BILLING_PLAN_STARTER, type: 'permission', default: true },
-  // All other plan flags default FALSE: higher-tier features are locked until
-  // the billing sync enables them per-org in Unleash.
-  { key: FLAG_KEYS.BILLING_PLAN_PROFESSIONAL, type: 'permission', default: false },
-  { key: FLAG_KEYS.BILLING_PLAN_SCALE, type: 'permission', default: false },
+  // Higher-tier plan flags default FALSE: locked until Unleash enables per-org.
+  // Growth/Enterprise orgs are not yet in the system, so fail-closed is safe.
+  { key: FLAG_KEYS.BILLING_PLAN_GROWTH, type: 'permission', default: false },
   { key: FLAG_KEYS.BILLING_PLAN_ENTERPRISE, type: 'permission', default: false },
   // Capability flags (also gated by plan; Permit enforces server-side).
   { key: FLAG_KEYS.BILLING_SSO_ENABLED, type: 'permission', default: false },
   { key: FLAG_KEYS.BILLING_API_ACCESS, type: 'permission', default: false },
   { key: FLAG_KEYS.BILLING_CUSTOM_DOMAIN, type: 'permission', default: false },
   { key: FLAG_KEYS.BILLING_MODULE_FEDERATION, type: 'permission', default: false },
+
+  // EPIC-19 Configuration Management Console UI flags — read in the browser via
+  // `useFlag()` in SidePanel (nav item) and App.tsx route guards. Without these
+  // entries GET /api/flags never discloses them, so flipping them ON in Unleash
+  // would leave the nav item and /config + /admin/config/* routes dark. Default
+  // OFF (release flags). Distinct from the server-only
+  // `fuzefront.platform.config-management` (consumers reading FROM config-service).
+  { key: FLAG_KEYS.CONFIG_MANAGEMENT_CONSOLE, type: 'release', default: false },
+  { key: FLAG_KEYS.CONFIG_KEY_CATALOG, type: 'release', default: false },
+  { key: FLAG_KEYS.CONFIG_SECRETS_AUDIT, type: 'release', default: false },
 ] as const;
