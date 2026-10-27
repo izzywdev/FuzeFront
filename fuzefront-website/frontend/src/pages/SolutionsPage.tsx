@@ -2,7 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Building, Rocket, RefreshCw, Code, ArrowRight } from 'lucide-react'
-import { Center } from '@fuzefront/design-system'
+import { Center, Text, GradientText, IconTile, PageShell } from '@fuzefront/design-system'
 
 const solutions = [
   {
@@ -40,7 +40,7 @@ export const SolutionsPage: React.FC = () => {
   const [solutionsRef, solutionsInView] = useInView({ triggerOnce: true })
 
   return (
-    <div className="bg-white pt-16">
+    <PageShell>
       <section ref={heroRef} className="py-24 bg-gradient-to-br from-primary-50 to-secondary-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <Center
@@ -50,7 +50,7 @@ export const SolutionsPage: React.FC = () => {
             transition={{ duration: 0.8 }}
           >
             <h1 className="text-4xl sm:text-5xl font-bold text-gray-900 mb-6">
-              Solutions for Every <span className="gradient-text">Business</span>
+              Solutions for Every <GradientText gradient="var(--primary-gradient)">Business</GradientText>
             </h1>
             <p className="text-xl text-gray-600 max-w-3xl mx-auto">
               Whether you're a startup building an MVP or an enterprise scaling globally,
@@ -74,16 +74,16 @@ export const SolutionsPage: React.FC = () => {
                   className="bg-white rounded-2xl p-8 shadow-soft hover:shadow-medium transition-shadow duration-300"
                 >
                   <div className="w-16 h-16 rounded-xl bg-gradient-to-r from-primary-500 to-secondary-500 flex items-center justify-center mb-6">
-                    <Icon size={32} className="text-white" />
+                    <IconTile tone="inverse" variant="plain"><Icon size={32} /></IconTile>
                   </div>
                   
                   <h3 className="text-2xl font-bold text-gray-900 mb-4">
                     {solution.name}
                   </h3>
                   
-                  <p className="text-gray-600 mb-6">
+                  <Text tone="secondary" spacing="lg">
                     {solution.description}
-                  </p>
+                  </Text>
                   
                   <ul className="space-y-2 mb-8">
                     {solution.features.map((feature, featureIndex) => (
@@ -103,6 +103,6 @@ export const SolutionsPage: React.FC = () => {
           </div>
         </div>
       </section>
-    </div>
+    </PageShell>
   )
 }

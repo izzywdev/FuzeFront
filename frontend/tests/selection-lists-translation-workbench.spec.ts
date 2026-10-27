@@ -51,49 +51,49 @@ const LIST_ID = 'sl_01h455vb4pex5vsknk084sn02q'
 const TRANSLATIONS_ROUTE = `/settings/selection-lists/${LIST_ID}/translations`
 const FR_EDITOR_ROUTE = `/settings/selection-lists/${LIST_ID}/translations/fr`
 
-/** Minimal translation entry for item 1. */
-const MOCK_TRANSLATION_FR_ITEM1 = {
-  item_id: 'sli_01h455vb4pex5vsknk084sn02q',
-  locale: 'fr',
-  label: 'États-Unis',
+/**
+ * The service shapes the workbench reads (contract 4.2.0 / routes/translations.ts + items.ts):
+ *  - GET /v1/selection-lists/{id}            -> the list (source_locale, item_count)
+ *  - GET /v1/selection-lists/{id}/translations -> a top-level TranslationLocaleStatus[]
+ *    (source locale excluded; a locale with no list translation is simply absent)
+ *  - GET /v1/selection-lists/quota           -> { organization_id, quotas }
+ *  - there is NO GET …/translations/{locale}: a locale's text is GET …/items?locale=
+ *    (an item with no text in that locale falls back and says so in `resolved_locale`).
+ */
+const ITEM_COUNT = 248 // + the list itself = 249 translatable strings
+
+const MOCK_LIST = {
+  id: LIST_ID,
+  organization_id: 'org_e2e_selection_lists',
+  key: 'countries',
+  name: 'Countries',
   is_machine: false,
-  source_hash: 'abc123',
-  source_hash_current: 'abc123', // hash matches — not stale
+  status: 'active',
+  item_count: ITEM_COUNT,
+  source_locale: 'en',
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-02T00:00:00Z',
 }
 
-/** Stale translation (source_hash mismatch). */
-const MOCK_TRANSLATION_FR_ITEM_STALE = {
-  item_id: 'sli_03h455vb4pex5vsknk084sn02q',
-  locale: 'fr',
-  label: 'Vieille traduction',
-  is_machine: false,
-  source_hash: 'old_hash',
-  source_hash_current: 'new_hash', // hash mismatch — stale
-}
+/** Locales that already have a list translation: fr (partly machine, source changed), de (all machine). */
+const MOCK_LOCALE_STATUSES = [
+  { locale: 'fr', completeness_pct: 80, machine_translated: true, source_changed: true },
+  { locale: 'de', completeness_pct: 20, machine_translated: true, source_changed: false },
+]
 
-/** Machine-translated entry. */
-const MOCK_TRANSLATION_FR_ITEM_MACHINE = {
-  item_id: 'sli_04h455vb4pex5vsknk084sn02q',
-  locale: 'fr',
-  label: 'Traduit par IA',
-  is_machine: true,
-  source_hash: 'def456',
-  source_hash_current: 'def456',
+/** What the grid must show: the source, the two translated locales, and every other supported locale untranslated. */
+const SUPPORTED = ['en', 'es', 'fr', 'de', 'pt', 'ru', 'zh', 'ja', 'hi', 'ar', 'he']
+const TOTAL = ITEM_COUNT + 1
+/** One editor row: `text: null` = the item has no text in the locale (the service falls back to the source). */
+interface MockRow {
+  id: string
+  text: string | null
+  machine?: boolean
 }
-
-/** Locale index (all 11 locales). */
-const MOCK_LOCALE_INDEX = [
-  { locale: 'en', is_source: true, translated: 249, total: 249, machine_count: 0, stale_count: 0 },
-  { locale: 'fr', is_source: false, translated: 200, total: 249, machine_count: 10, stale_count: 3 },
-  { locale: 'es', is_source: false, translated: 0, total: 249, machine_count: 0, stale_count: 0 },
-  { locale: 'de', is_source: false, translated: 50, total: 249, machine_count: 50, stale_count: 0 },
-  { locale: 'ar', is_source: false, translated: 0, total: 249, machine_count: 0, stale_count: 0 },
-  { locale: 'he', is_source: false, translated: 0, total: 249, machine_count: 0, stale_count: 0 },
-  { locale: 'ja', is_source: false, translated: 0, total: 249, machine_count: 0, stale_count: 0 },
-  { locale: 'zh', is_source: false, translated: 0, total: 249, machine_count: 0, stale_count: 0 },
-  { locale: 'pt', is_source: false, translated: 0, total: 249, machine_count: 0, stale_count: 0 },
-  { locale: 'it', is_source: false, translated: 0, total: 249, machine_count: 0, stale_count: 0 },
-  { locale: 'nl', is_source: false, translated: 0, total: 249, machine_count: 0, stale_count: 0 },
+const MOCK_ROWS_FR: MockRow[] = [
+  { id: 'sli_01h455vb4pex5vsknk084sn02q', text: 'États-Unis' },
+  { id: 'sli_03h455vb4pex5vsknk084sn02q', text: 'Vieille traduction' },
+  { id: 'sli_04h455vb4pex5vsknk084sn02q', text: 'Traduit par IA', machine: true },
 ]
 
 async function gotoTranslationIndex(page: Page) {
@@ -106,44 +106,69 @@ async function gotoLocaleEditor(page: Page) {
   await gotoFlagGatedRoute(page, FR_EDITOR_ROUTE)
 }
 
-/** Inject the locale index response. */
-async function injectLocaleIndex(page: Page) {
+const json = (body: unknown, status = 200) => ({
+  status,
+  contentType: 'application/json',
+  body: JSON.stringify(body),
+})
+
+async function injectList(page: Page) {
+  await page.route(`**/v1/selection-lists/${LIST_ID}`, async route => {
+    if (route.request().method() === 'GET') await route.fulfill(json(MOCK_LIST))
+    else await route.continue()
+  })
+}
+
+/** `list_locales` ceiling (per list; the source locale counts). */
+async function injectLocaleQuota(page: Page, limit = 11) {
+  await page.route('**/v1/selection-lists/quota', async route => {
+    await route.fulfill(
+      json({
+        organization_id: 'org_e2e_selection_lists',
+        quotas: [{ scope: 'list_locales', applies_to: 'list', current: null, limit }],
+      }),
+    )
+  })
+}
+
+/** Inject the locale index reads: the list, the translations array and the quota. */
+async function injectLocaleIndex(page: Page, statuses: unknown = MOCK_LOCALE_STATUSES, quotaLimit = 11) {
+  await injectList(page)
+  await injectLocaleQuota(page, quotaLimit)
   await page.route(`**/v1/selection-lists/${LIST_ID}/translations*`, async route => {
     const url = route.request().url()
     const method = route.request().method()
     if (method === 'GET' && url.endsWith('/translations')) {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ locales: MOCK_LOCALE_INDEX }),
-      })
+      await route.fulfill(json(statuses))
     } else {
       await route.continue()
     }
   })
 }
 
-/** Inject the locale editor response for French. */
-async function injectLocaleEditorFR(page: Page) {
-  await page.route(`**/v1/selection-lists/${LIST_ID}/translations/fr*`, async route => {
-    const method = route.request().method()
-    if (method === 'GET') {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          locale: 'fr',
-          translations: [
-            MOCK_TRANSLATION_FR_ITEM1,
-            MOCK_TRANSLATION_FR_ITEM_STALE,
-            MOCK_TRANSLATION_FR_ITEM_MACHINE,
-          ],
-        }),
-      })
-    } else {
-      await route.continue()
-    }
+/** Inject a locale's editor rows through the real read: GET …/items?locale=<locale>. */
+async function injectLocaleEditor(page: Page, locale: string, rows: MockRow[]) {
+  await injectList(page)
+  await page.route(`**/v1/selection-lists/${LIST_ID}/items?*`, async route => {
+    if (route.request().method() !== 'GET') return route.continue()
+    const wanted = new URL(route.request().url()).searchParams.get('locale')
+    const items = rows.map((row, i) => ({
+      id: row.id,
+      list_id: LIST_ID,
+      code: `C${i + 1}`,
+      label: row.text ?? `source ${i + 1}`,
+      resolved_locale: row.text === null ? 'en' : wanted,
+      is_machine: row.text !== null && row.machine === true,
+      status: 'active',
+      sort_order: i + 1,
+    }))
+    await route.fulfill(json({ items, page: { nextCursor: null, hasMore: false, total: items.length } }))
   })
+}
+
+/** Inject the French editor response. */
+async function injectLocaleEditorFR(page: Page) {
+  await injectLocaleEditor(page, 'fr', MOCK_ROWS_FR)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -242,19 +267,15 @@ test.describe('Selection Lists translation-workbench — frame 07-locale-index',
     ).toBeVisible()
   })
 
-  test('shows [data-state="empty"] when the list has no items to translate', async ({ page }) => {
-    await page.route(`**/v1/selection-lists/${LIST_ID}/translations*`, async route => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ locales: [] }),
-      })
-    })
+  test('a list with no translations yet still lists the source and every supported locale as untranslated (the service answers [])', async ({ page }) => {
+    // The real service answers a bare [] for a list with no list translation; the
+    // workbench shows the source plus every supported locale to start on — never an
+    // empty grid (the empty state is unreachable against the real shape).
+    await injectLocaleIndex(page, [])
     await gotoTranslationIndex(page)
-    await expect(
-      page.locator("[data-state='empty']"),
-      '[data-state="empty"] must render when there are no locales/items to translate',
-    ).toBeVisible()
+    await expect(page.locator("[data-locale='en'][data-source='true']")).toBeVisible()
+    await expect(page.locator("[data-untranslated='true']")).toHaveCount(SUPPORTED.length - 1)
+    await expect(page.locator("[data-state='empty']")).toHaveCount(0)
   })
 
   test('shows [data-state="error"] when the translations fetch fails', async ({ page }) => {
@@ -271,23 +292,11 @@ test.describe('Selection Lists translation-workbench — frame 07-locale-index',
   test('[data-error="QUOTA_EXCEEDED"] disables both CTAs on untranslated locales when list_locales is exhausted', async ({ page }) => {
     // When the list_locales quota is exhausted, both start-translation and autofill
     // on untranslated locales must be disabled with the 403 reason shown.
-    await page.route(`**/v1/selection-lists/${LIST_ID}/translations*`, async route => {
-      const method = route.request().method()
-      if (method === 'GET') {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({ locales: MOCK_LOCALE_INDEX, quota_exceeded: true }),
-        })
-      } else if (method === 'POST') {
-        await route.fulfill({
-          status: 403,
-          contentType: 'application/json',
-          body: JSON.stringify({ code: 'QUOTA_EXCEEDED', scope: 'list_locales', current: 11, limit: 11 }),
-        })
-      } else {
-        await route.continue()
-      }
+    // The ceiling is derived from GET /quota: the source + fr + de already hold 3 list
+    // translations, so a limit of 3 is exhausted for any NEW locale.
+    await injectLocaleIndex(page, MOCK_LOCALE_STATUSES, 3)
+    await page.route(`**/v1/selection-lists/${LIST_ID}/translations/*/autofill*`, async route => {
+      await route.fulfill(json({ code: 'QUOTA_EXCEEDED', scope: 'list_locales', current: 3, limit: 3 }, 403))
     })
     await gotoTranslationIndex(page)
     await expect(
@@ -351,38 +360,15 @@ test.describe('Selection Lists translation-workbench — frame 08-locale-editor'
     ).toBeVisible()
   })
 
-  test('[data-stale="true"] and [data-warning="source-changed"] appear on source_hash mismatch rows', async ({ page }) => {
-    await injectLocaleEditorFR(page)
-    await gotoLocaleEditor(page)
-    await expect(
-      page.locator("[data-stale='true']"),
-      '[data-stale="true"] must mark rows whose source_hash no longer matches',
-    ).toBeVisible()
-    await expect(
-      page.locator("[data-warning='source-changed']"),
-      '[data-warning="source-changed"] inline warning must render for stale rows',
-    ).toBeVisible()
-  })
+  // NOTE: per-row staleness (`[data-stale]` / `[data-warning="source-changed"]` on a source_hash
+  // mismatch) is not readable from the service: GET …/items carries no source_hash and the
+  // per-item flag needs one …/items/{id}/translations read per item. The locale INDEX still
+  // marks a locale whose source changed (`source_changed`); see the index test above.
 
   test('[data-missing="true"] row explains fallback rather than implying data loss', async ({ page }) => {
-    // A row with no translation (empty label) must carry [data-missing="true"]
+    // A row with no translation (the service fell back to the source) must carry [data-missing="true"]
     // and explain the fallback-to-source behaviour — never imply the value will be blank.
-    await page.route(`**/v1/selection-lists/${LIST_ID}/translations/fr*`, async route => {
-      if (route.request().method() === 'GET') {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            locale: 'fr',
-            translations: [
-              { ...MOCK_TRANSLATION_FR_ITEM1, label: '' }, // empty = missing
-            ],
-          }),
-        })
-      } else {
-        await route.continue()
-      }
-    })
+    await injectLocaleEditor(page, 'fr', [{ id: MOCK_ROWS_FR[0].id, text: null }]) // no fr text: the service falls back to the source
     await gotoLocaleEditor(page)
     await expect(
       page.locator("[data-missing='true']"),
@@ -396,29 +382,7 @@ test.describe('Selection Lists translation-workbench — frame 08-locale-editor'
    * Mirroring the whole page would misrender English source text.
    */
   test('Arabic editor: [dir="rtl"][data-locale="ar"] on the TARGET cell only', async ({ page }) => {
-    await page.route(`**/v1/selection-lists/${LIST_ID}/translations/ar*`, async route => {
-      if (route.request().method() === 'GET') {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            locale: 'ar',
-            translations: [
-              {
-                item_id: 'sli_01h455vb4pex5vsknk084sn02q',
-                locale: 'ar',
-                label: 'الولايات المتحدة',
-                is_machine: true,
-                source_hash: 'abc123',
-                source_hash_current: 'abc123',
-              },
-            ],
-          }),
-        })
-      } else {
-        await route.continue()
-      }
-    })
+    await injectLocaleEditor(page, 'ar', [{ id: MOCK_ROWS_FR[0].id, text: 'الولايات المتحدة', machine: true }])
     await mockAuthenticatedSelectionListsSession(page)
     await gotoFlagGatedRoute(page, `/settings/selection-lists/${LIST_ID}/translations/ar`)
     // The RTL marker must be on the target (translation) cell, not the whole page.
@@ -434,29 +398,7 @@ test.describe('Selection Lists translation-workbench — frame 08-locale-editor'
   })
 
   test('Hebrew editor: [dir="rtl"][data-locale="he"] on the TARGET cell', async ({ page }) => {
-    await page.route(`**/v1/selection-lists/${LIST_ID}/translations/he*`, async route => {
-      if (route.request().method() === 'GET') {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            locale: 'he',
-            translations: [
-              {
-                item_id: 'sli_01h455vb4pex5vsknk084sn02q',
-                locale: 'he',
-                label: 'ארצות הברית',
-                is_machine: true,
-                source_hash: 'abc123',
-                source_hash_current: 'abc123',
-              },
-            ],
-          }),
-        })
-      } else {
-        await route.continue()
-      }
-    })
+    await injectLocaleEditor(page, 'he', [{ id: MOCK_ROWS_FR[0].id, text: 'ארצות הברית', machine: true }])
     await mockAuthenticatedSelectionListsSession(page)
     await gotoFlagGatedRoute(page, `/settings/selection-lists/${LIST_ID}/translations/he`)
     await expect(
@@ -529,17 +471,7 @@ test.describe('Selection Lists translation-workbench — frame 08-locale-editor'
   })
 
   test('[data-state="empty"] renders when no translations exist for the locale', async ({ page }) => {
-    await page.route(`**/v1/selection-lists/${LIST_ID}/translations/fr*`, async route => {
-      if (route.request().method() === 'GET') {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({ locale: 'fr', translations: [] }),
-        })
-      } else {
-        await route.continue()
-      }
-    })
+    await injectLocaleEditor(page, 'fr', [])
     await gotoLocaleEditor(page)
     await expect(
       page.locator("[data-state='empty']"),
@@ -570,8 +502,7 @@ test.describe('Selection Lists translation-workbench — frame 09-autofill-modal
     // The modal must state the exact missing-string count before running. The frame
     // illustrates 60; the count is always total - translated of the locale the modal
     // was opened for, so derive it from the mock (first untranslated locale: es, 249).
-    const target = MOCK_LOCALE_INDEX.find(l => !l.is_source && l.translated === 0)!
-    const missing = target.total - target.translated
+    const missing = TOTAL // an untranslated locale: every string (the list + its items) is missing
     await expect(
       page.locator(`[data-autofill-count='${missing}']`),
       `[data-autofill-count="${missing}"] must state the exact number of missing strings (total - translated)`,

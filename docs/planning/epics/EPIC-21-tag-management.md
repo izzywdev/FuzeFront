@@ -283,7 +283,7 @@ evaluating. The leaves:
 | `{ holdsTag }` | holds `Agent L2` | a prerequisite rung |
 | `{ daysSinceTag, days }` | ≥90 days since `Agent L2` **was awarded** | reads `tag_awards.evaluated_at` — **not** absolute tenure |
 | `{ course }` / `{ exam }` | `course_completed:tier2-escalation` | boolean metric from whatever owns training |
-| `{ endorsements, from }` | 3 endorsements from a `team-lead` | see open decision 5 |
+| `{ endorsements, from }` | 3 endorsements from a `team-lead` | decided — see *Career path* §5 |
 
 Three of these are easy to get subtly wrong, so they are called out:
 
@@ -340,7 +340,7 @@ same-gender agent on a sensitive health line; a faith-based advisory service) bu
 law. They cannot ride the same code path as "speaks Spanish".
 
 This is cheap to design in now — a `sensitivity` marker, one authz rule and an audit row — and a
-retrofit across the entire match path later. So it is in the plan, not in the open-decisions list:
+retrofit across the entire match path later. So it is in the plan, decided up front:
 
 - **`tag_sets.sensitivity`** (`normal` | `special_category`) with the **lawful basis and purpose
   recorded on the set**, required before a tag in it can be applied to anyone.
@@ -383,81 +383,107 @@ the substrate, but the product is competency management. The slug is **immutable
 (see `CLAUDE.md`, *slug is free at creation, immutable thereafter*), so this is the only moment the
 question is cheap. Open for the owner.
 
-## Career path — open decisions
+## Career path — decisions
 
-These are real gaps in the model above. Each has a recommendation; none is settled. They are here
-rather than silently omitted because every one of them changes what "earned" means to the person
-it is applied to, and that is an HR-grade decision, not an implementation detail.
+These were the ten open items the plan deliberately left to the owner. **All ten are now decided**,
+adopting the recommendation each one carried. They are recorded here because every one of them
+changes what "earned" means to the person it is applied to — so implementers must not re-derive
+them, and a future change to any of them is a policy change, not a refactor.
 
-1. **Manual override / grandfathering.** Rule 1 says an earned tag can never be applied by hand.
-   That is correct for integrity and wrong for a new hire with ten years of prior experience whose
-   metrics start at zero. *Recommendation:* allow an **attested award** — a distinct award kind,
-   requiring an explicit manager grant, a mandatory reason string, and its own row in `tag_awards`
-   so it is visibly an override and not an earned award. Never a silent manual apply.
-2. **Criteria versioning — what happens to existing holders when a bar moves.** If Senior goes from
-   500 to 750 calls, are current holders re-evaluated or grandfathered? *Recommendation:* grandfather
-   by default, pinning each award to the `criteria_version` it was earned under, with an explicit
-   opt-in re-evaluation. Silently demoting people because an admin edited a threshold is the worst
-   available default.
-3. **Revocation hysteresis.** A rolling metric dipping below the bar for one day should not strip a
-   tag. *Recommendation:* a per-criterion grace window, and revoke only on sustained failure.
-4. **Expiry / recertification.** A certification valid 12 months is a different mechanic from
-   criteria lapsing. *Recommendation:* optional `valid_for` on a tag, with re-evaluation at expiry.
-5. **Endorsement as a criterion type.** "Three peer endorsements" is a common rung and the closed
-   grammar has no leaf for it. *Recommendation:* add an `{ endorsements: N, from: role }` leaf —
-   it stays inside the closed grammar, so it does not reopen the rules-engine question.
-6. **Notification on award and revoke.** A progression loop that never tells the person is not a
-   loop. There is a `notification-service` in this repo to publish to. Currently unwired.
-7. **"What should I work on next."** The inverse of progress: given a subject, which tags are
-   closest to being earned. Cheap once tracks exist, and it is most of the felt value of the ladder.
-8. **Proficiency on a `has` tagging.** An agent "has Spanish" — fluent or conversational? Matching is
-   binary today. *Recommendation:* defer; add a `level` to the tagging only once a real routing rule
-   needs it, since it complicates every match query.
-9. **Negative requirements** — a line requiring an agent *not* hold a tag. Deferred; no known need.
-10. **Agent availability and capacity.** `/v1/match` answers *who is qualified*, never *who is free*.
-    That is the ACD's job in the call-centre product and must stay there — the plan is explicit about
-    it so nobody later adds presence tracking to the tag service.
+| # | Decision | Resolution |
+|---|---|---|
+| 1 | Manual override / grandfathering | **Attested award** — adopted |
+| 2 | Criteria versioning | **Grandfather by default**, pinned to `criteria_version` |
+| 3 | Revocation hysteresis | **Per-criterion grace window**, revoke on sustained failure |
+| 4 | Expiry / recertification | Optional `valid_for` on a tag |
+| 5 | Endorsement criterion | Added as a closed-grammar leaf |
+| 6 | Notification on award / revoke | Publish to `notification-service` |
+| 7 | "What should I work on next" | `next-best` endpoint, once tracks exist |
+| 8 | Proficiency on a `has` tagging | **Deferred** |
+| 9 | Negative requirements | **Deferred** |
+| 10 | Agent availability and capacity | **Out of scope** — stays in the ACD |
 
-**Authorization.** Copy `services/selection-list-service/src/middleware/authz.ts` verbatim in shape,
-substituting `TagSet` for `SelectionList`:
-- `requireAuthzCheck('TagSet', action)` → `createAuthzClient({ baseUrl: SECURITY_SERVICE_URL })`,
-  **fail closed** (any transport error → 403), no vendor SDK in this service.
-- Instance-scoped: every call site with a `tagSetId` passes
-  `resource: { type: 'TagSet', key: tagSetId }`. Omitting it silently widens a set-scoped grant to
-  tenant-wide — the documented escalation surface.
-- `grantTagSetOwner()` writes the **Security API first**, then the `tag_set_access` mirror, so a
-  thrown grant never leaves the mirror claiming a change that did not happen.
-- `countActiveOwners()` reads the mirror **only**, only for the last-owner 409 guard.
-- Private sets short-circuit: `owner_user_id === req.userId` is ownership; no Security API call.
-- `NODE_ENV=test` no-op proxy + `_setAuthzClientForTesting()` seam, as in the template.
+### 1. Manual override — an attested award, never a manual apply
 
-**Identity.** Add to `packages/identity/src/registry.ts` **and**
-`packages/identity-py/fuzefront_identity/registry.py` in the same PR — `gate_identifier.py
---registry-parity` fails CI if they drift:
+Rule 1 (an earned tag can never be applied by hand) stands. A new hire with ten years' prior
+experience is served by a **third award kind**, not by weakening it:
 
-```ts
-  // tag-service — product-local types, namespaced front_ per the namespace gate.
-  tagSet:  'front_tgs',
-  tag:     'front_tag',
-  tagging: 'front_tgg',
+`tag_awards.kind` becomes `'earned' | 'attested' | 'revoked'`. An **attested** award requires an
+explicit manager grant on the tag's set, carries a **mandatory `reason` string**, and writes its own
+row. It is visibly an override in every read — never indistinguishable from an earned award. A plain
+manual apply of a criteria-bearing tag still returns **409**.
+
+### 2. Criteria versioning — grandfather, pinned to the version earned under
+
+`tag_criteria.version` already exists; `tag_awards` gains **`criteria_version`**, set at award time.
+When a bar moves, existing holders **keep** their award — the award records the bar it actually met.
+Re-evaluating existing holders against a new bar is an **explicit, opt-in** administrative action,
+never a side effect of editing a threshold. Silently demoting people because an admin raised a
+number is the worst available default and is now ruled out in the contract, not just in review.
+
+### 3. Revocation hysteresis — a grace window per criterion
+
+A rolling metric dipping below the bar for a day must not strip a tag. Each criterion leaf may carry
+**`graceDays`** (default 7); revocation fires only on **sustained** failure across that window.
+Evaluation therefore records *when* a criterion first failed, so the sweep can tell a blip from a
+decline.
+
+### 4. Expiry / recertification — distinct from criteria lapsing
+
+A certification valid 12 months is not the same mechanic as a metric falling. A tag may carry
+optional **`valid_for`** (duration); an award past `evaluated_at + valid_for` is re-evaluated, and
+lapses to `revoked` with `cause: 'expired'` if its criteria no longer hold. `cause` distinguishes
+expiry from a metric decline in the audit trail, because they mean different things to the holder.
+
+### 5. Endorsement as a criterion leaf
+
+Added to the **closed** grammar — this does not reopen the rules-engine question:
+
+`{ endorsements: N, from: '<role>' }` — N distinct endorsements from holders of that role on the
+tag's set. Endorsements are their own append-only rows (endorser, subject, tag, timestamp); an
+endorsement is **not** an award and confers nothing on its own.
+
+### 6. Notification on award and revoke
+
+A progression loop that never tells the person is not a loop. Award and revoke publish to the
+existing **`notification-service`**. The notification carries the tag and the outcome — **never the
+metric values**, which stay behind the progress authorization rule.
+
+### 7. "What should I work on next"
+
+`GET /v1/tracks/{id}/next-best?subject=…` — the rungs a subject is closest to earning, ranked by
+remaining distance. Subject to the **same authorization as progress** (the subject themselves, or a
+manager grant), because closeness is derived from the metric values and leaks them if it is not.
+
+### 8–10. Deferred and out of scope, deliberately
+
+- **Proficiency on a `has` tagging** — deferred. Matching stays binary until a real routing rule
+  needs a level; adding one complicates every match query for a benefit nothing has asked for yet.
+- **Negative requirements** ("must NOT hold X") — deferred. No known need.
+- **Agent availability and capacity** — **out of scope, permanently.** `/v1/match` answers *who is
+  qualified*, never *who is free*. Presence and capacity belong to the ACD in the call-centre
+  product. Stated so nobody later adds presence tracking to the tag service.
+
+### Schema and contract deltas these decisions imply
+
+So implementers do not re-derive them from the prose above:
+
+```
+tag_awards      + kind 'earned'|'attested'|'revoked'
+                + criteria_version   -- the bar actually met
+                + reason             -- REQUIRED when kind='attested'
+                + cause              -- 'criteria'|'expired', on a revoke
+                + first_failed_at    -- drives the grace window
+tags            + valid_for          -- optional duration; NULL = no expiry
+tag_endorsements (id, tag_id, subject_type, subject_id, endorser_id, created_at,
+                  UNIQUE (tag_id, subject_id, endorser_id))   -- append-only
 ```
 
-`front_`-namespaced (product-local), not bare spine prefixes — tag-service is a FuzeFront product
-feature, not a family-hosted platform service like config-service. All ids minted via `mintId()`;
-no create body accepts an `id`, and every request schema sets `additionalProperties: false`.
+Criteria grammar gains one leaf: `{ endorsements, from }`. Each leaf may carry `graceDays`.
 
-**Lifecycle events — this will fail CI if skipped.** `scripts/gate_microservice_events.py` requires
-a **new** service to subscribe to all four of `identity.user.created`, `identity.user.deleted`,
-`identity.org.created`, `identity.org.deleted` *and* to perform a real DB write in the handler —
-`knownUnhandled` in `governance/microservice-events-policy.json` is a shrink-only ratchet that a new
-service cannot be added to. `src/events/` gets four handlers that actually write: seed a starter org
-tag set on `org.created`, purge private sets + taggings on `user.deleted`, purge org sets + taggings
-on `org.deleted`. Model on `services/selection-list-service/src/events/{consumer,user-deleted.handler,org-deleted.handler}.ts`.
-
-**Feature flag.** `fuzefront.tags.service`, release type, **default OFF**, gating the Helm values
-`enabled`, the host shell route, and the sidebar nav entry — the exact pattern
-`fuzefront.selection-lists.service` uses at `frontend/src/App.tsx:518` and
-`frontend/src/components/SidePanel.tsx:62`. Both states tested.
+New endpoints: `GET /v1/tracks/{id}/next-best`, `POST /v1/tags/{tagId}/endorsements`,
+`POST /v1/tags/{tagId}/awards:attest`. All three inherit the existing authorization rules —
+`next-best` the progress rule, the other two a manager grant on the tag's set.
 
 ## Work, in order
 
@@ -567,6 +593,16 @@ service; `evidence` holds the snapshot that justified the decision and stays cor
 move; a malformed or non-closed criteria expression → 422; metric ingestion is idempotent per
 `(subject, metric_key, observed_at)` and rejects a future `observed_at`; progress is visible to the
 subject, visible to a manager grant, and **404 — not 403 — to an ordinary org member**.
+
+Plus the cases the *Career path* decisions add, each of which is a policy promise to the holder:
+an **attested** award requires a manager grant and a non-empty `reason`, and is distinguishable from
+an earned one in every read; raising a threshold does **not** revoke existing holders, and their
+`criteria_version` still names the bar they met; a one-day dip inside `graceDays` does **not** revoke,
+while sustained failure past it does; an award past `valid_for` re-evaluates and records
+`cause: 'expired'` rather than `'criteria'`; `{ endorsements, from }` counts only **distinct**
+endorsers holding the named role, and an endorsement on its own confers nothing; award and revoke
+notifications carry the outcome but **never a metric value**; and `next-best` is **404 — not 403 —
+to an ordinary org member**, since closeness leaks the metrics.
 
 ### PR 4 — Design system primitives (`frontend-engineer`, sole editor of `design-system/`)
 `design-system/components/core/Chip.jsx`, `design-system/components/forms/TagInput.jsx` and

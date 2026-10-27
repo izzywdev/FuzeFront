@@ -5,10 +5,10 @@ global:
 
 backendImage:
   repository: ghcr.io/izzywdev/fuzequality-backend
-  tag: 667757f2f260
+  tag: 3c186230eec9
 frontendImage:
   repository: ghcr.io/izzywdev/fuzequality-frontend
-  tag: 667757f2f260
+  tag: 3c186230eec9
 
 # FuzeQuality is a live, same-origin federated remote. Its registration assets
 # and sealed registration token are delivered by this chart, so run the
