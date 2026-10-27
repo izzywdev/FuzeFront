@@ -98,6 +98,13 @@
       "onDelete": "cascade"
     },
     {
+      "column": "selection_list_rollout_marks.organization_id",
+      "targetType": "org",
+      "validation": "L1",
+      "mode": "warn",
+      "onDelete": "cascade"
+    },
+    {
       "column": "selection_lists.forked_from_list_id",
       "targetType": "front_sl",
       "validation": "L1",

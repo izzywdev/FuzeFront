@@ -1,7 +1,7 @@
 {
   "_comment": "The ramp for gate-frames-schema (scripts/check-frames-schema.mjs). Two checks, both enforced block-now on CHANGED features and reported-only for the pre-existing backlog below — the same changed-scope discipline as gate-ds-conformance's changed-lines ratchet and gate-frames-first's uncovered ramp. This file is the worklist + flip criterion, not automation; the gate reads nothing from it (the changed-feature scope is computed from git). It exists so the backlog has an owner and a finish line.",
   "owner": "@izzywdev",
-  "measured_on": "2026-10-26",
+  "measured_on": "2026-10-27",
   "schema": {
     "rule": "Every design/frames/<feature>/manifest.json must match the load-bearing shape in design/frames/_template/manifest.schema.json. Enforced for a feature this PR changes; backlog reported only.",
     "backlog": {},
@@ -9,13 +9,13 @@
   },
   "mobile": {
     "rule": "FuzeFront declares mobile required (.fuze/manifest.json). Each flow in build.flows[] must declare mobile coverage — a mobile/responsive frame (frames[].viewport), build.flows[].responsive (mobileFrame or coveredViewports), or responsive.exempt + exemptReason. Enforced for a feature this PR changes; backlog reported only.",
-    "backlog_flow_count": 25,
+    "backlog_flow_count": 23,
     "backlog_features": [
       "account-security", "app-scopes-user-menu", "connected-accounts", "devices-sessions",
       "identity-context-switcher", "member-directory", "mfa-management", "org-invitations-v2",
       "password-reset", "white-label-portal"
     ],
-    "note": "Was 58 flows / 22 features (2026-08-18); 51 at the start of the 2026-10-26 frames-ramp pass. That pass cleared 26 flows: mfa-stepup-mobile (frames already authored at 375px — tagged viewport=mobile) and signup-phone-verification (frames render both desktop + 375px — tagged viewport=responsive) got honest viewport tags; and the genuinely desktop-only operator/developer/admin consoles — app-builder, config-management, devportal, employee-console, portal-admin-consoles, api-tokens, app-management, authz-admin, portals-directory — declared build.flows[].responsive.exempt with specific per-flow reasons. The 25 flows left are all END-USER flows that SHOULD be mobile (account/security/onboarding/shell-chrome); they are approved:true already, so adding a real mobile frame is per-feature product-designer design plus owner re-approval, NOT an exemption and NOT a mechanical ramp edit. Run `node scripts/check-frames-schema.mjs --report` for the live count.",
+    "note": "Was 58 flows / 22 features (2026-08-18); 51 at the start of the 2026-10-26 frames-ramp pass. That pass cleared 26 flows: mfa-stepup-mobile (frames already authored at 375px — tagged viewport=mobile) and signup-phone-verification (frames render both desktop + 375px — tagged viewport=responsive) got honest viewport tags; and the genuinely desktop-only operator/developer/admin consoles — app-builder, config-management, devportal, employee-console, portal-admin-consoles, api-tokens, app-management, authz-admin, portals-directory — declared build.flows[].responsive.exempt with specific per-flow reasons. Refreshed to 23 flows on 2026-10-27 after merging master, which landed mobile coverage for mfa-management's recovery-codes and mfa-step-up flows (−2). The 23 flows left are all END-USER flows that SHOULD be mobile (account/security/onboarding/shell-chrome); they are approved:true already, so adding a real mobile frame is per-feature product-designer design plus owner re-approval, NOT an exemption and NOT a mechanical ramp edit. Run `node scripts/check-frames-schema.mjs --report` for the live count.",
     "remaining_flows": {
       "account-security": ["account-security"],
       "app-scopes-user-menu": ["user-menu", "accounts", "install-scope", "notifications"],
@@ -23,7 +23,7 @@
       "devices-sessions": ["sessions-list", "revoke-session", "revoke-others"],
       "identity-context-switcher": ["context-switch", "my-orgs"],
       "member-directory": ["member-directory"],
-      "mfa-management": ["mfa-overview", "totp-enroll", "sms-enroll", "recovery-codes", "mfa-step-up"],
+      "mfa-management": ["mfa-overview", "totp-enroll", "sms-enroll"],
       "org-invitations-v2": ["invite", "accept-bind", "root-customer-invite"],
       "password-reset": ["reset", "change-password", "set-password"],
       "white-label-portal": ["portal-shell", "portal-login"]

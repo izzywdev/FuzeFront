@@ -63,6 +63,14 @@ jobs:
       - name: Set up Android SDK
         if: steps.secrets.outputs.have == 'true'
         uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+        with:
+          # The action's DEFAULT is `tools platform-tools`, and Google removed
+          # the obsolete `tools` package from the SDK repository, so sdkmanager
+          # answers "Failed to find package 'tools'" and exits 1. `tools` is
+          # superseded by cmdline-tools (which the action installs itself) and
+          # nothing here uses it; Bubblewrap pulls its own build-tools/platforms.
+          # Pin the list explicitly so a future default change cannot break us.
+          packages: 'platform-tools'
 
       - name: Install Bubblewrap CLI
         if: steps.secrets.outputs.have == 'true'
@@ -134,6 +142,38 @@ jobs:
           sleep 1
           bubblewrap update --skipPwaValidation
           kill $HTTP_PID || true
+
+      - name: Force minSdkVersion 24 in generated Gradle project
+        if: steps.secrets.outputs.have == 'true'
+        working-directory: shopify-nav/android
+        run: |
+          set -euo pipefail
+          # Bubblewrap scaffolds app/build.gradle with its own default minSdk (21)
+          # and does NOT honour "minSdkVersion": 24 from twa-manifest.json. 21 is
+          # below the 24 required by androidbrowserhelper:2.7.4, so the Android
+          # manifest-merger fails. Raise the floor to 24 (never overrideLibrary).
+          GRADLE_FILE="app/build.gradle"
+          test -f "$GRADLE_FILE" || {
+            echo "::error::$GRADLE_FILE not found after bubblewrap scaffold — template layout may have changed" >&2
+            exit 1
+          }
+          if grep -Eq 'minSdkVersion[[:space:]]+[0-9]+' "$GRADLE_FILE"; then
+            sed -i -E 's/minSdkVersion[[:space:]]+[0-9]+/minSdkVersion 24/g' "$GRADLE_FILE"
+          elif grep -Eq 'minSdk[[:space:]]*=[[:space:]]*[0-9]+' "$GRADLE_FILE"; then
+            sed -i -E 's/minSdk[[:space:]]*=[[:space:]]*[0-9]+/minSdk = 24/g' "$GRADLE_FILE"
+          elif grep -Eq 'minSdk[[:space:]]+[0-9]+' "$GRADLE_FILE"; then
+            sed -i -E 's/minSdk[[:space:]]+[0-9]+/minSdk 24/g' "$GRADLE_FILE"
+          else
+            echo "::error::No minSdk/minSdkVersion declaration found in $GRADLE_FILE — Bubblewrap template changed; update this step." >&2
+            cat "$GRADLE_FILE" >&2
+            exit 1
+          fi
+          echo "minSdk after patch:"
+          grep -En 'minSdk(Version)?' "$GRADLE_FILE"
+          grep -Eq 'minSdk(Version)?([[:space:]]+|[[:space:]]*=[[:space:]]*)24\b' "$GRADLE_FILE" || {
+            echo "::error::minSdk patch did not yield 24 in $GRADLE_FILE" >&2
+            exit 1
+          }
 
       - name: Build APK
         if: steps.secrets.outputs.have == 'true'
@@ -211,7 +251,7 @@ jobs:
 
       - name: Upload APK + AAB artifact
         if: steps.secrets.outputs.have == 'true'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: shopify-nav-android-v${{ steps.version.outputs.code }}
           path: |
