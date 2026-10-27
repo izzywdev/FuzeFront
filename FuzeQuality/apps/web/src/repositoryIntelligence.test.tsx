@@ -1178,7 +1178,7 @@ describe('RepositoryIntelligence flow inventory', () => {
       page: { nextCursor: 'older-executions', hasMore: true },
     })
     vi.mocked(api.executionTrend).mockResolvedValue([
-      { date: '2026-10-01', total: 10, passed: 7, failed: 2, cancelled: 1, running: 0, passRate: 0.7, durationSampleCount: 9, averageDurationMs: 95_000, maximumDurationMs: 180_000, retryAttemptCount: 3, successfulRetryCount: 2, recoveredRunCount: 1, evidenceCompleteCount: 6, evidencePartialCount: 1, evidenceUnavailableCount: 2, evidenceNotCollectedCount: 1, invalidEvidenceUrlCount: 1, githubRunProvenanceMissingCount: 2, postProductionVideoMissingCount: 3, terminalTimingMissingCount: 1, gateEvaluationCount: 9, gatePassedCount: 6, gateFailedCount: 2, gateCancelledCount: 1, gateRunningCount: 0, gateUnevaluatedExecutionCount: 2, thresholdEvaluationCount: 8, thresholdPassedCount: 6, thresholdFailedCount: 2, performanceExecutionWithoutThresholdCount: 1 },
+      { date: '2026-10-01', total: 10, passed: 7, failed: 2, cancelled: 1, running: 0, passRate: 0.7, durationSampleCount: 9, averageDurationMs: 95_000, maximumDurationMs: 180_000, retryAttemptCount: 3, successfulRetryCount: 2, recoveredRunCount: 1, evidenceCompleteCount: 6, evidencePartialCount: 1, evidenceUnavailableCount: 2, evidenceNotCollectedCount: 1, evidenceCollectionFailureCount: 3, invalidEvidenceUrlCount: 1, githubRunProvenanceMissingCount: 2, attemptProvenanceUnverifiedCount: 4, postProductionVideoMissingCount: 3, terminalTimingMissingCount: 1, gateEvaluationCount: 9, gatePassedCount: 6, gateFailedCount: 2, gateCancelledCount: 1, gateRunningCount: 0, gateUnevaluatedExecutionCount: 2, thresholdEvaluationCount: 8, thresholdPassedCount: 6, thresholdFailedCount: 2, performanceExecutionWithoutThresholdCount: 1 },
     ])
 
     render(<RepositoryIntelligence data={portfolio} />)
@@ -1193,8 +1193,8 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(trend).toHaveTextContent('1m 35s average · 3m 0s slowest · 9 timed')
     expect(trend).toHaveTextContent('3 retries · 2 passed retries')
     expect(trend).toHaveTextContent('1 recovered after failure')
-    expect(trend).toHaveTextContent('Provider evidence: 6 complete · 1 partial · 2 unavailable · 1 not collected')
-    expect(trend).toHaveTextContent('Evidence gaps: 1 invalid URLs · 2 GitHub runs missing provenance · 3 post-production runs missing video · 1 terminal runs missing timing')
+    expect(trend).toHaveTextContent('Provider evidence: 6 complete · 1 partial · 2 unavailable · 1 not collected · 3 collection failures')
+    expect(trend).toHaveTextContent('Evidence gaps: 1 invalid URLs · 2 GitHub runs missing provenance · 4 retry attempts with unverified provenance · 3 post-production runs missing video · 1 terminal runs missing timing')
     expect(trend).toHaveTextContent('Policy gates: 6 passed · 2 failed · 1 cancelled · 0 running · 9 evaluated · 2 executions without an attributable gate outcome')
     expect(trend).toHaveTextContent('Performance thresholds: 6 passed · 2 failed · 8 evaluated · 1 load/stress executions without threshold evidence')
     expect(api.executionTrend).toHaveBeenCalledWith(repository.id, {})
@@ -1830,6 +1830,7 @@ describe('RepositoryIntelligence flow inventory', () => {
         source: 'litellm',
         status: 'proposed',
         revisionScope: 'current',
+        targetId: '',
         model: '',
         promptVersion: '',
         schemaVersion: '',
@@ -1847,6 +1848,7 @@ describe('RepositoryIntelligence flow inventory', () => {
           source: 'litellm',
           status: 'proposed',
           revisionScope: 'current',
+          targetId: '',
           model: '',
           promptVersion: '',
           schemaVersion: '',
@@ -1862,6 +1864,7 @@ describe('RepositoryIntelligence flow inventory', () => {
         source: 'litellm',
         status: 'proposed',
         revisionScope: 'current',
+        targetId: '',
         model: '',
         promptVersion: '',
         schemaVersion: '',
@@ -1915,6 +1918,61 @@ describe('RepositoryIntelligence flow inventory', () => {
         maxConfidence: '0.9',
       })
     )
+  })
+
+  it('filters UX flows by exact target artifact and retains it during continuation', async () => {
+    mockEvidenceApis()
+    const targetedCandidate = {
+      ...candidate,
+      steps: [{ ...candidate.steps[0], targetIds: ['route-checkout'] }],
+      wireframe: { kind: 'sequence' as const, nodes: [{ label: 'Checkout', targetIds: ['route-checkout'] }] },
+    }
+    const flowRequest = vi.spyOn(api, 'repositoryFlowCandidates').mockImplementation(async (_repositoryId, filter) =>
+      filter?.cursor
+        ? { items: [], page: { nextCursor: null, hasMore: false } }
+        : { items: [targetedCandidate], page: { nextCursor: 'flow-page-2', hasMore: true } }
+    )
+    render(<RepositoryIntelligence data={portfolio} />)
+    await screen.findByText(candidate.title)
+
+    fireEvent.change(screen.getByLabelText('Target artifact ID'), {
+      target: { value: ' route-checkout ' },
+    })
+    await waitFor(() => expect(flowRequest).toHaveBeenLastCalledWith(repository.id, {
+      targetId: 'route-checkout',
+    }))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more UX-flow history' }))
+    await waitFor(() => expect(flowRequest).toHaveBeenLastCalledWith(repository.id, {
+      targetId: 'route-checkout',
+      cursor: 'flow-page-2',
+    }))
+    expect(flowCandidateMatchesInventory(targetedCandidate, [repository], {
+      repositoryId: '',
+      source: '',
+      status: '',
+      revisionScope: 'all',
+      targetId: 'route-checkout',
+      model: '',
+      promptVersion: '',
+      schemaVersion: '',
+      analysisRisk: '',
+      minimumConfidencePercent: '',
+      maximumConfidencePercent: '',
+    })).toBe(true)
+    expect(flowCandidateMatchesInventory(targetedCandidate, [repository], {
+      repositoryId: '',
+      source: '',
+      status: '',
+      revisionScope: 'all',
+      targetId: 'route',
+      model: '',
+      promptVersion: '',
+      schemaVersion: '',
+      analysisRisk: '',
+      minimumConfidencePercent: '',
+      maximumConfidencePercent: '',
+    })).toBe(false)
   })
 
   it('queries UX flows by retained LiteLLM review risk', async () => {
@@ -3602,6 +3660,29 @@ describe('RepositoryIntelligence flow inventory', () => {
     })
   })
 
+  it('isolates executions whose provider evidence collection failed', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await waitFor(() => expect(api.testExecutions).toHaveBeenCalled())
+    fireEvent.change(screen.getByLabelText('Required evidence'), {
+      target: { value: 'provider-collection-failure' },
+    })
+
+    await waitFor(() => {
+      expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, {
+        evidenceRequirement: 'provider-collection-failure',
+      })
+      expect(api.executionTrend).toHaveBeenLastCalledWith(repository.id, {
+        evidenceRequirement: 'provider-collection-failure',
+      })
+      expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, {
+        evidenceRequirement: 'provider-collection-failure',
+      })
+    })
+  })
+
   it('isolates GitHub Actions executions missing auditable run provenance', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
@@ -3621,6 +3702,29 @@ describe('RepositoryIntelligence flow inventory', () => {
       })
       expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, {
         evidenceRequirement: 'github-run-provenance-missing',
+      })
+    })
+  })
+
+  it('isolates executions with provider artifacts withheld for unverified retry-attempt provenance', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await waitFor(() => expect(api.testExecutions).toHaveBeenCalled())
+    fireEvent.change(screen.getByLabelText('Required evidence'), {
+      target: { value: 'attempt-provenance-unverified' },
+    })
+
+    await waitFor(() => {
+      expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, {
+        evidenceRequirement: 'attempt-provenance-unverified',
+      })
+      expect(api.executionTrend).toHaveBeenLastCalledWith(repository.id, {
+        evidenceRequirement: 'attempt-provenance-unverified',
+      })
+      expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, {
+        evidenceRequirement: 'attempt-provenance-unverified',
       })
     })
   })
@@ -4135,6 +4239,7 @@ describe('RepositoryIntelligence flow inventory', () => {
           reviewStatus: 'proposed',
           revisionScope: 'current',
           subject: '',
+          sourcePath: '',
           policyArtifactId: '',
           gateArtifactId: '',
           minimumConfidencePercent: '',
@@ -4150,6 +4255,7 @@ describe('RepositoryIntelligence flow inventory', () => {
         reviewStatus: '',
         revisionScope: 'current',
         subject: '',
+        sourcePath: '',
         policyArtifactId: '',
         gateArtifactId: '',
         minimumConfidencePercent: '91',
@@ -4164,6 +4270,7 @@ describe('RepositoryIntelligence flow inventory', () => {
         reviewStatus: '',
         revisionScope: 'current',
         subject: 'deployment',
+        sourcePath: '',
         policyArtifactId: '',
         gateArtifactId: '',
         minimumConfidencePercent: '',
@@ -4224,6 +4331,59 @@ describe('RepositoryIntelligence flow inventory', () => {
       subject: 'authentication',
       cursor: 'policy-page-2',
     }))
+  })
+
+  it('filters governance by exact repository source path and retains it during continuation', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    vi.mocked(api.policyGateEvaluations).mockImplementation(async (_repositoryId, filter) =>
+      filter?.cursor
+        ? { items: [], page: { nextCursor: null, hasMore: false } }
+        : { items: [governanceEvaluation], page: { nextCursor: 'policy-page-2', hasMore: true } }
+    )
+    render(<RepositoryIntelligence data={portfolio} />)
+    await screen.findByText(governanceEvaluation.title)
+
+    fireEvent.change(screen.getByLabelText('Governance source path'), {
+      target: { value: ' governance/auth.md ' },
+    })
+    await waitFor(() => expect(api.policyGateEvaluations).toHaveBeenLastCalledWith(repository.id, {
+      revision: repository.lastScanRevision,
+      sourcePath: 'governance/auth.md',
+    }))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more policy and gate history' }))
+    await waitFor(() => expect(api.policyGateEvaluations).toHaveBeenLastCalledWith(repository.id, {
+      revision: repository.lastScanRevision,
+      sourcePath: 'governance/auth.md',
+      cursor: 'policy-page-2',
+    }))
+    expect(policyGateEvaluationMatchesInventory(governanceEvaluation, [repository], {
+      kind: '',
+      remediationAction: '',
+      severity: '',
+      reviewStatus: '',
+      revisionScope: 'current',
+      subject: '',
+      sourcePath: 'governance/auth.md',
+      policyArtifactId: '',
+      gateArtifactId: '',
+      minimumConfidencePercent: '',
+      maximumConfidencePercent: '',
+    })).toBe(true)
+    expect(policyGateEvaluationMatchesInventory(governanceEvaluation, [repository], {
+      kind: '',
+      remediationAction: '',
+      severity: '',
+      reviewStatus: '',
+      revisionScope: 'current',
+      subject: '',
+      sourcePath: 'governance/release.md',
+      policyArtifactId: '',
+      gateArtifactId: '',
+      minimumConfidencePercent: '',
+      maximumConfidencePercent: '',
+    })).toBe(false)
   })
 
   it('traces an exact policy-gate relationship across continuation pages', async () => {

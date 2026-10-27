@@ -36,7 +36,6 @@ import {
   type PublicationQueueStatus,
 } from '../app-registry/service'
 import { toAppDtos } from '../app-registry/app-dto'
-import { isPrefixedIdsEnabled } from '../identity/flags'
 import { checkAppRegistryPermission, assignAppCreatorRole } from '../app-registry/permit'
 import {
   isBuildWithAgentEnabled,
@@ -174,14 +173,14 @@ function parseSessionId(raw: string): string | null {
 
 function toSessionDto(row: BuildSessionRow) {
   return {
-    id: toWireId('appBuildSession', row.id, true),
-    organizationId: toWireId('organization', row.organization_id, true),
-    requestedBy: row.requested_by_user_id ? toWireId('user', row.requested_by_user_id, true) : null,
+    id: toWireId('appBuildSession', row.id),
+    organizationId: toWireId('organization', row.organization_id),
+    requestedBy: row.requested_by_user_id ? toWireId('user', row.requested_by_user_id) : null,
     context: row.context,
     name: row.name,
     brief: row.brief,
     status: row.status,
-    appId: row.app_id ? toWireId('app', row.app_id, true) : null,
+    appId: row.app_id ? toWireId('app', row.app_id) : null,
     appSlug: row.app_slug ?? null,
     agentSessionUrl: row.agent_session_url ?? null,
     errorCode: row.error_code ?? null,
@@ -320,8 +319,8 @@ router.post(
       try {
         const launched = await launcher.launch({
           buildSessionId: sessionWireId,
-          organizationId: toWireId('organization', organizationId, true),
-          requestedByUserId: toWireId('user', caller.userId, true),
+          organizationId: toWireId('organization', organizationId),
+          requestedByUserId: toWireId('user', caller.userId),
           context: body.context,
           name: body.name,
           brief: body.brief,
@@ -631,7 +630,7 @@ function publicationStatus(p: {
 
 function toPublicationDto(slug: string, tier: string, p: any) {
   const pub = p.metadata?.publication ?? {}
-  const wireUser = (v: unknown) => (typeof v === 'string' && v ? toWireId('user', v, true) : null)
+  const wireUser = (v: unknown) => (typeof v === 'string' && v ? toWireId('user', v) : null)
   return {
     slug,
     tier,
@@ -885,8 +884,6 @@ router.get(
         throw err
       }
 
-      const flagCtx = { orgId: req.user?.organizationId, userId: req.user?.id }
-      const prefixed = await isPrefixedIdsEnabled(flagCtx)
       // fuzefront.apps.creator-ownership is evaluated per OWNING org, exactly as
       // the per-app GET (dtoOptions in routes/app-registry.ts) does, so the queue
       // never hides/shows creator data differently from the app's own GET if the
@@ -908,7 +905,7 @@ router.get(
         })
         const group = await toAppDtos(
           idxs.map(i => result.items[i].app),
-          { prefixed, creatorOwnership, caller }
+          { creatorOwnership, caller }
         )
         idxs.forEach((i, n) => {
           dtos[i] = group[n]

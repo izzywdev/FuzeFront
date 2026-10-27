@@ -115,6 +115,7 @@ describe('policy-gate review lifecycle', () => {
       { ...base, id: 'minimum', title: 'Minimum confidence', policyArtifactIds: ['policy-minimum'], confidence: 0.7 },
       { ...base, id: 'maximum', title: 'Maximum confidence', policyArtifactIds: ['policy-maximum'], confidence: 0.9 },
       { ...base, id: 'other-subject', title: 'Other subject', policyArtifactIds: ['policy-other-subject'], confidence: 0.8, scope: { sourcePaths: ['governance/authentication.md'], subjects: ['authentication'] } },
+      { ...base, id: 'other-source', title: 'Other source', policyArtifactIds: ['policy-other-source'], confidence: 0.8, scope: { sourcePaths: ['governance/release.md'], subjects: ['deployment'] } },
       { ...base, id: 'other-remediation', title: 'Other remediation', policyArtifactIds: ['policy-other-remediation'], confidence: 0.8, remediationAction: 'disambiguate-policy' },
       { ...base, id: 'high', title: 'High confidence', policyArtifactIds: ['policy-high'], confidence: 0.91 },
       { ...base, id: 'other-tenant', tenantId: 'tenant-2', title: 'Other tenant', confidence: 0.8 },
@@ -124,6 +125,7 @@ describe('policy-gate review lifecycle', () => {
       minConfidence: 0.7,
       maxConfidence: 0.9,
       subject: 'DEPLOYMENT',
+      sourcePath: 'governance/deployment.md',
       remediationAction: 'build-gate',
     })
     expect(matches.map(item => item.id).sort()).toEqual(['maximum', 'minimum'])
@@ -155,6 +157,7 @@ describe('policy-gate review lifecycle', () => {
       minConfidence: 0.7,
       maxConfidence: 0.9,
       subject: 'Deployment',
+      sourcePath: 'governance/deployment.md',
       policyArtifactId: 'policy-1',
       gateArtifactId: 'gate-1',
       after: { createdAt: '2026-10-09T00:00:00.000Z', id: 'evaluation-1' },
@@ -172,9 +175,12 @@ describe('policy-gate review lifecycle', () => {
     expect(String(statement)).toContain('policy_artifact.value=$15')
     expect(String(statement)).toContain("jsonb_array_elements_text(COALESCE(gate_artifact_ids, '[]'::jsonb))")
     expect(String(statement)).toContain('gate_artifact.value=$16')
+    expect(String(statement)).toContain("jsonb_array_elements_text(COALESCE(scope->'sourcePaths', '[]'::jsonb))")
+    expect(String(statement)).toContain('source_path.value=$17')
     expect(parameters).toEqual([
       'repo-1', 'tenant-1', null, null, null, null, null,
       0.7, 0.9, '2026-10-09T00:00:00.000Z', 'evaluation-1', 25, 'Deployment', 'build-gate', 'policy-1', 'gate-1',
+      'governance/deployment.md',
     ])
   })
 

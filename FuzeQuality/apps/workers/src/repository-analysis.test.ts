@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { POLICY_GATE_EVALUATION_BATCH_SIZE, isRepositoryAnalysisTopic, reportExhaustedRepositoryAnalysis, repositoryQualityArtifactsPath, runRepositoryInventoryAnalysis, runTrackedRepositoryInventoryAnalysis, shouldRunRepositoryAnalysis } from './repository-analysis'
-import { RepositoryFlowAnalysisTimeoutError } from '@fuzequality/core'
+import { RepositoryFlowAnalysisInvalidResponseError, RepositoryFlowAnalysisTimeoutError } from '@fuzequality/core'
 import { TOPICS } from '@fuzequality/contracts'
 
 const repository = { id: 'repo-1', tenantId: 'tenant-1', owner: 'fuze', name: 'front', canonicalUrl: 'https://example.test/front', defaultBranch: 'main', kind: 'application' as const, includeGlobs: [], excludeGlobs: [], jiraProjects: [], jiraBindings: [], enabled: true, lastScanStatus: 'complete' as const }
@@ -162,6 +162,21 @@ describe('repository inventory analysis ordering', () => {
 
     expect(states.at(-1)).toEqual(expect.objectContaining({
       revision: 'abc', status: 'failed', errorCode: 'INTELLIGENCE_TIMEOUT',
+    }))
+  })
+
+  it('records a distinct safe status when LiteLLM output fails the reviewed schema', async () => {
+    const states: Array<{ status: string; errorCode?: string }> = []
+    await expect(runTrackedRepositoryInventoryAnalysis(repository, 'abc', artifacts, {
+      analyzer: { analyze: vi.fn(async () => { throw new RepositoryFlowAnalysisInvalidResponseError() }) },
+      persistCandidates: vi.fn(async () => undefined),
+      persistEvaluations: vi.fn(async () => undefined),
+      persistStatus: vi.fn(async status => { states.push(status) }),
+      now: () => '2026-10-13T00:00:00.000Z',
+    })).rejects.toBeInstanceOf(RepositoryFlowAnalysisInvalidResponseError)
+
+    expect(states.at(-1)).toEqual(expect.objectContaining({
+      revision: 'abc', status: 'failed', errorCode: 'INTELLIGENCE_INVALID_RESPONSE',
     }))
   })
 

@@ -2,7 +2,6 @@ import express from 'express'
 import { v4 as uuidv4 } from 'uuid'
 import { mintId, toUuid, fromUuid } from '@izzywdev/fuzefront-identity'
 import crypto from 'crypto'
-import { isPrefixedIdsEnabled } from '../identity/flags'
 import { prefixDtoIds } from '../identity/serializer'
 import { authenticateToken, requireRole } from '../middleware/auth'
 import {
@@ -277,9 +276,7 @@ router.post('/', authenticateToken, async (req: any, res) => {
       )
     }
 
-    const flagCtx = { orgId: organizationId, userId: req.user?.id }
-    const prefixed = await isPrefixedIdsEnabled(flagCtx)
-    res.status(201).json(prefixDtoIds(organization as any, prefixed, { id: 'organization', owner_id: 'user', parent_id: 'organization' }))
+    res.status(201).json(prefixDtoIds(organization as any, { id: 'organization', owner_id: 'user', parent_id: 'organization' }))
   } catch (error: any) {
     console.error('Error creating organization:', error)
 
@@ -479,10 +476,8 @@ router.get('/', authenticateToken, async (req: any, res) => {
         (org.owner_id === req.user.id ? 'owner' : null),
     }))
 
-    const flagCtx = { userId: req.user?.id }
-    const prefixed = await isPrefixedIdsEnabled(flagCtx)
     const prefixedOrgs = transformedOrganizations.map(org =>
-      prefixDtoIds(org as any, prefixed, { id: 'organization', owner_id: 'user', parent_id: 'organization' })
+      prefixDtoIds(org as any, { id: 'organization', owner_id: 'user', parent_id: 'organization' })
     )
     res.json({
       organizations: prefixedOrgs,
@@ -568,9 +563,7 @@ router.get(
           (organization.owner_id === req.user.id ? 'owner' : null),
       }
 
-      const flagCtx = { orgId: id, userId: req.user?.id }
-      const prefixed = await isPrefixedIdsEnabled(flagCtx)
-      res.json(prefixDtoIds(result as any, prefixed, { id: 'organization', owner_id: 'user', parent_id: 'organization' }))
+      res.json(prefixDtoIds(result as any, { id: 'organization', owner_id: 'user', parent_id: 'organization' }))
     } catch (error: any) {
       console.error('Error fetching organization:', error)
       res.status(500).json({ error: 'Failed to fetch organization' })
@@ -671,9 +664,7 @@ router.put(
         updated_at: updatedOrganization.updated_at,
       }
 
-      const flagCtx = { orgId: id, userId: req.user?.id }
-      const prefixed = await isPrefixedIdsEnabled(flagCtx)
-      res.json(prefixDtoIds(result as any, prefixed, { id: 'organization', owner_id: 'user', parent_id: 'organization' }))
+      res.json(prefixDtoIds(result as any, { id: 'organization', owner_id: 'user', parent_id: 'organization' }))
     } catch (error: any) {
       console.error('Error updating organization:', error)
 
@@ -804,10 +795,8 @@ router.get('/:id/invitations', authenticateToken, async (req: any, res) => {
       .whereIn('status', ['pending'])
       .orderBy('created_at', 'desc')
 
-    const flagCtx = { orgId: id, userId: req.user?.id }
-    const prefixed = await isPrefixedIdsEnabled(flagCtx)
     const prefixedInvitations = invitations.map((inv: any) =>
-      prefixDtoIds(inv, prefixed, { id: 'invitation', organization_id: 'organization', invited_by: 'user' })
+      prefixDtoIds(inv, { id: 'invitation', organization_id: 'organization', invited_by: 'user' })
     )
     res.json({ invitations: prefixedInvitations })
   } catch (error: any) {
@@ -895,11 +884,9 @@ router.post('/:id/invitations', authenticateToken, async (req: any, res) => {
       console.error('Failed to publish invite email event (non-fatal):', emailErr)
     }
 
-    const flagCtxInv = { orgId: id, userId: req.user?.id }
-    const prefixedInv = await isPrefixedIdsEnabled(flagCtxInv)
     const invitationDto = { id: invitationId, organizationId: id, email: normalizedEmail, role, expiresAt, status: 'pending' }
     res.status(201).json({
-      invitation: prefixDtoIds(invitationDto, prefixedInv, { id: 'invitation', organizationId: 'organization' }),
+      invitation: prefixDtoIds(invitationDto, { id: 'invitation', organizationId: 'organization' }),
     })
   } catch (error: any) {
     console.error('Error creating invitation:', error)
@@ -1362,11 +1349,9 @@ router.get('/:id/members', authenticateToken, async (req: any, res) => {
       invited_at: null,
     }))
 
-    const flagCtx = { orgId: id, userId: req.user?.id }
-    const prefixed = await isPrefixedIdsEnabled(flagCtx)
     const prefixedMembers = members.map((m: any) => ({
-      ...prefixDtoIds(m, prefixed, { id: 'membership' }),
-      user: prefixDtoIds(m.user, prefixed, { id: 'user' }),
+      ...prefixDtoIds(m, { id: 'membership' }),
+      user: prefixDtoIds(m.user, { id: 'user' }),
     }))
     res.json({ members: prefixedMembers, pagination: { page, pageSize, total } })
   } catch (error: any) {
@@ -1554,10 +1539,8 @@ router.get('/:id/directory', authenticateToken, async (req: any, res) => {
 
     const page = Math.floor(offset / limit) + 1
 
-    const flagCtxDir = { orgId: id, userId: req.user?.id }
-    const prefixedDir = await isPrefixedIdsEnabled(flagCtxDir)
     const prefixedItems = items.map((item: any) =>
-      prefixDtoIds(item, prefixedDir, { userId: 'user' })
+      prefixDtoIds(item, { userId: 'user' })
     )
     res.json({ items: prefixedItems, page, pageSize: limit, total })
   } catch (error: any) {
@@ -1646,11 +1629,9 @@ router.post('/:id/members', authenticateToken, async (req: any, res) => {
       console.error('Failed to publish invite email event (non-fatal):', emailErr)
     }
 
-    const flagCtxMem = { orgId: id, userId: req.user?.id }
-    const prefixedMem = await isPrefixedIdsEnabled(flagCtxMem)
     const legacyInvDto = { id: invitationId, organizationId: id, email: normalizedEmail, role, expiresAt, status: 'pending' }
     res.status(201).json({
-      invitation: prefixDtoIds(legacyInvDto, prefixedMem, { id: 'invitation', organizationId: 'organization' }),
+      invitation: prefixDtoIds(legacyInvDto, { id: 'invitation', organizationId: 'organization' }),
     })
   } catch (error: any) {
     console.error('Error creating member invitation:', error)
@@ -1725,9 +1706,7 @@ router.put('/:id/members/:memberId', authenticateToken, async (req: any, res) =>
       )
     }
 
-    const flagCtxRole = { orgId: id, userId: req.user?.id }
-    const prefixedRole = await isPrefixedIdsEnabled(flagCtxRole)
-    res.json(prefixDtoIds(updated, prefixedRole, { id: 'membership', user_id: 'user', organization_id: 'organization' }))
+    res.json(prefixDtoIds(updated, { id: 'membership', user_id: 'user', organization_id: 'organization' }))
   } catch (error: any) {
     console.error('Error updating member role:', error)
     res.status(500).json({ error: 'Failed to update member role' })

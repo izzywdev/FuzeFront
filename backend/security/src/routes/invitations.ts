@@ -8,7 +8,6 @@ import express from 'express'
 import { mintId, toUuid } from '@izzywdev/fuzefront-identity'
 import { db } from '../config/database'
 import { assignOrganizationRole } from '../utils/permit/role-assignment'
-import { isPrefixedIdsEnabled } from '../identity/flags'
 import { prefixDtoIds } from '../identity/serializer'
 import { withReqId } from '../lib/logger'
 import { authenticateToken } from '../middleware/auth'
@@ -190,15 +189,12 @@ router.get('/:token', async (req: any, res) => {
       .where('id', invitation.organization_id)
       .first()
 
-    const prefixed = await isPrefixedIdsEnabled({})
     const invDto = prefixDtoIds(
       { id: invitation.id, email: maskEmail(invitation.email), role: invitation.role, expires_at: invitation.expires_at, status: invitation.status },
-      prefixed,
       { id: 'invitation' }
     )
     const orgDto = prefixDtoIds(
       { id: organization?.id, name: organization?.name, slug: organization?.slug },
-      prefixed,
       { id: 'organization' }
     )
     res.json({ invitation: invDto, organization: orgDto })
@@ -311,11 +307,8 @@ router.post('/:token/accept', optionalAuthForAcceptV2, async (req: any, res) => 
       )
     }
 
-    const flagCtxAccept = { userId: req.user?.id, orgId: invitation.organization_id }
-    const prefixedAccept = await isPrefixedIdsEnabled(flagCtxAccept)
     res.json(prefixDtoIds(
       { message: 'Invitation accepted successfully', organizationId: invitation.organization_id, role: invitation.role },
-      prefixedAccept,
       { organizationId: 'organization' }
     ))
   } catch (error: any) {

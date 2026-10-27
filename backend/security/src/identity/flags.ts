@@ -1,22 +1,15 @@
 /**
- * Identity feature-flag access for the security-service slice.
+ * Feature-flag access for the security-service slice.
+ *
+ * (The `fuzefront.identity.prefixed-ids` flag was retired under FFRNT-185 once
+ * it reached 100 % in production; the TypeID wire form is now unconditional —
+ * see ./serializer.ts.)
  *
  * Reads flags via the family OpenFeature client (@fuzefront/feature-flags) per
  * the feature-flags skill — we CONSUME flags here; the flag platform/taxonomy
  * is owned by feature-flags-engineer.
  *
  * Flags consumed by this slice:
- *   - fuzefront.identity.prefixed-ids
- *       type: release | default: OFF
- *       owner: backend-engineer (identity)
- *       When ON, API responses return TypeID wire form (org_01h…) instead of
- *       bare UUID. Implements the dual-accept window from
- *       governance/identifier-standard.md §8 — clients see prefixed ids but
- *       may also SEND bare UUIDs (legacyUuidTypes window, step 5).
- *       removal criterion: delete once all clients have migrated to prefixed
- *       ids AND the backfill is complete; remove from legacyUuidTypes at the
- *       same time to close the dual-accept window.
- *
  *   - fuzefront.auth.experience
  *       type: release | default: OFF
  *       owner: backend-engineer (security) for the server half; the flag itself
@@ -40,7 +33,6 @@
  */
 
 export const FLAGS = {
-  PREFIXED_IDS: 'fuzefront.identity.prefixed-ids',
   AUTH_EXPERIENCE: 'fuzefront.auth.experience',
 } as const
 
@@ -85,20 +77,6 @@ function buildContext(ctx?: Partial<FlagContext>): Record<string, unknown> {
     app: 'security-service',
     ...(orgId ? { orgId } : {}),
     ...rest,
-  }
-}
-
-/**
- * Release flag (default OFF): should this response use TypeID wire-form ids?
- * Pass request context so rollout can target by org/user.
- */
-export async function isPrefixedIdsEnabled(ctx?: Partial<FlagContext>): Promise<boolean> {
-  const client = resolveClient()
-  if (!client) return false // fail-safe: release default OFF
-  try {
-    return await client.getBooleanValue(FLAGS.PREFIXED_IDS, false, buildContext(ctx))
-  } catch {
-    return false
   }
 }
 

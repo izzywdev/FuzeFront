@@ -11,7 +11,6 @@ import { reconcileOrganizationProvisioning } from '../services/organizationProvi
 import { defaultEventPublisher } from '../services/eventPublisher'
 import { resolvePortalScopeDecision, applyPortalScope, normalizePortalId } from '../utils/scopeToPortal'
 import { getRequestPortalScopingEnabled } from '../utils/identityFlag'
-import { isPrefixedIdsEnabled } from '../identity/flags'
 import { prefixDtoIds } from '../identity/serializer'
 import { ROOT_ORG_ID } from '../migrations/015_seed_root_platform_organization'
 
@@ -232,9 +231,7 @@ router.post('/', authenticateToken, async (req: any, res) => {
       )
     }
 
-    const flagCtx = { userId: req.user?.id }
-    const prefixed = await isPrefixedIdsEnabled(flagCtx)
-    res.status(201).json(prefixDtoIds(organization, prefixed, { id: 'organization', parent_id: 'organization', owner_id: 'user' }))
+    res.status(201).json(prefixDtoIds(organization, { id: 'organization', parent_id: 'organization', owner_id: 'user' }))
   } catch (error: any) {
     console.error('Error creating organization:', error)
 
@@ -352,10 +349,8 @@ router.get('/', authenticateToken, async (req: any, res) => {
       updated_at: org.updated_at,
     }))
 
-    const flagCtx = { userId: req.user?.id }
-    const prefixed = await isPrefixedIdsEnabled(flagCtx)
     res.json({
-      organizations: transformedOrganizations.map(org => prefixDtoIds(org, prefixed, { id: 'organization', parent_id: 'organization', owner_id: 'user' })),
+      organizations: transformedOrganizations.map(org => prefixDtoIds(org, { id: 'organization', parent_id: 'organization', owner_id: 'user' })),
       pagination: {
         page: pageNum,
         limit: limitNum,
@@ -459,9 +454,7 @@ router.get(
         updated_at: organization.updated_at,
       }
 
-      const flagCtx = { userId: req.user?.id }
-      const prefixed = await isPrefixedIdsEnabled(flagCtx)
-      res.json(prefixDtoIds(result, prefixed, { id: 'organization', parent_id: 'organization', owner_id: 'user' }))
+      res.json(prefixDtoIds(result, { id: 'organization', parent_id: 'organization', owner_id: 'user' }))
     } catch (error: any) {
       console.error('Error fetching organization:', error)
       res.status(500).json({ error: 'Failed to fetch organization' })
@@ -546,9 +539,7 @@ router.put(
         updated_at: updatedOrganization.updated_at,
       }
 
-      const flagCtx = { userId: req.user?.id }
-      const prefixed = await isPrefixedIdsEnabled(flagCtx)
-      res.json(prefixDtoIds(result, prefixed, { id: 'organization', parent_id: 'organization', owner_id: 'user' }))
+      res.json(prefixDtoIds(result, { id: 'organization', parent_id: 'organization', owner_id: 'user' }))
     } catch (error: any) {
       console.error('Error updating organization:', error)
 
@@ -742,8 +733,6 @@ router.get(
       const page = hasMore ? rows.slice(0, limit) : rows
       const nextCursor = hasMore ? encodeMemberCursor(page[page.length - 1]) : null
 
-      const flagCtx = { userId: req.user?.id }
-      const prefixed = await isPrefixedIdsEnabled(flagCtx)
       res.json({
         items: page.map((row: any) => {
           const prefixedUser = prefixDtoIds({
@@ -752,14 +741,14 @@ router.get(
             firstName: row.first_name ?? null,
             lastName: row.last_name ?? null,
             homePortalId: row.home_portal_id ?? null,
-          }, prefixed, { id: 'user', homePortalId: 'portal' })
+          }, { id: 'user', homePortalId: 'portal' })
           return prefixDtoIds({
             membershipId: row.membership_id,
             role: row.role,
             status: row.status,
             joinedAt: row.joined_at ? new Date(row.joined_at).toISOString() : null,
             user: prefixedUser,
-          }, prefixed, { membershipId: 'membership' })
+          }, { membershipId: 'membership' })
         }),
         page: { nextCursor, hasMore },
       })
@@ -989,10 +978,8 @@ router.get(
       const page = hasMore ? rows.slice(0, limit) : rows
       const nextCursor = hasMore ? encodeInvitationCursor(page[page.length - 1]) : null
 
-      const flagCtx = { userId: req.user?.id }
-      const prefixed = await isPrefixedIdsEnabled(flagCtx)
       res.json({
-        items: page.map(row => prefixDtoIds(rowToInvitationSummary(row), prefixed, { id: 'invitation', organizationId: 'organization', portalId: 'portal' })),
+        items: page.map(row => prefixDtoIds(rowToInvitationSummary(row), { id: 'invitation', organizationId: 'organization', portalId: 'portal' })),
         page: { nextCursor, hasMore },
       })
     } catch (error: any) {
@@ -1110,8 +1097,6 @@ router.post(
         console.error('Failed to publish invite email event (non-fatal):', emailErr)
       }
 
-      const flagCtx = { userId: req.user?.id }
-      const prefixed = await isPrefixedIdsEnabled(flagCtx)
       res.status(201).json({
         invitation: prefixDtoIds({
           id: invitationId,
@@ -1121,7 +1106,7 @@ router.post(
           expiresAt,
           status: 'pending',
           portalId: invitationPortalId,
-        }, prefixed, { id: 'invitation', organizationId: 'organization', portalId: 'portal' }),
+        }, { id: 'invitation', organizationId: 'organization', portalId: 'portal' }),
       })
     } catch (error: any) {
       console.error('Error creating invitation:', error)
