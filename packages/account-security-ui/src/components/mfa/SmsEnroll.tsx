@@ -251,9 +251,13 @@ function SmsEnrollInner(props: EnrollFlowProps) {
     try {
       const factor = await pending.activating(api.activateFactor(factorId, code))
       pending.clear()
+      // The user left mid-activation: the factor stays active (bookkeeping above), but a
+      // late success must not navigate / call back into the page they went to.
+      if (!alive.current) return
       if (props.onActivated) props.onActivated(factor)
       else go(routes.overview)
     } catch (err) {
+      if (!alive.current) return
       // Fail closed: the factor stays pending. A rejected code (400/401/403/422)
       // shows the wrong-or-expired error; 5xx / 429 / network is a retryable
       // service error that does not claim the code was wrong.

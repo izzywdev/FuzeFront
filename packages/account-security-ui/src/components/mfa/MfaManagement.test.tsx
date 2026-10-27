@@ -141,6 +141,53 @@ describe('TotpEnrollFlow', () => {
     await waitFor(() => expect(q('[data-component="totp-enroll"][data-state="scan"]')).toBeTruthy())
   }
 
+  it('unmount mid-activation, then the activation succeeds: onActivated / navigation are NOT called', async () => {
+    const user = userEvent.setup()
+    let release!: (f: unknown) => void
+    const client = makeClient({ activateFactor: vi.fn(() => new Promise((r) => { release = r })) })
+    const onActivated = vi.fn()
+    const onNavigate = vi.fn()
+    const { unmount } = render(<TotpEnrollFlow client={asClient(client)} onActivated={onActivated} onNavigate={onNavigate} />)
+    await start(user)
+    await user.click(document.querySelector('[data-component="otp-input"] input')!)
+    await user.keyboard('123456')
+    await user.click(q('[data-action="activate-factor"]')!)
+    await waitFor(() => expect(client.activateFactor).toHaveBeenCalled())
+    unmount()
+    await act(async () => release({ factorId: 'fct_new', type: 'totp', status: 'active' }))
+    expect(onActivated).not.toHaveBeenCalled()
+    expect(onNavigate).not.toHaveBeenCalled()
+    // bookkeeping intact: an activated factor is never deleted
+    expect(client.removeFactor).not.toHaveBeenCalled()
+  })
+
+  it('unmount mid-activation without onActivated: does not navigate to the overview', async () => {
+    const user = userEvent.setup()
+    let release!: (f: unknown) => void
+    const client = makeClient({ activateFactor: vi.fn(() => new Promise((r) => { release = r })) })
+    const onNavigate = vi.fn()
+    const { unmount } = render(<TotpEnrollFlow client={asClient(client)} onNavigate={onNavigate} />)
+    await start(user)
+    await user.click(document.querySelector('[data-component="otp-input"] input')!)
+    await user.keyboard('123456')
+    await user.click(q('[data-action="activate-factor"]')!)
+    await waitFor(() => expect(client.activateFactor).toHaveBeenCalled())
+    unmount()
+    await act(async () => release({ factorId: 'fct_new', type: 'totp', status: 'active' }))
+    expect(onNavigate).not.toHaveBeenCalled()
+  })
+
+  it('mounted: a successful activation still calls onActivated', async () => {
+    const user = userEvent.setup()
+    const onActivated = vi.fn()
+    render(<TotpEnrollFlow client={asClient(makeClient())} onActivated={onActivated} />)
+    await start(user)
+    await user.click(document.querySelector('[data-component="otp-input"] input')!)
+    await user.keyboard('123456')
+    await user.click(q('[data-action="activate-factor"]')!)
+    await waitFor(() => expect(onActivated).toHaveBeenCalled())
+  })
+
   it('opening the route creates NOTHING: an intro with an explicit start button', () => {
     const client = makeClient()
     render(<TotpEnrollFlow client={asClient(client)} />)
@@ -462,6 +509,54 @@ describe('SmsEnrollFlow', () => {
     await user.click(q('[data-action="activate-factor"]')!)
     await waitFor(() => expect(onActivated).toHaveBeenCalled())
     expect(client.activateFactor).toHaveBeenCalledWith('fct_sms_new', '319028')
+  })
+
+  it('unmount mid-activation, then the activation succeeds: onActivated / navigation are NOT called', async () => {
+    const user = userEvent.setup()
+    let release!: (f: unknown) => void
+    const client = makeClient({
+      getMethods: vi.fn(async () => methods(['sms'])),
+      enrollFactor: vi.fn(async () => ({ factorId: 'fct_sms_new', type: 'sms', status: 'pending', codeSent: true })),
+      activateFactor: vi.fn(() => new Promise((r) => { release = r })),
+    })
+    const onActivated = vi.fn()
+    const onNavigate = vi.fn()
+    const { unmount } = render(<SmsEnrollFlow client={asClient(client)} onActivated={onActivated} onNavigate={onNavigate} />)
+    await waitFor(() => expect(q('[data-field="phone"]')).toBeTruthy())
+    await user.type(q('[data-field="phone"]')!, '+447700900471')
+    await user.click(q('[data-action="send-code"]')!)
+    await waitFor(() => expect(q('[data-component="otp-input"]')).toBeTruthy())
+    await user.click(document.querySelector('[data-component="otp-input"] input')!)
+    await user.keyboard('123456')
+    await user.click(q('[data-action="activate-factor"]')!)
+    await waitFor(() => expect(client.activateFactor).toHaveBeenCalled())
+    unmount()
+    await act(async () => release({ factorId: 'fct_sms_new', type: 'sms', status: 'active' }))
+    expect(onActivated).not.toHaveBeenCalled()
+    expect(onNavigate).not.toHaveBeenCalled()
+  })
+
+  it('unmount mid-activation without onActivated: does not navigate to the overview', async () => {
+    const user = userEvent.setup()
+    let release!: (f: unknown) => void
+    const client = makeClient({
+      getMethods: vi.fn(async () => methods(['sms'])),
+      enrollFactor: vi.fn(async () => ({ factorId: 'fct_sms_new', type: 'sms', status: 'pending', codeSent: true })),
+      activateFactor: vi.fn(() => new Promise((r) => { release = r })),
+    })
+    const onNavigate = vi.fn()
+    const { unmount } = render(<SmsEnrollFlow client={asClient(client)} onNavigate={onNavigate} />)
+    await waitFor(() => expect(q('[data-field="phone"]')).toBeTruthy())
+    await user.type(q('[data-field="phone"]')!, '+447700900471')
+    await user.click(q('[data-action="send-code"]')!)
+    await waitFor(() => expect(q('[data-component="otp-input"]')).toBeTruthy())
+    await user.click(document.querySelector('[data-component="otp-input"] input')!)
+    await user.keyboard('123456')
+    await user.click(q('[data-action="activate-factor"]')!)
+    await waitFor(() => expect(client.activateFactor).toHaveBeenCalled())
+    unmount()
+    await act(async () => release({ factorId: 'fct_sms_new', type: 'sms', status: 'active' }))
+    expect(onNavigate).not.toHaveBeenCalled()
   })
 
   describe.each([['confirm-code', false], ['error-invalid', true]])('Use a different number (%s state)', (state, wrongCode) => {

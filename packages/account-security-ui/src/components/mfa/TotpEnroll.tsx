@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import qrcode from 'qrcode-generator'
 import { Button, OtpInput, QrCode, Spinner } from '@fuzefront/design-system'
 import { useAccountSecurityI18n } from '../../i18n/AccountSecurityI18nProvider'
@@ -170,6 +170,14 @@ function TotpEnrollInner(props: EnrollFlowProps) {
   const [phase, setPhase] = useState<TotpPhase>({ name: 'intro' })
   const pending = usePendingFactor(api)
   const inFlight = useInFlight()
+  // Completion callbacks / navigation must not fire after the user has left the flow.
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
 
   // The factor (and its secret) is created ONLY when the user explicitly starts
   // setup — merely opening the route creates nothing to clean up.
@@ -196,9 +204,11 @@ function TotpEnrollInner(props: EnrollFlowProps) {
     try {
       const factor = await pending.activating(api.activateFactor(enroll.factorId, code))
       pending.clear()
+      if (!mounted.current) return
       if (props.onActivated) props.onActivated(factor)
       else go(routes.overview)
     } catch (err) {
+      if (!mounted.current) return
       if (isInvalidCode(err)) setPhase({ name: 'scan', enroll, activating: false, invalid: true })
       else setPhase({ name: 'activate-failed', enroll, code })
     }
