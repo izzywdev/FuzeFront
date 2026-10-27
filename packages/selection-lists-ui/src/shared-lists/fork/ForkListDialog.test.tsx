@@ -289,6 +289,17 @@ describe('ForkListDialog — submitting (frame 05)', () => {
     expect(onForked.mock.calls[0][0].kind).toBe('created')
   })
 
+  it('leaving while the request is pending lets the write finish but never navigates the user back', async () => {
+    const gate = deferred<Response>()
+    const mock = routeFetch({ [`POST ${FORK_PATH}`]: () => gate.promise })
+    const { onForked, unmount } = setup()
+    await userEvent.click(confirmBtn())
+    unmount()
+    await act(async () => gate.resolve(jsonResponse(makeForkList(), 201)))
+    expect(callCount(mock, 'POST', FORK_PATH)).toBe(1)
+    expect(onForked).not.toHaveBeenCalled()
+  })
+
   it('submitting without a known item_count words the copy generically', async () => {
     const gate = deferred<Response>()
     routeFetch({ [`POST ${FORK_PATH}`]: () => gate.promise })

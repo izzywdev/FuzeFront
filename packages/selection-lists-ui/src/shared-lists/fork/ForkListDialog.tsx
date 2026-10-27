@@ -127,6 +127,15 @@ function ForkDialogBody({
     typeof document === 'undefined' ? null : document.activeElement
   )
   const bodyRef = useRef<HTMLDivElement>(null)
+  // The write is never cancelled on unmount (the service may already have applied
+  // it), but a user who left the page must not be pulled back to the fork.
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
 
   const outcome = state.status === 'done' ? state.outcome : undefined
   const refusal: Refusal | undefined = isSuccess(outcome) ? undefined : outcome
@@ -160,7 +169,7 @@ function ForkDialogBody({
   const confirm = async () => {
     if (busy) return
     const result = await run(source.id, visibility)
-    if (isSuccess(result)) onForked(result)
+    if (isSuccess(result) && mounted.current) onForked(result)
   }
   const dismiss = () => {
     if (busy) return
@@ -233,7 +242,7 @@ function ForkDialogBody({
     </Modal>
   ) : (
     <BottomSheet {...containerProps}>
-      <div ref={bodyRef} style={bodyStyle}>
+      <div ref={bodyRef} style={sheetBodyStyle}>
         {content}
       </div>
     </BottomSheet>
@@ -245,6 +254,7 @@ const bodyStyle = {
   flexDirection: 'column',
   gap: 'var(--space-4)',
 } as const
+const sheetBodyStyle = { ...bodyStyle, gap: 'var(--space-3)' } as const
 
 /** `data-result` on the dialog, per frame 06. */
 function resultOf(refusal: Refusal): string {
@@ -295,6 +305,11 @@ const dtStyle = {
   fontWeight: 'var(--weight-medium)',
 } as const
 const ddStyle = { margin: 0, color: 'var(--text-primary)' } as const
+const compactNoteStyle = {
+  margin: 0,
+  fontSize: 'var(--text-xs)',
+  color: 'var(--text-secondary)',
+} as const
 const subStyle = {
   margin: 0,
   fontSize: 'var(--text-sm)',
@@ -360,8 +375,9 @@ function IdleContent(p: IdleContentProps) {
   return (
     <>
       <p id={p.subId} style={subStyle}>
-        Your organization gets its own copy that you can change. The common list{' '}
-        {wide ? 'itself does not change.' : 'doesn’t change.'}
+        {wide
+          ? 'Your organization gets its own copy that you can change. The common list itself does not change.'
+          : 'Your organization gets its own copy. The common list doesn’t change.'}
       </p>
 
       <dl style={factsStyle} data-fork-summary="">
@@ -440,13 +456,14 @@ function IdleContent(p: IdleContentProps) {
               'data-visibility-option': 'org',
               label: (
                 <>
-                  Everyone in <span style={ISOLATE}>{organization}</span>
+                  <span>
+                    Everyone in <span style={ISOLATE}>{organization}</span>
+                  </span>
                   {wide && (
                     <>
-                      {' '}
                       <Badge tone="accent" size="sm">
                         ◉ Organization
-                      </Badge>{' '}
+                      </Badge>
                       <Badge tone="success" size="sm">
                         Recommended
                       </Badge>
@@ -463,10 +480,9 @@ function IdleContent(p: IdleContentProps) {
               'data-visibility-option': 'private',
               label: (
                 <>
-                  Only people I give a role — a draft
+                  <span>Only people I give a role — a draft</span>
                   {wide && (
                     <>
-                      {' '}
                       <Badge tone="neutral" size="sm">
                         ○ Private
                       </Badge>
@@ -483,7 +499,7 @@ function IdleContent(p: IdleContentProps) {
       </div>
 
       {!wide && (
-        <p style={subStyle} data-note="owner">
+        <p style={compactNoteStyle} data-note="owner">
           You become the owner — you can edit it and give others roles on it.
         </p>
       )}
@@ -501,7 +517,7 @@ function IdleContent(p: IdleContentProps) {
           since.
         </StatusCallout>
       ) : (
-        <p style={subStyle} data-note="no-sync">
+        <p style={compactNoteStyle} data-note="no-sync">
           Later changes to the common list won’t be copied into your fork.
         </p>
       )}
@@ -563,12 +579,18 @@ function Footer({
   primary: ReactNode
 }) {
   return (
+    // Sticky: the content may scroll inside the container, the actions never do.
     <div
       style={{
+        position: 'sticky',
+        insetBlockEnd: 0,
+        zIndex: 1,
+        background: 'var(--bg-tertiary)',
+        paddingBlock: 'var(--space-2)',
         display: 'flex',
         flexDirection: wide ? 'row' : 'column',
         justifyContent: wide ? 'flex-end' : undefined,
-        gap: 'var(--space-3)',
+        gap: 'var(--space-2)',
       }}
     >
       {cancel}
