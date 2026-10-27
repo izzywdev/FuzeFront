@@ -8,6 +8,12 @@ export interface SelectionList {
   status: 'active' | 'archived'
   item_count: number
   source_locale: string
+  /**
+   * Contract 4.1.0 caller-relative hint (a service behind the shared-lists flag
+   * omits it): `false` = the caller reads this list only through visibility.
+   * Absent = unknown — never inferred `false`.
+   */
+  editable?: boolean
   created_at: string
   updated_at: string
 }
@@ -49,6 +55,13 @@ export interface QuotaStatus {
   quotas: QuotaScope[]
 }
 
+/**
+ * One row of the workbench's locale index — a VIEW MODEL built by `getLocaleIndex`
+ * from the contract's `TranslationLocaleStatus` (`completeness_pct`,
+ * `machine_translated`, `source_changed`). `total` is exact; `translated` is
+ * recovered from the rounded percentage; `machine_count` / `stale_count` are 0 or
+ * 1 (the contract carries a flag per locale, not a count — the UI shows the flag).
+ */
 export interface LocaleIndexEntry {
   locale: string
   is_source: boolean

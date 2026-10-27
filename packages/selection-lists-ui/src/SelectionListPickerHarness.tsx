@@ -39,6 +39,7 @@ import {
   type StoredValueState,
 } from './shared-lists/picker'
 import { effectiveStyles as st } from './shared-lists/picker/styles'
+import { useSharedLists } from './shared-lists/core/SharedListsFeatureProvider'
 
 // ── Design-system tokens only ─────────────────────────────────────────────────
 const s = {
@@ -332,6 +333,10 @@ export function SelectionListPicker(props: SelectionListPickerProps) {
     onEffectiveValue: props.onEffectiveValue,
   })
   const shared = effective.enabled
+  // The host's flag has not settled: which data path to run (4.0.0 / shared) is
+  // not known yet, so neither runs — the picker shows its loading state and
+  // issues no request until the flag settles (then exactly one set).
+  const { ready: flagReady } = useSharedLists()
 
   const [legacyItems, setItems] = useState<SelectionListItem[]>([])
   const [legacyLoadState, setLoadState] = useState<LoadState>('loading')
@@ -429,8 +434,8 @@ export function SelectionListPicker(props: SelectionListPickerProps) {
   }, [])
 
   useEffect(() => {
-    if (!shared) loadItems()
-  }, [loadItems, shared])
+    if (flagReady && !shared) loadItems()
+  }, [loadItems, shared, flagReady])
 
   // A new initialValue re-seeds the picker (uncontrolled: it is a seed, not a binding).
   // Only a change of the seed CONTENT re-seeds. The flag arriving late (the host's
@@ -452,10 +457,10 @@ export function SelectionListPicker(props: SelectionListPickerProps) {
       )
       return
     }
-    if (seedIds.length > 0) {
+    if (flagReady && seedIds.length > 0) {
       resolveInitialValue(seedIds)
     }
-  }, [seedKey, resolveInitialValue, shared])
+  }, [seedKey, resolveInitialValue, shared, flagReady])
 
   // ── Close menu on outside click ───────────────────────────────────────────
   useEffect(() => {

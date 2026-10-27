@@ -60,7 +60,7 @@ export function useStoredValues(
   ids: readonly SelectionListItemId[],
   options: UseStoredValuesOptions = {}
 ): UseStoredValuesResult {
-  const { enabled: sharedLists } = useSharedLists()
+  const { enabled: sharedLists, ready } = useSharedLists()
   const { locale } = options
 
   // Key on the id CONTENT, so a host re-creating the same array each render does not re-resolve.
@@ -73,7 +73,8 @@ export function useStoredValues(
   )
 
   const { settled, reload } = useResource(
-    unique.length > 0
+    // Not ready ⇒ which resolve (own / shared) is not known yet: ask nothing.
+    ready && unique.length > 0
       ? `${sharedLists ? 'shared' : 'own'}|${locale ?? ''}|${idsKey}`
       : null,
     signal => resolveStoredValues(unique, { sharedLists, locale, signal })

@@ -22,12 +22,17 @@ function render(props?: Omit<SharedListsFeatureProviderProps, 'children'>) {
 describe('flag state (default OFF, fail-closed)', () => {
   it('a tree with NO provider is OFF — the 4.0.0 host is untouched, nothing throws', () => {
     const { result } = renderHook(() => useSharedLists())
-    expect(result.current).toEqual({ enabled: false, isPlatformOrg: false })
+    expect(result.current).toEqual({
+      enabled: false,
+      ready: true,
+      isPlatformOrg: false,
+    })
   })
 
   it('a provider with no props is OFF', () => {
     expect(render().result.current).toEqual({
       enabled: false,
+      ready: true,
       isPlatformOrg: false,
     })
   })
@@ -66,12 +71,41 @@ describe('flag state (default OFF, fail-closed)', () => {
   })
 })
 
+describe('readiness (the host flag has not settled yet)', () => {
+  it('a tree with no provider, and a provider that is not told otherwise, is READY (a 4.0.0 host never waits)', () => {
+    expect(renderHook(() => useSharedLists()).result.current.ready).toBe(true)
+    expect(render().result.current.ready).toBe(true)
+    expect(render({ sharedLists: true }).result.current.ready).toBe(true)
+  })
+
+  it('ready={false} reports NOT READY and is OFF even if the host already passes true (fail-closed)', () => {
+    const { result } = render({ sharedLists: true, ready: false })
+    expect(result.current).toMatchObject({ enabled: false, ready: false })
+    expect(result.current.isPlatformOrg).toBe(false)
+  })
+
+  it('settles: not ready → ready(OFF) and not ready → ready(ON)', () => {
+    let state = { ready: false, on: false }
+    const wrapper = ({ children }: { children?: ReactNode }) => (
+      <SharedListsFeatureProvider sharedLists={state.on} ready={state.ready}>
+        {children}
+      </SharedListsFeatureProvider>
+    )
+    const { result, rerender } = renderHook(() => useSharedLists(), { wrapper })
+    expect(result.current).toMatchObject({ enabled: false, ready: false })
+    state = { ready: true, on: true }
+    rerender()
+    expect(result.current).toMatchObject({ enabled: true, ready: true })
+  })
+})
+
 describe('isPlatformOrg', () => {
   it('is carried only while the flag is ON', () => {
     expect(
       render({ sharedLists: true, isPlatformOrg: true }).result.current
     ).toEqual({
       enabled: true,
+      ready: true,
       isPlatformOrg: true,
     })
     expect(render({ sharedLists: true }).result.current.isPlatformOrg).toBe(
@@ -84,6 +118,7 @@ describe('isPlatformOrg', () => {
       render({ sharedLists: false, isPlatformOrg: true }).result.current
     ).toEqual({
       enabled: false,
+      ready: true,
       isPlatformOrg: false,
     })
   })
