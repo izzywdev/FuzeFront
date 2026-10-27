@@ -37,6 +37,7 @@ GET /api/v1/test-implementations/{}  # FuzeQuality: test impl detail; service la
 GET /api/v1/repositories  # FuzeQuality: repository list; service lacks openapi.yaml
 GET /api/v1/repositories/{}  # FuzeQuality: repository detail; service lacks openapi.yaml
 GET /api/v1/repositories/{}/catalog-status  # FuzeQuality: catalog status; service lacks openapi.yaml
+GET /api/v1/repositories/{}/quality-artifacts  # FuzeQuality: tenant-authorized repository analysis evidence; service lacks public OpenAPI surface
 POST /api/v1/internal/coverage/rebuild  # FuzeQuality: internal trigger; not consumer-facing
 POST /api/v1/internal/intelligence/results  # FuzeQuality: internal ingest; not consumer-facing
 POST /api/v1/internal/scans/results  # FuzeQuality: internal ingest; not consumer-facing
@@ -71,6 +72,7 @@ POST /api/apps/register  # backend: register app (alt); backend/src lacks openap
 POST /api/apps/{}/heartbeat  # backend: heartbeat; backend/src lacks openapi.yaml
 POST /api/apps/{}/install  # backend: install app; backend/src lacks openapi.yaml
 PUT /api/apps/{}/activate  # backend: activate app; backend/src lacks openapi.yaml
+PUT /api/apps/{}  # backend: update an app's editable presentation/integration fields (admin Edit form); backend/src lacks openapi.yaml, same debt as the rest of the legacy /api/apps surface
 DELETE /api/apps/{}  # backend: delete app; backend/src lacks openapi.yaml
 DELETE /api/apps/{}/install/{}  # backend: uninstall app; backend/src lacks openapi.yaml
 GET /api/organizations  # backend: org list; backend/src lacks openapi.yaml
@@ -87,6 +89,7 @@ POST /api/organizations/{}/invitations/{}/resend  # backend: resend invitation; 
 DELETE /api/organizations/{}/invitations/{}  # backend: cancel invitation; backend/src lacks openapi.yaml
 GET /api/organizations/{}/members  # backend: org members; backend/src lacks openapi.yaml
 POST /api/organizations/{}/members  # backend: add member; backend/src lacks openapi.yaml
+POST /api/organizations/{}/session-token  # backend/security: exchange a session token for a short-lived org-scoped token (membership-checked) for org-scoped services (selection-list-service); legacy /api/organizations domain surface (frozen spec is /api/v1/security only), parity with the sibling /api/organizations/* routes above
 PUT /api/organizations/{}/members/{}  # backend: update member; backend/src lacks openapi.yaml
 DELETE /api/organizations/{}/members/{}  # backend: remove member; backend/src lacks openapi.yaml
 GET /api/organizations/{}/roles  # backend: org roles; backend/src lacks openapi.yaml
@@ -177,6 +180,7 @@ POST /organizations/${}/members  # frontend api.ts client call — not a server 
 PUT /organizations/${}/members/${}  # frontend api.ts client call — not a server route
 DELETE /organizations/${}/members/${}  # frontend api.ts client call — not a server route
 PUT /apps/${}/activate  # frontend api.ts client call — not a server route
+PUT /apps/${}  # frontend api.ts client call (updateApp) — not a server route
 POST /apps/${}/install  # frontend api.ts client call — not a server route
 DELETE /apps/${}/install/${}  # frontend api.ts client call — not a server route
 GET /apps/installed  # frontend api.ts client call — not a server route
@@ -220,6 +224,8 @@ POST /internal/specs  # devportal-service: S2S-only spec-registry push endpoint;
 GET /api/v1/requirements/freshness  # fuzequality: tenant-authorized Jira freshness evidence; not public contract surface
 POST /api/v1/internal/intelligence/failure  # fuzequality: S2S worker failure signal; bounded/redacted and not consumer-facing
 GET /api/v1/suggestions/{}/decisions  # fuzequality: tenant-authorized review audit history; not public contract surface
+GET /api/v1/internal/repositories/{}/quality-artifacts  # fuzequality: S2S worker evidence retrieval; not consumer-facing
+POST /api/v1/internal/identity-lifecycle  # fuzequality: S2S FuzeFront identity projection; not consumer-facing
 #
 # --- O1: applications-service Kubernetes readiness probe (#1137) ---
 # NOT a debt in the sense this file's header warns about (a spec gap to close):
@@ -239,6 +245,14 @@ DELETE /api/v1/connectors/google-gmail  # authenticated connector lifecycle faca
 POST /api/v1/connectors/google-gmail/connect  # browser OAuth initiation facade; intentionally not MCP
 GET /api/v1/connectors/google-gmail/oauth/callback  # Google browser redirect; encrypted short-lived continuation state, not a generated client operation
 GET /api/v1/connectors/google-gmail/messages/recent  # chat-only summary source; raw credential lease remains private S2S
+GET /api/v1/connectors/{}/oauth/callback  # provider browser OAuth redirect, not a generated client operation
+GET /api/v1/connectors/catalog  # authenticated browser connector catalog; backend has no OpenAPI spec
+POST /api/v1/connectors/{}/connect  # authenticated browser OAuth initiation, not an MCP operation
+POST /api/v1/connectors/{}/credential  # authenticated browser secret onboarding; must never be projected into generated clients or MCP tools
+GET /api/v1/connectors/{}/actions/{}  # authenticated per-user read facade; provider operations require separate contracts before MCP projection
+GET /api/v1/connectors/{}  # authenticated browser connector metadata facade
+PATCH /api/v1/connectors/{}  # authenticated browser configuration facade
+DELETE /api/v1/connectors/{}  # authenticated browser disconnect facade
 #
 # --- O2: Documented in spec but implementation not found by scanner ---
 # These are routes declared in openapi.yaml files whose handlers are not
@@ -260,3 +274,4 @@ POST /auth/logout  # devportal-service: same raw_alias collision as /auth/oidc/l
 POST /api/v1/suggestions/{}/approve-expected-test  # fuzequality: tenant-authorized internal review action; not part of a public OpenAPI contract surface
 POST /api/v1/expectations/{}/exclusion  # Internal reviewed-exclusion action; it is not part of a scanned product API contract.
 GET /api/v1/repositories/{}/scan-history  # Internal catalog administration read model; not a scanned product API contract.
+POST /api/v1/rum  # host backend: browser RUM/client-log beacon sink (observability-standard P37); fire-and-forget telemetry ingest, not a product API contract surface

@@ -42,3 +42,53 @@ db45b8ea8db4931e4248b57f1df8dcdf13c4cd72:packages/selection-list-client-py/src/f
 
 # Dummy attestation token fixture in the selection-list acceptance tests (not a credential; entropy just over the generic-api-key threshold). Replaced with a low-entropy placeholder in a later commit, but the PR-range scan still sees this commit.
 21641303996c65515669294fa64a61aa066f3042:tests/selection-list-service/contract/seeding.test.ts:generic-api-key:717
+
+# Full-history triage: the external-app registration example uses a visibly
+# truncated dummy heartbeat token ending in "...", not an issued credential.
+# These exact historical documentation occurrences are pinned so new tokens
+# in documentation continue to be scanned.
+6080f54ccdf73c8ca11de8f12548068e503dd8ed:docs/examples/external-app-registration.md:generic-api-key:90
+6080f54ccdf73c8ca11de8f12548068e503dd8ed:docs/examples/external-app-registration.md:curl-auth-header:163
+
+# Historical npm cache security-advisory keys: these are public advisory
+# cache identifiers containing package names and content hashes. The JSON
+# records contain only key, integrity, time, and size; no authentication data.
+# Suppress only these two exact historical records, not arbitrary cache files.
+0cb7b10f1985cf9ecc9e0046786dba774c27dd75:.npm-cache/_cacache/index-v5/01/f0/82513ae0c1c3a0589d7fe59d114d283ca69e14a6ddcf31e71f5d11016f56:generic-api-key:2
+0cb7b10f1985cf9ecc9e0046786dba774c27dd75:.npm-cache/_cacache/index-v5/cc/aa/a0760f45446f35f11a48783706140f28044e3c472eeb4e712b474c7e2696:generic-api-key:2
+# services/email-service/tests/send.test.ts — the bearer secret for the internal
+# POST /send unit tests was the synthetic literal `internal-secret-123`, which
+# gitleaks scores as a generic-api-key. It is a test fixture passed straight to
+# createApp() in the same file; no deployed config reads it (prod uses the sealed
+# EMAIL_AUTH_SECRET). Replaced with `test-secret` in a later commit; this entry
+# covers the one occurrence that remains in history.
+71887a25e33a7e863a28fe228cac31d8f52912d6:services/email-service/tests/send.test.ts:generic-api-key:5
+
+# ---------------------------------------------------------------------------
+# Full-history recurrence, 2026-10-25. `gate-secret-scan` had been red on every
+# push to master since ~2026-10-21: the push path gets no BASE_SHA/HEAD_SHA, so it
+# scans ALL history, where these five already-remediated occurrences still live.
+#
+# docs/examples/external-app-registration.md — the heartbeat-token example was the
+# literal `9f3a1c2e7b4d5f6089ab...`: a 20-hex placeholder ending in a visible "...",
+# never an issued credential. It is the SAME finding already pinned above at commit
+# 6080f54c, and it came back twice because fingerprints are <commit>:<path>:<rule>:
+# <line> — the file was copied to `examples/` (26f55628) and re-touched under
+# `docs/examples/` (6b4a5f24), and each new commit minted a new fingerprint.
+#
+# The fix is NOT a path allowlist here. HEAD now uses `<your-heartbeat-token>`,
+# which cannot trip generic-api-key or curl-auth-header at all, so no FUTURE commit
+# can re-fire this — and the scanner keeps full coverage of the file, which a path
+# allowlist would have surrendered (a real token pasted into these examples later
+# would then go unseen). That leaves only these immutable historical commits to pin.
+6b4a5f2477681f7e108fa581bff9c7365247438d:docs/examples/external-app-registration.md:generic-api-key:90
+6b4a5f2477681f7e108fa581bff9c7365247438d:docs/examples/external-app-registration.md:curl-auth-header:163
+26f5562863e7180f4b784a01f203400c6b1d678e:examples/external-app-registration.md:generic-api-key:90
+26f5562863e7180f4b784a01f203400c6b1d678e:examples/external-app-registration.md:curl-auth-header:163
+# packages/telemetry/tests/rum.test.ts — a literal JWT fixture in the redaction
+# test. Already remediated in a later commit: HEAD assembles the token at runtime
+# from base64url parts precisely so scanners never see one, with a comment saying
+# so. Not a credential (alg HS256, sub "1234", a stub signature) and no deployed
+# path reads it. Same reasoning as the doc above: because HEAD cannot produce this
+# string, a fingerprint for the one historical commit is stable.
+c88a7d079dc4d805fcb8f59bb5842691d90a40ed:packages/telemetry/tests/rum.test.ts:jwt:303

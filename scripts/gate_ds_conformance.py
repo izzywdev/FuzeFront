@@ -10,7 +10,7 @@ Two responsibilities:
      across feature files (the same ad-hoc styled block appears >= THRESHOLD times), it should
      become a DS primitive. With --emit-issues + a GH token, opens ONE idempotent GitHub issue
      per proposed component (label `ds-extraction` + a stable fingerprint marker), mentioning
-     @claude, with locations + a proposed spec + acceptance criteria. Idempotent: it searches
+     @fuze, with locations + a proposed spec + acceptance criteria. Idempotent: it searches
      existing open+closed issues for the fingerprint marker and skips if present.
 
 Scope: scans the UI feature dirs (default: frontend/, apps/, packages/ui*, src/) and EXCLUDES
@@ -354,7 +354,7 @@ def open_extraction_issue(repo: str, cand: dict) -> str | None:
     ensure_label(repo)
     locs = "\n".join(f"- `{loc}`" for loc in cand["locations"][:20])
     title = f"DS extraction: recurring UI pattern (ds-fp:{fp})"
-    body = f"""@claude — `gate-ds-conformance` detected a UI pattern duplicated across the codebase that **should be extracted into a design-system primitive** (CLAUDE.baseline.md §6).
+    body = f"""@fuze — `gate-ds-conformance` detected a UI pattern duplicated across the codebase that **should be extracted into a design-system primitive** (CLAUDE.baseline.md §6).
 
 <!-- ds-fp:{fp} -->
 **Stable marker:** `ds-fp:{fp}` (do not edit — used for idempotent de-duplication)

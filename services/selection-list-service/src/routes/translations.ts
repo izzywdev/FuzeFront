@@ -35,9 +35,12 @@ import { ENTITY_PREFIXES } from '@izzywdev/fuzefront-identity';
 import { createHash } from 'crypto';
 import { db } from '../db';
 import { isSelectionListsEnabled } from '../flags';
-import { requireAuthzCheck } from '../middleware/authz';
+import { platformSuspendedAnswer, requireListMutation, requireListRead } from '../middleware/listAccess';
+import { getReadScope, readableByOrg } from '../services/sharedReads';
+import { writeOrgs } from '../lib/sharedLists';
 import type { Knex } from 'knex';
 import { lockOrgOutbox } from '../events/outbox';
+import { checkLocaleQuota, lockQuotaScope, QuotaExceededError } from '../services/quota.service';
 import {
   eventContextFromRequest,
   emitItemTranslationUpserted,
@@ -80,10 +83,25 @@ export function computeSourceHash(name: string, description?: string | null): st
 
 type Executor = Knex | Knex.Transaction;
 
-async function getListByOrg(listId: string, orgId: string, ex: Executor = db) {
-  return ex('selection_lists')
-    .where({ id: listId, organization_id: orgId })
-    .first();
+async function getListByOrg(listId: string, orgId: string | string[], ex: Executor = db) {
+  // `string[]` = every rendering of the caller's org (shared lists ON); a string = the 4.0.0 exact match.
+  return Array.isArray(orgId)
+    ? ex('selection_lists').where({ id: listId }).whereIn('organization_id', orgId).first()
+    : ex('selection_lists').where({ id: listId, organization_id: orgId }).first();
+}
+
+/**
+ * A list the caller may READ: its own organization's, or (shared-lists flag ON) a common list. The route
+ * guard (`requireListRead`) has already decided Permit-side readability; WRITES keep `getListByOrg`.
+ */
+async function getReadableList(req: Request, listId: string, orgId: string, ex: Executor = db) {
+  const scope = await getReadScope(req);
+  // 4.0.0 path (flag OFF): exactly the org-scoped lookup. (Flag ON: the own org matches under every rendering
+  // of its id even when the platform org does not resolve; `readableByOrg` adds the common lists only if it does.)
+  if (!scope.shared) return getListByOrg(listId, orgId, ex);
+  const readable = readableByOrg('', orgId, scope);
+  const result = await ex.raw(`SELECT * FROM selection_lists WHERE id = ? AND ${readable.sql}`, [listId, ...readable.params]);
+  return (result as { rows?: any[] }).rows?.[0];
 }
 
 async function getItemByList(itemId: string, listId: string, ex: Executor = db) {
@@ -100,6 +118,30 @@ interface Answer {
 
 function reply(res: Response, a: Answer) {
   return a.body === undefined ? res.status(a.status).send() : res.status(a.status).json(a.body);
+}
+
+/**
+ * Add-a-locale guard (`list_locales`, review M-4), run inside the write
+ * transaction under a per-list advisory lock. Returns the ready 403
+ * QUOTA_EXCEEDED answer when the list is at its locale ceiling, else null.
+ */
+async function localeQuotaAnswer(
+  trx: Knex.Transaction,
+  listId: string,
+  orgId: string | string[],
+  locale: string,
+): Promise<Answer | null> {
+  await lockQuotaScope(trx, `list_locales:${listId}`);
+  try {
+    await checkLocaleQuota(listId, orgId, locale, trx);
+    return null;
+  } catch (err) {
+    if (!(err instanceof QuotaExceededError)) throw err;
+    return {
+      status: 403,
+      body: { code: 'QUOTA_EXCEEDED', scope: err.scope, current: err.current, limit: err.limit, message: err.message },
+    };
+  }
 }
 
 async function requireFeatureEnabled(req: Request, res: Response): Promise<boolean> {
@@ -125,7 +167,7 @@ function requireAuth(req: Request, res: Response): boolean {
 // GET /:listId/translations
 // ─────────────────────────────────────────────────────────────────────────────
 
-router.get('/:listId/translations', requireAuthzCheck('SelectionList', 'read'), async (req: Request, res: Response) => {
+router.get('/:listId/translations', requireListRead(), async (req: Request, res: Response) => {
   if (!await requireFeatureEnabled(req, res)) return;
   if (!requireAuth(req, res)) return;
 
@@ -134,7 +176,7 @@ router.get('/:listId/translations', requireAuthzCheck('SelectionList', 'read'), 
 
   // TODO(S7): permit.check('read', listId, req.userId)
 
-  const list = await getListByOrg(listId, orgId);
+  const list = await getReadableList(req, listId, orgId);
   if (!list) {
     return res.status(404).json({ code: 'NOT_FOUND', message: 'List not found.' });
   }
@@ -196,7 +238,7 @@ router.get('/:listId/translations', requireAuthzCheck('SelectionList', 'read'), 
 // PUT /:listId/translations/:locale
 // ─────────────────────────────────────────────────────────────────────────────
 
-router.put('/:listId/translations/:locale', requireAuthzCheck('SelectionList', 'translate'), async (req: Request, res: Response) => {
+router.put('/:listId/translations/:locale', requireListMutation('translate'), async (req: Request, res: Response) => {
   if (!await requireFeatureEnabled(req, res)) return;
   if (!requireAuth(req, res)) return;
 
@@ -229,11 +271,15 @@ router.put('/:listId/translations/:locale', requireAuthzCheck('SelectionList', '
   // (or roll back) together. Lock order: org outbox lock first (events/outbox.ts).
   const answer: Answer = await db.transaction(async (trx) => {
     await lockOrgOutbox(trx, orgId);
+    const orgScope = (await writeOrgs(req)) ?? orgId;
 
-    const list = await getListByOrg(listId, orgId, trx);
+    const list = await getListByOrg(listId, orgScope, trx);
     if (!list) {
       return { status: 404, body: { code: 'NOT_FOUND', message: 'List not found.' } };
     }
+    // The list's OWNER re-checked for suspension FRESH, under the lock a deactivation also takes (nothing written yet).
+    const suspended = await platformSuspendedAnswer(trx, listId);
+    if (suspended) return suspended;
 
     if (locale === list.source_locale) {
       return {
@@ -246,6 +292,9 @@ router.put('/:listId/translations/:locale', requireAuthzCheck('SelectionList', '
         },
       };
     }
+
+    const overQuota = await localeQuotaAnswer(trx, listId, orgScope, locale);
+    if (overQuota) return overQuota;
 
     const sourceTrans = await trx('selection_list_translations')
       .where({ list_id: listId, locale: list.source_locale })
@@ -301,7 +350,7 @@ router.put('/:listId/translations/:locale', requireAuthzCheck('SelectionList', '
 // DELETE /:listId/translations/:locale
 // ─────────────────────────────────────────────────────────────────────────────
 
-router.delete('/:listId/translations/:locale', requireAuthzCheck('SelectionList', 'translate'), async (req: Request, res: Response) => {
+router.delete('/:listId/translations/:locale', requireListMutation('translate'), async (req: Request, res: Response) => {
   if (!await requireFeatureEnabled(req, res)) return;
   if (!requireAuth(req, res)) return;
 
@@ -319,11 +368,15 @@ router.delete('/:listId/translations/:locale', requireAuthzCheck('SelectionList'
 
   const answer: Answer = await db.transaction(async (trx) => {
     await lockOrgOutbox(trx, orgId);
+    const orgScope = (await writeOrgs(req)) ?? orgId;
 
-    const list = await getListByOrg(listId, orgId, trx);
+    const list = await getListByOrg(listId, orgScope, trx);
     if (!list) {
       return { status: 404, body: { code: 'NOT_FOUND', message: 'List not found.' } };
     }
+    // The list's OWNER re-checked for suspension FRESH, under the lock a deactivation also takes (nothing written yet).
+    const suspended = await platformSuspendedAnswer(trx, listId);
+    if (suspended) return suspended;
 
     if (locale === list.source_locale) {
       return {
@@ -352,7 +405,7 @@ router.delete('/:listId/translations/:locale', requireAuthzCheck('SelectionList'
 // GET /:listId/items/:itemId/translations
 // ─────────────────────────────────────────────────────────────────────────────
 
-router.get('/:listId/items/:itemId/translations', requireAuthzCheck('SelectionList', 'read'), async (req: Request, res: Response) => {
+router.get('/:listId/items/:itemId/translations', requireListRead(), async (req: Request, res: Response) => {
   if (!await requireFeatureEnabled(req, res)) return;
   if (!requireAuth(req, res)) return;
 
@@ -361,7 +414,7 @@ router.get('/:listId/items/:itemId/translations', requireAuthzCheck('SelectionLi
 
   // TODO(S7): permit.check('read', listId, req.userId)
 
-  const list = await getListByOrg(listId, orgId);
+  const list = await getReadableList(req, listId, orgId);
   if (!list) {
     return res.status(404).json({ code: 'NOT_FOUND', message: 'List not found.' });
   }
@@ -401,7 +454,7 @@ router.get('/:listId/items/:itemId/translations', requireAuthzCheck('SelectionLi
 // PUT /:listId/items/:itemId/translations/:locale
 // ─────────────────────────────────────────────────────────────────────────────
 
-router.put('/:listId/items/:itemId/translations/:locale', requireAuthzCheck('SelectionList', 'translate'), async (req: Request, res: Response) => {
+router.put('/:listId/items/:itemId/translations/:locale', requireListMutation('translate'), async (req: Request, res: Response) => {
   if (!await requireFeatureEnabled(req, res)) return;
   if (!requireAuth(req, res)) return;
 
@@ -432,11 +485,15 @@ router.put('/:listId/items/:itemId/translations/:locale', requireAuthzCheck('Sel
 
   const answer: Answer = await db.transaction(async (trx) => {
     await lockOrgOutbox(trx, orgId);
+    const orgScope = (await writeOrgs(req)) ?? orgId;
 
-    const list = await getListByOrg(listId, orgId, trx);
+    const list = await getListByOrg(listId, orgScope, trx);
     if (!list) {
       return { status: 404, body: { code: 'NOT_FOUND', message: 'List not found.' } };
     }
+    // The list's OWNER re-checked for suspension FRESH, under the lock a deactivation also takes (nothing written yet).
+    const suspended = await platformSuspendedAnswer(trx, listId);
+    if (suspended) return suspended;
 
     if (locale === list.source_locale) {
       return {
@@ -502,7 +559,7 @@ router.put('/:listId/items/:itemId/translations/:locale', requireAuthzCheck('Sel
 // DELETE /:listId/items/:itemId/translations/:locale
 // ─────────────────────────────────────────────────────────────────────────────
 
-router.delete('/:listId/items/:itemId/translations/:locale', requireAuthzCheck('SelectionList', 'translate'), async (req: Request, res: Response) => {
+router.delete('/:listId/items/:itemId/translations/:locale', requireListMutation('translate'), async (req: Request, res: Response) => {
   if (!await requireFeatureEnabled(req, res)) return;
   if (!requireAuth(req, res)) return;
 
@@ -520,11 +577,15 @@ router.delete('/:listId/items/:itemId/translations/:locale', requireAuthzCheck('
 
   const answer: Answer = await db.transaction(async (trx) => {
     await lockOrgOutbox(trx, orgId);
+    const orgScope = (await writeOrgs(req)) ?? orgId;
 
-    const list = await getListByOrg(listId, orgId, trx);
+    const list = await getListByOrg(listId, orgScope, trx);
     if (!list) {
       return { status: 404, body: { code: 'NOT_FOUND', message: 'List not found.' } };
     }
+    // The list's OWNER re-checked for suspension FRESH, under the lock a deactivation also takes (nothing written yet).
+    const suspended = await platformSuspendedAnswer(trx, listId);
+    if (suspended) return suspended;
 
     if (locale === list.source_locale) {
       return {
@@ -562,7 +623,7 @@ router.delete('/:listId/items/:itemId/translations/:locale', requireAuthzCheck('
 //   Human translations (is_machine=false) are NEVER overwritten.
 // ─────────────────────────────────────────────────────────────────────────────
 
-router.post('/:listId/translations/:locale/autofill', requireAuthzCheck('SelectionList', 'translate'), async (req: Request, res: Response) => {
+router.post('/:listId/translations/:locale/autofill', requireListMutation('translate'), async (req: Request, res: Response) => {
   if (!await requireFeatureEnabled(req, res)) return;
   if (!requireAuth(req, res)) return;
 
@@ -605,12 +666,16 @@ router.post('/:listId/translations/:locale/autofill', requireAuthzCheck('Selecti
   // outbox lock first (events/outbox.ts).
   const answer: Answer = await db.transaction(async (trx) => {
     await lockOrgOutbox(trx, orgId);
+    const orgScope = (await writeOrgs(req)) ?? orgId;
     const ctx = eventContextFromRequest(req);
 
-    const list = await getListByOrg(listId, orgId, trx);
+    const list = await getListByOrg(listId, orgScope, trx);
     if (!list) {
       return { status: 404, body: { code: 'NOT_FOUND', message: 'List not found.' } };
     }
+    // The list's OWNER re-checked for suspension FRESH, under the lock a deactivation also takes (nothing written yet).
+    const suspended = await platformSuspendedAnswer(trx, listId);
+    if (suspended) return suspended;
 
     if (locale === list.source_locale) {
       return {
@@ -654,6 +719,11 @@ router.post('/:listId/translations/:locale/autofill', requireAuthzCheck('Selecti
     let list_translated = false;
 
     if (shouldTranslateList) {
+      // A machine translation into a locale the list does not have yet adds one.
+      if (!existingListTrans) {
+        const overQuota = await localeQuotaAnswer(trx, listId, orgScope, locale);
+        if (overQuota) return overQuota;
+      }
       const translatedName = machineText(sourceListTrans.name, NAME_MAX);
       const translatedDesc = sourceListTrans.description
         ? machineText(sourceListTrans.description, DESCRIPTION_MAX)

@@ -1,0 +1,66 @@
+name: Verify merged FuzeFront GitOps release
+
+# A release build publishes images and opens a checked GitOps PR.  The build is
+# not the deployment: Argo can only start after that PR merges.  Trigger the
+# existing rollout-aware verification then, so its health wait observes the
+# image tags that actually became production desired state.
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'deploy/helm/fuzefront/values-prod.yaml'
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: verify-merged-fuzefront-gitops-release
+  cancel-in-progress: false
+
+jobs:
+  dispatch-post-deploy-verification:
+    # Only the bounded release commit shape can launch verification. A normal
+    # Helm values edit must not be treated as an application release.
+    if: "${{ startsWith(github.event.head_commit.message, 'release: fuzefront images ') }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate release provenance and dispatch verification
+        env:
+          MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          set -euo pipefail
+          # GitHub's squash merge appends " (#<PR>)" to the subject and keeps
+          # the release commit body in head_commit.message. Validate only the
+          # bounded subject, accepting that standard suffix without allowing
+          # arbitrary text to dispatch a production verification.
+          subject="${MESSAGE%%$'\n'*}"
+          prefix='release: fuzefront images '
+          if [[ "$subject" != "$prefix"* ]]; then
+            echo "::error title=merged-gitops-release::release commit subject did not contain the expected 12-character image SHA"
+            exit 1
+          fi
+          payload="${subject#"$prefix"}"
+          release_sha="${payload:0:12}"
+          suffix="${payload:12}"
+          if ! printf '%s\n' "$release_sha" | grep -Eq '^[0-9a-f]{12}$'; then
+            echo "::error title=merged-gitops-release::release commit subject did not contain the expected 12-character image SHA"
+            exit 1
+          fi
+          if [[ -n "$suffix" ]]; then
+            if [[ "$suffix" != ' (#'*')' ]]; then
+              echo "::error title=merged-gitops-release::release commit subject had an unrecognized suffix"
+              exit 1
+            fi
+            pr_number="${suffix:3:${#suffix}-4}"
+            if [[ -z "$pr_number" || "$pr_number" == *[!0-9]* ]]; then
+              echo "::error title=merged-gitops-release::release commit subject had an invalid pull-request suffix"
+              exit 1
+            fi
+          fi
+
+          gh workflow run prod-post-deploy.yml --ref master \
+            -f release_sha="$release_sha" \
+            -f reason="GitOps image-tag merge ${GITHUB_SHA} for ${release_sha}"
+          echo "Dispatched post-deploy verification for image tag ${release_sha}."

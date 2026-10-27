@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Shared lists — Visibility control at 375 px, LTR and RTL (he / ar)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+<link rel="stylesheet" href="mobile.css" />
+</head>
+<body>
+<div class="content" data-frame="14-rtl-mobile-visibility" style="padding-top: var(--space-12);">
+
+  <h1 class="page-title">Visibility control — 375 px, English · עברית · العربية</h1>
+  <p class="page-sub">Frame 4a at a phone width. The options stay full-width radio cards at the top of the Access tab; the
+    organization → private confirmation and the platform publish confirmation become BottomSheets; the typed key stays an LTR field in every locale.</p>
+
+  <div class="sl-devices">
+
+    <!-- ===== 1 · EN · control ===== -->
+    <div>
+      <p class="sl-device__label">en · ltr · 375 · visibility control</p>
+      <div class="sl-device" dir="ltr" lang="en" data-device="375" data-locale="en" data-dir="ltr">
+        <div class="sl-device__bar"><button class="sl-iconbtn sl-device__menu" aria-label="Open navigation" data-action="open-drawer">☰</button><div class="wordmark"><span class="fuse">Fuze</span>Front</div><span class="spacer"></span><div class="avatar">DO</div></div>
+        <div class="sl-device__screen">
+          <div class="sl-crumb"><a href="01-shared-index.html">Selection Lists</a> · <a href="13-rtl-mobile-provenance.html">Priority</a></div>
+          <h2 class="page-title">Priority</h2>
+          <div class="sl-tabs" role="tablist" data-tabs="list-detail">
+            <a class="sl-tab" role="tab" aria-selected="false" href="13-rtl-mobile-provenance.html" data-tab="values">Values</a>
+            <a class="sl-tab" role="tab" aria-selected="false" href="../selection-lists/16-mobile-translation-workbench.html" data-tab="translations">Translations</a>
+            <a class="sl-tab" role="tab" aria-selected="true" href="08-visibility-control.html" data-tab="access">Access</a>
+          </div>
+          <section data-panel="visibility-control" data-state="ready">
+            <span class="sl-field__label" id="m1-v">Who can see this list</span>
+            <p class="sl-field__hint" style="margin: 0 0 var(--space-3);">People with a role can always see it.</p>
+            <div class="sl-choice" role="radiogroup" aria-labelledby="m1-v" data-control="visibility">
+              <div class="sl-choice__opt" role="radio" aria-checked="false" tabindex="-1" data-visibility-option="private"><span class="sl-choice__radio" aria-hidden="true"></span>
+                <div><div class="sl-choice__title">Only people with a role <span class="sl-vis sl-vis--private">○ Private</span></div>
+                  <p class="sl-choice__desc">Everyone else's forms use the common list if one is active.</p></div></div>
+              <div class="sl-choice__opt" role="radio" aria-checked="true" tabindex="0" data-visibility-option="org"><span class="sl-choice__radio" aria-hidden="true"></span>
+                <div><div class="sl-choice__title">Everyone in Acme Logistics <span class="sl-vis sl-vis--org">◉ Organization</span></div>
+                  <p class="sl-choice__desc">As a fork, it replaces the common list for everyone.</p></div></div>
+            </div>
+          </section>
+          <p class="sl-field__lock" style="margin: var(--space-5) 0 var(--space-2);">People with a role — approved access panel</p>
+          <div class="sl-mlist" data-panel="access-roster"><div class="sl-mrow"><span class="sl-mrow__title">Dana Okafor</span><span class="sl-mrow__end"></span><span class="sl-mrow__meta">Owner</span></div>
+            <div class="sl-mrow"><span class="sl-mrow__title">Lee Park</span><span class="sl-mrow__end"></span><span class="sl-mrow__meta">Editor</span></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 2 · HE · RTL · confirm org → private ===== -->
+    <div>
+      <p class="sl-device__label">he · rtl · 375 · confirm make private</p>
+      <div class="sl-device" dir="rtl" lang="he" data-device="375" data-locale="he" data-dir="rtl">
+        <div class="sl-device__bar"><button class="sl-iconbtn sl-device__menu" aria-label="פתיחת ניווט" data-action="open-drawer">☰</button><div class="wordmark" dir="ltr"><span class="fuse">Fuze</span>Front</div><span class="spacer"></span><div class="avatar">DO</div></div>
+        <div class="sl-device__screen sl-device__screen--sheet">
+          <div class="sl-device__behind" aria-hidden="true"><h2 class="page-title">עדיפות</h2></div>
+          <div class="sl-sheet" role="alertdialog" aria-modal="true" aria-labelledby="m2-t" data-confirm="visibility-to-private" data-presentation="bottom-sheet">
+            <div class="sl-sheet__grab" aria-hidden="true"></div>
+            <div class="sl-modal__head"><h3 class="sl-modal__title" id="m2-t">להפוך את „עדיפות” לפרטית?</h3></div>
+            <div class="sl-modal__body">
+              <ul class="sl-list sl-caption" style="margin: 0;">
+                <li>חברים ללא תפקיד לא יראו אותה יותר.</li>
+                <li data-consequence="forms">הטפסים שלהם ישתמשו ברשימה ה<b>משותפת</b>, אם יש אחת פעילה — אחרת יוצג „הרשימה לא זמינה”.</li>
+                <li data-consequence="stored-common">ערכים שנשמרו מהרשימה המשותפת יציגו שוב את התוויות המשותפות.</li>
+                <li data-consequence="stored-fork">ערכים שנבחרו מהעותק שלכם ימשיכו להציג את התוויות שלכם.</li>
+              </ul>
+            </div>
+            <div class="sl-modal__foot">
+              <button class="btn btn-ghost" data-action="cancel" data-initial-focus="true">ביטול</button>
+              <button class="btn btn-primary" data-action="confirm-visibility">להפוך לפרטית</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 3 · AR · RTL · read-only ===== -->
+    <div>
+      <p class="sl-device__label">ar · rtl · 375 · read-only (not owner)</p>
+      <div class="sl-device" dir="rtl" lang="ar" data-device="375" data-locale="ar" data-dir="rtl">
+        <div class="sl-device__bar"><button class="sl-iconbtn sl-device__menu" aria-label="فتح التنقل" data-action="open-drawer">☰</button><div class="wordmark" dir="ltr"><span class="fuse">Fuze</span>Front</div><span class="spacer"></span><div class="avatar">LP</div></div>
+        <div class="sl-device__screen">
+          <h2 class="page-title">الأولوية</h2>
+          <div class="sl-panel" data-panel="visibility-control" data-state="read-only"><div class="sl-panel__body">
+            <span class="sl-field__label">من يمكنه رؤية هذه القائمة</span>
+            <p style="margin: 0;"><span class="sl-vis sl-vis--org">◉ المؤسسة</span> <span class="sl-muted">— جميع أعضاء <bdi>Acme Logistics</bdi>. يمكن لمالك القائمة فقط تغيير ذلك.</span></p>
+          </div></div>
+          <p class="sl-mcase">Saving · saved · refused</p>
+          <div class="sl-stack">
+            <div class="sl-panel" data-panel="visibility-control" data-state="saving" aria-busy="true"><div class="sl-panel__body"><span class="sl-spinner" aria-hidden="true"></span> <span class="sl-muted">جارٍ الحفظ… الخيارات مقفلة حتى يرد الخادم.</span></div></div>
+            <div class="sl-toast" role="status" data-result="visibility-saved"><span aria-hidden="true">○</span><span><b>أصبحت „الأولوية” خاصة.</b></span></div>
+            <div class="sl-banner sl-banner--error" data-error="FORBIDDEN" data-case="visibility-not-owner" role="alert" style="margin-bottom: 0;">
+              <span class="sl-banner__ico" aria-hidden="true">⚠</span>
+              <div class="sl-banner__body"><p class="sl-banner__title">يمكن لمالك القائمة فقط تغيير من يراها</p><p>تم الإبقاء على الإعداد السابق.</p></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 4 · EN · platform publish ===== -->
+    <div>
+      <p class="sl-device__label">en · ltr · 375 · platform publish (operators only)</p>
+      <div class="sl-device" dir="ltr" lang="en" data-device="375" data-locale="en" data-dir="ltr">
+        <div class="sl-device__bar"><button class="sl-iconbtn sl-device__menu" aria-label="Open navigation" data-action="open-drawer">☰</button><div class="wordmark"><span class="fuse">Fuze</span>Front</div><span class="spacer"></span><div class="avatar">PO</div></div>
+        <div class="sl-device__screen sl-device__screen--sheet">
+          <div class="sl-device__behind" aria-hidden="true"><h2 class="page-title">Ticket channel</h2></div>
+          <div class="sl-sheet" role="alertdialog" aria-modal="true" aria-labelledby="m4-t" data-confirm="publish-platform" data-confirm-state="matched" data-scope="platform-org" data-presentation="bottom-sheet">
+            <div class="sl-sheet__grab" aria-hidden="true"></div>
+            <div class="sl-modal__head"><h3 class="sl-modal__title" id="m4-t">Publish “Ticket channel” to every organization?</h3></div>
+            <div class="sl-modal__body">
+              <ul class="sl-list sl-caption" style="margin: 0 0 var(--space-3);">
+                <li>Every organization can read it and pick its values.</li>
+                <li><b>It can never become private or organization-only again.</b></li>
+              </ul>
+              <label class="sl-field__label" for="m4-key">Type the list key <span class="sl-key">ticket-channel</span> to confirm</label>
+              <input class="sl-input mono" id="m4-key" dir="ltr" value="ticket-channel" autocomplete="off" autocapitalize="off" spellcheck="false" data-confirm-input="key" />
+            </div>
+            <div class="sl-modal__foot">
+              <button class="btn btn-ghost" data-action="cancel">Cancel</button>
+              <button class="btn btn-primary" data-action="confirm-publish">Publish as common list</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sl-section">
+    <h2>States at 375 px</h2>
+    <p class="sl-caption">Same states as frame 4a.</p>
+    <div class="sl-devices">
+      <div>
+        <p class="sl-device__label">loading</p>
+        <div class="sl-device" data-device="375" data-locale="en" data-dir="ltr"><div class="sl-device__screen sl-device__screen--short">
+          <div class="sl-panel" data-panel="visibility-control" data-state="loading" aria-busy="true"><div class="sl-panel__body"><div class="sl-skel" style="width: 40%;"></div><div class="sl-skel" style="width: 90%;"></div><div class="sl-skel" style="width: 90%;"></div></div></div>
+        </div></div>
+      </div>
+      <div>
+        <p class="sl-device__label">error</p>
+        <div class="sl-device" data-device="375" data-locale="en" data-dir="ltr"><div class="sl-device__screen sl-device__screen--short">
+          <div class="sl-panel" data-panel="visibility-control" data-state="error"><div class="sl-panel__body">
+            <p class="sl-muted" style="margin: 0 0 var(--space-3);">Couldn't load access settings. Nothing was changed.</p>
+            <button class="btn btn-ghost" data-action="retry">Retry</button></div></div>
+        </div></div>
+      </div>
+      <div>
+        <p class="sl-device__label">publishing</p>
+        <div class="sl-device" data-device="375" data-locale="en" data-dir="ltr"><div class="sl-device__screen sl-device__screen--short">
+          <div class="sl-confirm" data-confirm="publish-platform" data-confirm-state="publishing" aria-busy="true">
+            <input class="sl-input mono" dir="ltr" aria-label="List key" value="ticket-channel" data-confirm-input="key" disabled />
+            <div class="sl-head__actions" style="margin-top: var(--space-3);">
+              <button class="btn btn-ghost" data-action="cancel" disabled>Cancel</button>
+              <button class="btn btn-primary" data-action="confirm-publish" disabled aria-busy="true"><span class="sl-spinner" aria-hidden="true"></span> Publishing…</button>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sl-section">
+    <h2>Rules the implementation must keep</h2>
+    <ul class="sl-caption sl-list" data-rules="rtl-mobile-visibility">
+      <li><b>At ≤ 40em</b> the options are full-width radio cards (DS <b>RadioCardGroup</b>), each ≥ 44 px, at the top of the Access tab; the roster
+        below becomes one card per person. Customer organizations never see the “Every organization” option — not even disabled.</li>
+      <li><b>Organization → Private opens a BottomSheet</b> with the same four consequence lines as frame 4a (fork lines only when
+        <code class="sl-code">forked_from</code> is set). Cancel holds initial focus. Private → Organization saves directly and toasts.</li>
+      <li><b>Platform publish is a BottomSheet with the typed key</b>. The key field is <code class="sl-code">dir="ltr"</code>, monospaced, with
+        autocapitalize, autocorrect and spellcheck off so a phone keyboard cannot alter what is typed; Publish enables only on an exact match.</li>
+      <li><b>Read-only is a statement, not a disabled form</b>: non-owners see the current visibility and who can change it.</li>
+      <li><b>RTL</b>: organization names and keys are bidi-isolated; quotation marks follow the locale (<code class="sl-code">„…”</code> in Hebrew); visibility glyphs are not mirrored.</li>
+    </ul>
+  </div>
+
+  <p class="sl-notes">
+    <b>Test hooks:</b> <code>[data-frame='14-rtl-mobile-visibility']</code> · <code>[data-device='375']</code> · <code>[data-locale='he'][data-dir='rtl']</code> · <code>[data-locale='ar'][data-dir='rtl']</code> · <code>[data-panel='visibility-control']</code> · <code>[data-control='visibility']</code> · <code>[data-visibility-option='private']</code> · <code>[data-visibility-option='org'][aria-checked='true']</code> · <code>[data-confirm='visibility-to-private'][data-presentation='bottom-sheet']</code> · <code>[data-consequence='stored-fork']</code> · <code>[data-initial-focus='true']</code> · <code>[data-state='read-only']</code> · <code>[data-state='saving']</code> · <code>[data-result='visibility-saved']</code> · <code>[data-case='visibility-not-owner']</code> · <code>[data-confirm='publish-platform'][data-presentation='bottom-sheet']</code> · <code>[data-confirm-input='key']</code> · <code>[data-confirm-state='publishing']</code> · <code>[data-state='loading']</code> · <code>[data-state='error']</code> · <code>[data-rules='rtl-mobile-visibility']</code><br />
+    Playwright drives the real Access tab at <code>{ viewport: 375×812, locale: en | he-IL | ar }</code>: no horizontal scroll, choosing Private opens a
+    bottom-sheet confirm, and the publish key input has <code>dir='ltr'</code> with autocapitalize off.<br />
+    Tokens only — no raw hex, spacing or type outside <code>tokens.css</code> / <code>frame.css</code> / <code>mobile.css</code>.
+  </p>
+</div>
+<nav class="frame-nav" aria-label="Frame navigation">
+  <a class="btn btn-ghost" href="13-rtl-mobile-provenance.html" data-nav="prev">← RTL + mobile: provenance</a>
+  <span class="caption"><b>(4b) RTL + mobile — visibility</b> · Flow 4 · Visibility control · frame 14 of 15</span>
+  <a class="btn btn-primary" href="15-rtl-mobile-picker.html" data-nav="next">RTL + mobile: picker →</a>
+</nav>
+</body>
+</html>

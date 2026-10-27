@@ -14,12 +14,21 @@ export function failureCode(error: unknown) {
   return 'INTELLIGENCE_UNAVAILABLE'
 }
 
-export async function retry<T>(operation: () => Promise<T>, wait: (ms: number) => Promise<void> = ms => new Promise(resolve => setTimeout(resolve, ms))) {
+export async function retry<T>(
+  operation: () => Promise<T>,
+  wait: (ms: number) => Promise<void> = ms => new Promise(resolve => setTimeout(resolve, ms)),
+  onExhausted?: (error: unknown) => Promise<void>,
+) {
   let lastError: unknown
   for (let attempt = 1; attempt <= MAX_DELIVERY_ATTEMPTS; attempt++) {
     try { return await operation() } catch (error) {
       lastError = error
       if (attempt < MAX_DELIVERY_ATTEMPTS) await wait(retryDelayMs(attempt))
+    }
+  }
+  if (onExhausted) {
+    try { await onExhausted(lastError) } catch {
+      // Terminal reporting is best-effort; preserve the original delivery failure for the DLQ.
     }
   }
   throw lastError
@@ -41,7 +50,10 @@ export async function runConsumer(
     payload: unknown,
     correlationId: string,
     controls: { heartbeat: () => Promise<void> }
-  ) => Promise<void>
+  ) => Promise<void>,
+  options: {
+    onExhausted?: (topic: string, payload: unknown, correlationId: string, error: unknown) => Promise<void>
+  } = {},
 ) {
   const brokers = process.env.KAFKA_BROKERS?.split(',').filter(Boolean)
   if (!brokers?.length) throw new Error('KAFKA_BROKERS is required for worker processes')
@@ -62,7 +74,11 @@ export async function runConsumer(
       if (!raw) return
       try {
         const envelope = envelopeSchema.parse(JSON.parse(raw))
-        await retry(() => handler(topic, envelope.payload, envelope.correlationId, { heartbeat }))
+        await retry(
+          () => handler(topic, envelope.payload, envelope.correlationId, { heartbeat }),
+          undefined,
+          error => options.onExhausted?.(topic, envelope.payload, envelope.correlationId, error) ?? Promise.resolve(),
+        )
       } catch (error) {
         await producer.send({
           topic: `${topic}.dlq`,

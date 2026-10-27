@@ -1,4 +1,5 @@
 import {
+  InMemoryProvider,
   OpenFeature,
   ProviderEvents,
   type Provider,
@@ -12,8 +13,67 @@ const DEFAULT_READY_TIMEOUT_MS = 5000;
 const DEFAULT_APP_NAME = 'fuzefront';
 const DEFAULT_REFRESH_SEC = 15;
 
+/**
+ * Raised when the offline provider is asked to install somewhere it must never
+ * run — chiefly production. Callers (e.g. a service's `initFeatureFlags`) catch
+ * it and degrade to the fail-safe defaults, exactly as they would for an
+ * Unleash outage; the no-op provider is left installed so evaluations keep
+ * returning the caller's in-code defaults.
+ */
+export class FlagsConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'FlagsConfigError';
+  }
+}
+
 /** Module-level singleton client (one OpenFeature client per process). */
 let client: Client | undefined;
+
+/**
+ * Build the offline (in-memory) provider: every key in `onKeys` resolves
+ * `true`; any key NOT listed is absent, so the caller's in-code default applies
+ * (the same InMemoryProvider used by the package's own tests). This is the ONE
+ * explicit offline provider that replaces the per-service `FLAGS_FORCE_ON`
+ * hatches — it never reaches a real flag store and never talks to Unleash.
+ */
+function buildOfflineProvider(onKeys: string[]): Provider {
+  const flags: Record<
+    string,
+    { disabled: boolean; variants: { on: boolean; off: boolean }; defaultVariant: string }
+  > = {};
+  for (const key of onKeys) {
+    flags[key] = {
+      disabled: false,
+      variants: { on: true, off: false },
+      defaultVariant: 'on',
+    };
+  }
+  return new InMemoryProvider(flags as never);
+}
+
+/**
+ * Map process env to {@link FuzeFlagsOptions}. The ONLY selector for the offline
+ * provider is `FUZE_FLAGS_PROVIDER=offline`; `FUZE_FLAGS_OFFLINE_ON` is the
+ * comma-separated ON list (whitespace trimmed). Unleash config is read from the
+ * standard `UNLEASH_URL` / `UNLEASH_CLIENT_TOKEN` vars — and always wins over an
+ * offline request (see {@link init}).
+ */
+export function optionsFromEnv(env: NodeJS.ProcessEnv = process.env): FuzeFlagsOptions {
+  const providerEnv = env.FUZE_FLAGS_PROVIDER;
+  const provider =
+    providerEnv === 'offline' || providerEnv === 'unleash' ? providerEnv : undefined;
+  const on = (env.FUZE_FLAGS_OFFLINE_ON || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return {
+    provider,
+    offline: { on },
+    url: env.UNLEASH_URL,
+    clientToken: env.UNLEASH_CLIENT_TOKEN,
+  };
+}
 
 /**
  * Build the server-side Unleash OpenFeature provider.
@@ -30,8 +90,8 @@ async function buildProvider(opts: FuzeFlagsOptions): Promise<Provider> {
   // OpenFeature SDK. The heavy `unleash-client` stays lazily imported inside
   // the provider's initialize(), so module load never requires the Unleash SDK.
   return new UnleashOpenFeatureProvider({
-    url: opts.url,
-    clientToken: opts.clientToken,
+    url: opts.url ?? '',
+    clientToken: opts.clientToken ?? '',
     appName: opts.appName ?? DEFAULT_APP_NAME,
     refreshIntervalMs: (opts.refreshIntervalSec ?? DEFAULT_REFRESH_SEC) * 1000,
   });
@@ -67,6 +127,40 @@ export async function init(
   context?: FuzeFlagsContext,
 ): Promise<void> {
   const timeout = opts.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS;
+
+  // Offline provider: the single, explicit replacement for the per-service
+  // FLAGS_FORCE_ON hatches. Guard order matters and is deliberate.
+  if (opts.provider === 'offline') {
+    // 1. Unleash always wins. If a real endpoint/token is configured, an
+    //    offline request is a misconfiguration, not an intent — ignore it
+    //    LOUDLY and fall through to the Unleash provider below. Never print the
+    //    url or token.
+    if (opts.url || opts.clientToken) {
+      // eslint-disable-next-line no-console
+      console.error(
+        '[feature-flags] FUZE_FLAGS_PROVIDER=offline ignored: Unleash is configured ' +
+          '(UNLEASH_URL/UNLEASH_CLIENT_TOKEN set) — using the Unleash provider.',
+      );
+    } else {
+      // 2. Never in production. A single env var must not be able to light up a
+      //    dark feature in prod; prod targeting is Unleash only. Leave the no-op
+      //    provider installed so evaluations keep returning in-code defaults,
+      //    then throw so the caller fails closed (same as an Unleash outage).
+      if (process.env.NODE_ENV === 'production') {
+        client = OpenFeature.getClient();
+        throw new FlagsConfigError('offline provider refused in production');
+      }
+      const provider = buildOfflineProvider(opts.offline?.on ?? []);
+      if (context) {
+        await OpenFeature.setContext(toEvaluationContext(context));
+      }
+      const set = OpenFeature.setProviderAndWait(provider).catch(() => undefined);
+      client = OpenFeature.getClient();
+      await Promise.race([set, awaitReady(client, timeout)]);
+      return;
+    }
+  }
+
   try {
     const provider = await buildProvider(opts);
     if (context) {

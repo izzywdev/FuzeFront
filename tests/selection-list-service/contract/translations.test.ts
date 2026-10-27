@@ -22,13 +22,14 @@ import { makeClient, rawFetch } from '../helpers/client';
 import { mintTestToken } from '../helpers/auth';
 import { createTestList, createTestListWithItems, purgeList } from '../helpers/factories';
 import type { SelectionListId, SelectionListItemId } from '../helpers/factories';
+import { testOrg, testUser } from '../helpers/ids';
 
 // ---------------------------------------------------------------------------
 // Test actors
 // ---------------------------------------------------------------------------
 
-const ORG_ID = 'org_01test00000000transl0000000';
-const USER_OWNER = 'usr_01test00000000translowner00';
+const ORG_ID = testOrg('transl');
+const USER_OWNER = testUser('translowner');
 
 function ownerToken(): string {
   return mintTestToken({ userId: USER_OWNER, organizationId: ORG_ID });

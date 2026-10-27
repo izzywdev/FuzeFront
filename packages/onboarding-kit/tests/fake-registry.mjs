@@ -29,6 +29,11 @@ const server = createServer((req, res) => {
       res.end(JSON.stringify(payload ?? {}))
     }
 
+    if (method === 'GET' && url === '/apps/testapp/assets/remoteEntry.js') {
+      res.writeHead(200, { 'content-type': 'application/javascript' })
+      return res.end('const remote = "__federation_method_ensure";\n')
+    }
+
     seen++
     if (seen <= failFirstN) return send(500, { error: 'transient' })
 

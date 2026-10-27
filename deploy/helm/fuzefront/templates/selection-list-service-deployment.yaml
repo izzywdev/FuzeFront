@@ -19,6 +19,15 @@ spec:
       annotations:
         {{- include "fuzefront.metricsAnnotations" (dict "port" .Values.selectionListService.port "root" .) | nindent 8 }}
     spec:
+      serviceAccountName: fuzefront-selection-list-service
+      volumes:
+        - name: fuzefront-workload-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: fuzefront-security
+                  audience: fuzefront-security
+                  expirationSeconds: 600
       {{- include "fuzefront.scheduling" (dict "svc" .Values.selectionListService "root" .) | nindent 6 }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
@@ -35,6 +44,14 @@ spec:
               value: "production"
             - name: PORT
               value: {{ .Values.selectionListService.port | quote }}
+            # @fuzefront/telemetry (initTelemetry() in src/index.ts) reads this
+            # standard OTel env var for its OTLP exporter target. Without it the
+            # package falls back to packages/telemetry's docker-compose default
+            # (`otel-collector:4317`), which has no in-cluster DNS entry — spans
+            # fail to export silently and nothing reaches Tempo/Grafana. See
+            # values.yaml's selectionListService.otel.endpoint comment.
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.selectionListService.otel.endpoint | quote }}
             {{- /*
             Data-tier identity: this service has its OWN database
             (selectionListService.dbName) and its OWN login role
@@ -94,6 +111,12 @@ spec:
             # "off". It stays a dev/test switch outside production only.
             - name: FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED
               value: {{ .Values.selectionListService.authzEnabled | quote }}
+            # Platform organization (owner of common `platform` lists, the only
+            # tenant in which `publish_platform` is effective). Explicit value in
+            # values.yaml, empty by default (shared lists dark); the service fails
+            # closed on every platform feature if empty (no projection fallback).
+            - name: SELECTION_LIST_PLATFORM_ORG_ID
+              value: {{ .Values.selectionListService.platformOrgId | quote }}
             {{- if .Values.selectionListService.featureFlags.unleashUrl }}
             # @fuzefront/feature-flags (Unleash) client env for the release flag
             # fuzefront.selection-lists.service. The service calls the package's
@@ -110,26 +133,10 @@ spec:
                   key: {{ .Values.selectionListService.featureFlags.tokenSecretKey | quote }}
                   optional: true
             {{- end }}
-            # Machine identity (OAuth client_credentials) the service uses for
-            # Security API grant/revoke -- NOT the end user's token (review C-1).
-            # Both come from the same SealedSecret as DB_PASSWORD;
-            # `optional` so the pod still starts before the keys are sealed, in
-            # which case list creation / access grants fail CLOSED (500) and the
-            # service logs "machine identity NOT configured" at boot. The OAuth
-            # client must be provisioned with scope authz:admin -- see
-            # deploy/contabo/sealed/selection-list-service-secrets.yaml.template.
-            - name: SELECTION_LIST_SERVICE_CLIENT_ID
-              valueFrom:
-                secretKeyRef:
-                  name: selection-list-secrets
-                  key: SERVICE_CLIENT_ID
-                  optional: true
-            - name: SELECTION_LIST_SERVICE_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: selection-list-secrets
-                  key: SERVICE_CLIENT_SECRET
-                  optional: true
+          volumeMounts:
+            - name: fuzefront-workload-token
+              mountPath: /var/run/secrets/tokens
+              readOnly: true
           readinessProbe:
             httpGet:
               # /ready checks the DB (bounded); /health stays a cheap liveness probe.

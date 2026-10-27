@@ -60,6 +60,33 @@ export function payloadErrors(topic: string, payload: unknown): string[] {
 }
 
 /**
+ * Writer-transaction ids (`xmin`) of the given outbox rows: a SINGLE distinct value <=> every row was written by
+ * the same transaction. (`created_at` cannot prove it: the writer stamps `clock_timestamp()`.)
+ *
+ * `xmin` is the inserting transaction only while the row is untouched. contract/outbox-relay.test.ts runs a real
+ * relay pass over EVERY org's pending rows in a parallel jest worker and marks them `sent` (an UPDATE, which
+ * rewrites `xmin`), so `untouched` reports whether every row was still `pending` in the SAME snapshot the ids were
+ * read from; callers assert "one transaction" only when it is true (see `assertOneTransaction`).
+ */
+export async function transactionIds(rows: Array<{ id: string }>): Promise<{ xids: string[]; untouched: boolean }> {
+  if (rows.length === 0) return { xids: [], untouched: true };
+  const res = await dbQuery<{ x: string; status: string }>('SELECT xmin::text AS x, status FROM event_outbox WHERE id = ANY($1::uuid[])', [rows.map((r) => r.id)]);
+  return { xids: [...new Set(res.map((r) => r.x))], untouched: res.every((r) => r.status === 'pending') };
+}
+
+/**
+ * The rows came from ONE request and (when the relay has not touched them) ONE transaction. Atomicity is the
+ * documented contract (docs/planning/selection-lists-events.md §6, design record D11); a request's events share the
+ * request's correlation id, which no relay pass rewrites, so that half is asserted unconditionally.
+ */
+export async function assertOneTransaction(rows: OutboxRow[]): Promise<void> {
+  expect(rows.length).toBeGreaterThan(1);
+  expect(new Set(rows.map((r) => r.correlation_id)).size).toBe(1);
+  const tx = await transactionIds(rows);
+  if (tx.untouched) expect(tx.xids).toHaveLength(1);
+}
+
+/**
  * Run one action and return exactly the org's outbox rows it produced, in order.
  * (Runs sequentially within a test file; each test file uses its own org so parallel jest
  * workers never see each other's rows.)

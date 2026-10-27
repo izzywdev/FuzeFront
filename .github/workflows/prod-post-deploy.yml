@@ -55,6 +55,34 @@ on:
         description: 'Target base URL'
         required: false
         default: 'https://app.fuzefront.com'
+  workflow_call:
+    inputs:
+      release_sha:
+        description: 'The released commit SHA (for traceability in the run log)'
+        required: false
+        type: string
+        default: ''
+      reason:
+        description: 'Why this verification run was started'
+        required: false
+        type: string
+        default: 'automated post-deploy verification'
+      base_url:
+        description: 'Target base URL'
+        required: false
+        type: string
+        default: 'https://app.fuzefront.com'
+    secrets:
+      POST_PROD_EMAIL:
+        required: false
+      POST_PROD_PASSWORD:
+        required: false
+      INTERNAL_PROVISION_SECRET:
+        required: false
+      POST_PROD_ADMIN_EMAIL:
+        required: false
+      POST_PROD_ADMIN_PASSWORD:
+        required: false
 
 permissions:
   contents: read
@@ -162,25 +190,116 @@ jobs:
     name: www redirects to the canonical apex
     needs: announce
     runs-on: ubuntu-latest
-    # Four bounded curls; anything slower than this is a hung runner, not a
-    # slow edge (gate-workflow-policy [missing-timeout]).
-    timeout-minutes: 5
+    # The poll below runs for at most 10 minutes; past that it is a hung
+    # runner, not a slow edge (gate-workflow-policy [missing-timeout]).
+    timeout-minutes: 15
     steps:
       - name: www.fuzefront.com must 301 to https://fuzefront.com
         run: |
           set -euo pipefail
 
-          # --location is deliberately ABSENT. Following the redirect would
-          # make a page that merely *renders* the apex indistinguishable from
-          # a real canonicalization; this asserts the redirect itself.
-          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 30 https://www.fuzefront.com/)
-          loc=$(curl -sS -o /dev/null -w '%{redirect_url}' --max-time 30 https://www.fuzefront.com/)
+          # WHY THIS POLLS RATHER THAN PROBING ONCE.
+          #
+          # Measured, in run 36419988393: this job started 15 SECONDS into the
+          # workflow and failed immediately. It is `needs: announce`, so it does
+          # not wait for anything — while the redirect it asserts ships INSIDE
+          # the website-frontend image, which Argo has to pull and roll out
+          # after release.yml commits the GitOps tag bump. A single-shot probe
+          # fired 15s after dispatch therefore cannot pass on a healthy deploy;
+          # it races the rollout and loses every time. The `health` job next to
+          # it already knows this and sleeps 360s before polling.
+          #
+          # The fix is NOT to gate this behind `health`. This probes the public
+          # website edge, and `health` polls the app shell's /api/health — a
+          # sick app shell must not be able to suppress a brand-split alarm on
+          # the marketing domain. So it stays independent and waits on its own.
+          #
+          # It polls to a deadline instead of sleeping a fixed 360s so a
+          # already-correct edge (the ordinary case, when no website image
+          # changed) reports in one request instead of idling six minutes.
+          #
+          # This does NOT soften the check: after the deadline it still fails
+          # LOUD with the last state it saw. A slow rollout delays the verdict;
+          # it never converts a red into a green.
+          # It polls to a deadline instead of sleeping a fixed 360s so an
+          # already-correct edge (the ordinary case, when no website image
+          # changed) reports in seconds instead of idling six minutes.
+          #
+          # This does NOT soften the check: after the deadline it still fails
+          # LOUD with the last state it saw. A slow rollout delays the verdict;
+          # it never converts a red into a green.
+          DEADLINE=$(( SECONDS + 600 ))
+          INTERVAL=20
+          # Consecutive clean probes required before declaring success. See
+          # WHY STABILITY below.
+          STABLE_REQUIRED=3
+          CONFIRM_INTERVAL=5
+
+          # WHY ONE CURL PER RESPONSE.
+          #
+          # websiteFrontend runs replicas: 1 under the default RollingUpdate
+          # strategy, so maxSurge brings a SECOND pod up and the Service
+          # round-robins across old and new for the length of the rollout —
+          # exactly the window this job polls through. Asking for the status in
+          # one request and the Location in another therefore lets the two
+          # describe DIFFERENT responses: a healthy rollout whose status curl
+          # hit the new pod and whose Location curl hit the old one would fail
+          # on a mismatched pair that never existed in any single response.
+          # `-w` emits both from the one request instead.
+          #
+          # WHY STABILITY.
+          #
+          # For the same reason, a single clean probe is not proof the rollout
+          # finished — during a STALLED mixed rollout each request has its own
+          # chance of landing on the new pod, so one lucky pass would be a
+          # false green on precisely the brand-split this job exists to catch.
+          # Requiring STABLE_REQUIRED consecutive clean probes makes that luck
+          # exponentially unlikely while costing a fully-rolled edge only a few
+          # seconds, since every pod answers identically once the rollout ends.
+          probe() {
+            # --location is deliberately ABSENT. Following the redirect would
+            # make a page that merely *renders* the apex indistinguishable
+            # from a real canonicalization; this asserts the redirect itself.
+            read -r code loc <<<"$(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' \
+              --max-time 30 https://www.fuzefront.com/ || echo '000 ')"
+            # The query string and path must survive, or every deep link to www
+            # lands on the homepage instead of the page that was asked for.
+            read -r deep_code deep <<<"$(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' \
+              --max-time 30 'https://www.fuzefront.com/pricing?plan=team' || echo '000 ')"
+          }
+
+          # The COMPLETE contract. The loop waits on all of it, not on the
+          # status alone, so no part of the assertion can be satisfied by a
+          # different pod than the rest.
+          contract_holds() {
+            [ "$code" = "301" ] || return 1
+            case "$loc" in https://fuzefront.com|https://fuzefront.com/*) ;; *) return 1 ;; esac
+            [ "$deep" = "https://fuzefront.com/pricing?plan=team" ] || return 1
+            return 0
+          }
+
+          stable=0
+          probe
+          while [ "$stable" -lt "$STABLE_REQUIRED" ] && [ "$SECONDS" -lt "$DEADLINE" ]; do
+            if contract_holds; then
+              stable=$(( stable + 1 ))
+              [ "$stable" -ge "$STABLE_REQUIRED" ] && break
+              echo "clean probe ${stable}/${STABLE_REQUIRED} — confirming the rollout is settled"
+              sleep "$CONFIRM_INTERVAL"
+            else
+              stable=0
+              echo "waiting for the rollout — root ${code} '${loc:-<none>}', deep '${deep:-<none>}' ($(( DEADLINE - SECONDS ))s left)"
+              sleep "$INTERVAL"
+            fi
+            probe
+          done
 
           echo "status:   ${code}"
           echo "location: ${loc:-<none>}"
+          echo "deep:     ${deep:-<none>}"
 
           if [ "$code" != "301" ]; then
-            echo "::error::www.fuzefront.com answered ${code}, expected 301. It is serving content of its own instead of redirecting to the canonical apex — one domain must not present two brands. If this is still CloudFront, the FuzeInfra DNS half of the fix has not landed; see websiteFrontend.aliasHosts in deploy/helm/fuzefront/values-prod.yaml."
+            echo "::error::www.fuzefront.com answered ${code} for 10 minutes, expected 301. It is serving content of its own instead of redirecting to the canonical apex — one domain must not present two brands. Check, in order: (1) is the running website-frontend image newer than the commit that added the redirect to fuzefront-website/frontend/nginx.conf — if Argo has not rolled the GitOps tag bump, nothing on the edge can be right yet; (2) does www still resolve to CloudFront, meaning FuzeInfra's DNS half was reverted (see websiteFrontend.aliasHosts in deploy/helm/fuzefront/values-prod.yaml and docs/runbooks/fuzefront-com-canonical-host.md)."
             exit 1
           fi
 
@@ -192,13 +311,17 @@ jobs:
               exit 1 ;;
           esac
 
-          # The query string and path must survive, or every deep link to www
-          # lands on the homepage instead of the page that was asked for.
-          deep=$(curl -sS -o /dev/null -w '%{redirect_url}' --max-time 30 'https://www.fuzefront.com/pricing?plan=team')
           if [ "$deep" != "https://fuzefront.com/pricing?plan=team" ]; then
             echo "::error::Deep-link redirect dropped the path or query: got '${deep}', expected 'https://fuzefront.com/pricing?plan=team'."
             exit 1
           fi
+
+          if [ "$stable" -lt "$STABLE_REQUIRED" ]; then
+            echo "::error::www.fuzefront.com never answered the complete redirect contract ${STABLE_REQUIRED} times in a row within 10 minutes. The last probe passed, so the edge is answering correctly only intermittently — a rolling update that has not converged, or a Service still routing to a pod on the old image."
+            exit 1
+          fi
+          echo "deep link preserved: ${deep}"
+          echo "contract stable across ${STABLE_REQUIRED} consecutive probes"
           echo "deep link preserved: ${deep}"
 
   # Live boundary probe: asserts Authentik's admin/API/application-list surface

@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Enter code — signup phone verification frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="phone-verify.css" />
+</head>
+<body>
+<main class="pv-page" data-frame="03-enter-code" data-flow="signup-phone">
+  <div class="pv-crumb"><a href="index.html">← All frames</a> · Frame 03 · Enter code</div>
+  <h1 class="pv-h1">Enter the 6-digit code</h1>
+  <p class="pv-lead"><b>OtpInput</b> is the same primitive as <code>mfa-stepup-mobile</code>: 6 cells, each <b>44×52</b> so both dimensions meet the 44px minimum tap target. mfa-stepup-mobile's 42px-wide cells should be widened to match. Countdowns update visually every second but are <b>not</b> in a live region. The panel's <code>[data-announcer]</code> speaks only milestones: "code sent", "you can request a new code now", "code expired". It auto-advances, Backspace moves back, arrow keys move between cells, and a paste in <i>any</i> cell spreads all six digits. The first cell has <code>autocomplete="one-time-code"</code> for iOS and Android SMS autofill. The form auto-submits when the 6th digit arrives. The resend cooldown and code expiry both come from the start acknowledgement (Δ <code>resendAfterSeconds</code>, <code>expiresInSeconds</code>), not hard-coded client values.</p>
+  <div class="pv-pair">
+  <div data-viewport="desktop">
+    <p class="pv-viewport-label">Desktop · AuthCard 420px · /signup/phone</p>
+    <div class="pv-stage">
+      <div class="pv-card"><div class="pv-card__seam"></div><div class="pv-card__body">
+    <div class="pv-brand"><span class="pv-brand__mark" aria-hidden="true">F</span><span class="pv-brand__word">FuzeFront</span></div>
+    <ol class="pv-progress" data-component="signup-progress" data-email-step="shown" aria-label="Sign-up progress">
+      <li class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Account<span class="pv-sr" data-step-sr> (completed)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="phone" data-step-state="current" aria-current="step"><span class="pv-progress__dot" aria-hidden="true"></span>Phone<span class="pv-sr" data-step-sr> (current step)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot" aria-hidden="true"></span>Email<span class="pv-sr" data-step-sr> (not started)</span></li>
+    </ol>
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="enter-code">
+<div class="pv-center">
+      <h2 class="pv-title">Enter your code</h2>
+      <p class="pv-sub">Enter the 6-digit code we sent to</p>
+      <p><span class="pv-chip" data-value="masked-phone">+44 •••• •• 0123</span>
+        <button type="button" class="pv-change" data-action="change-number">Change number</button></p>
+    </div>
+    <form class="pv-form" data-form="code" novalidate>
+      <div class="pv-otp" data-component="otp-input" data-otp-state="idle" role="group" aria-label="6-digit code">
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 1 of 6" autocomplete="one-time-code" data-focus="true" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 2 of 6" autocomplete="off" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 3 of 6" autocomplete="off" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 4 of 6" autocomplete="off" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 5 of 6" autocomplete="off" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 6 of 6" autocomplete="off" />
+      </div>
+      <p class="pv-help pv-center">Paste the whole code into any box — it fills all six. On Android the code can fill in automatically.</p>
+      <div class="pv-actions">
+        <button type="submit" class="pv-btn pv-btn--primary" data-action="verify-contact" disabled>Confirm</button>
+        <button type="button" class="pv-btn pv-btn--link" data-action="skip">Skip for now</button>
+      </div>
+      <div class="pv-resend-row">
+        <button type="button" class="pv-resend" data-action="resend" data-resend-via="session" data-resend-state="cooldown" disabled>↻ Resend code in <span class="pv-count" data-countdown="resend">0:27</span></button>
+        <span class="pv-help" style="margin:0" data-expiry>Code expires in <span class="pv-count" data-countdown="expiry">9:41</span></span>
+      </div>
+    </form>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite">Code sent to +44 •••• •• 0123.</p>
+  </section>
+      </div></div>
+    </div>
+  </div>
+  <div data-viewport="375">
+    <p class="pv-viewport-label">Mobile · 375px · typing (2 of 6)</p>
+    <div class="pv-device">
+      <header class="pv-device__bar">
+        <span class="pv-device__title">Verify your phone</span>
+        <span class="pv-device__right"><button type="button" class="pv-btn pv-btn--link" data-action="skip" style="width:auto">Skip for now</button></span>
+      </header>
+      <div class="pv-device__body">
+    <ol class="pv-progress" data-component="signup-progress" data-email-step="shown" aria-label="Sign-up progress">
+      <li class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Account<span class="pv-sr" data-step-sr> (completed)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="phone" data-step-state="current" aria-current="step"><span class="pv-progress__dot" aria-hidden="true"></span>Phone<span class="pv-sr" data-step-sr> (current step)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot" aria-hidden="true"></span>Email<span class="pv-sr" data-step-sr> (not started)</span></li>
+    </ol>
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="enter-code">
+<div class="pv-center">
+      <h2 class="pv-title">Enter your code</h2>
+      <p class="pv-sub">Enter the 6-digit code we sent to</p>
+      <p><span class="pv-chip" data-value="masked-phone">+44 •••• •• 0123</span>
+        <button type="button" class="pv-change" data-action="change-number">Change number</button></p>
+    </div>
+    <form class="pv-form" data-form="code" novalidate>
+      <div class="pv-otp" data-component="otp-input" data-otp-state="idle" role="group" aria-label="6-digit code">
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 1 of 6" autocomplete="one-time-code" value="4" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 2 of 6" autocomplete="off" value="8" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 3 of 6" autocomplete="off" data-focus="true" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 4 of 6" autocomplete="off" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 5 of 6" autocomplete="off" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 6 of 6" autocomplete="off" />
+      </div>
+      <p class="pv-help pv-center">Paste the whole code into any box — it fills all six. On Android the code can fill in automatically.</p>
+      <div class="pv-actions">
+        <button type="submit" class="pv-btn pv-btn--primary" data-action="verify-contact" disabled>Confirm</button>
+        <button type="button" class="pv-btn pv-btn--link" data-action="skip">Skip for now</button>
+      </div>
+      <div class="pv-resend-row">
+        <button type="button" class="pv-resend" data-action="resend" data-resend-via="session" data-resend-state="cooldown" disabled>↻ Resend code in <span class="pv-count" data-countdown="resend">0:27</span></button>
+        <span class="pv-help" style="margin:0" data-expiry>Code expires in <span class="pv-count" data-countdown="expiry">9:41</span></span>
+      </div>
+    </form>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite"></p>
+  </section>
+      </div>
+    </div>
+  </div>
+  </div>
+  <div class="pv-states">
+    <div class="pv-state">
+      <p class="pv-state__label"><b>enter-code</b> · pasted full code</p>
+      <p class="pv-state__note">Pasting "482913" into any cell fills all six. Non-digits are stripped, so "482 913" and "482-913" work too. Then it auto-submits.</p>
+      <div data-viewport="375">
+    <p class="pv-viewport-label">Mobile · 375px (Android TWA)</p>
+    <div class="pv-device">
+      <header class="pv-device__bar">
+        <span class="pv-device__title">Verify your phone</span>
+        <span class="pv-device__right"><button type="button" class="pv-btn pv-btn--link" data-action="skip" style="width:auto">Skip for now</button></span>
+      </header>
+      <div class="pv-device__body">
+    <ol class="pv-progress" data-component="signup-progress" data-email-step="shown" aria-label="Sign-up progress">
+      <li class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Account<span class="pv-sr" data-step-sr> (completed)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="phone" data-step-state="current" aria-current="step"><span class="pv-progress__dot" aria-hidden="true"></span>Phone<span class="pv-sr" data-step-sr> (current step)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot" aria-hidden="true"></span>Email<span class="pv-sr" data-step-sr> (not started)</span></li>
+    </ol>
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="enter-code" data-input="pasted">
+<div class="pv-center">
+      <h2 class="pv-title">Enter your code</h2>
+      <p class="pv-sub">Enter the 6-digit code we sent to</p>
+      <p><span class="pv-chip" data-value="masked-phone">+44 •••• •• 0123</span>
+        <button type="button" class="pv-change" data-action="change-number">Change number</button></p>
+    </div>
+    <form class="pv-form" data-form="code" novalidate>
+      <div class="pv-otp" data-component="otp-input" data-otp-state="idle" role="group" aria-label="6-digit code">
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 1 of 6" autocomplete="one-time-code" value="4" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 2 of 6" autocomplete="off" value="8" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 3 of 6" autocomplete="off" value="2" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 4 of 6" autocomplete="off" value="9" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 5 of 6" autocomplete="off" value="1" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 6 of 6" autocomplete="off" value="3" />
+      </div>
+      <p class="pv-help pv-center">Paste the whole code into any box — it fills all six. On Android the code can fill in automatically.</p>
+      <div class="pv-actions">
+        <button type="submit" class="pv-btn pv-btn--primary" data-action="verify-contact">Confirm</button>
+        <button type="button" class="pv-btn pv-btn--link" data-action="skip">Skip for now</button>
+      </div>
+      <div class="pv-resend-row">
+        <button type="button" class="pv-resend" data-action="resend" data-resend-via="session" data-resend-state="ready">↻ Resend code</button>
+        <span class="pv-help" style="margin:0" data-expiry>Code expires in <span class="pv-count" data-countdown="expiry">9:41</span></span>
+      </div>
+    </form>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite"></p>
+  </section>
+      </div>
+    </div>
+  </div>
+    </div>
+    <div class="pv-state">
+      <p class="pv-state__label"><b>verifying</b> · confirm in flight</p>
+      <p class="pv-state__note">Cells and Confirm are disabled, with a spinner. Resend <b>and Change number</b> are disabled while a check is in flight, so a late response can't verify a number the user has already left.</p>
+      <div data-viewport="375">
+    <p class="pv-viewport-label">Mobile · 375px (Android TWA)</p>
+    <div class="pv-device">
+      <header class="pv-device__bar">
+        <span class="pv-device__title">Verify your phone</span>
+
+      </header>
+      <div class="pv-device__body">
+    <ol class="pv-progress" data-component="signup-progress" data-email-step="shown" aria-label="Sign-up progress">
+      <li class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Account<span class="pv-sr" data-step-sr> (completed)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="phone" data-step-state="current" aria-current="step"><span class="pv-progress__dot" aria-hidden="true"></span>Phone<span class="pv-sr" data-step-sr> (current step)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot" aria-hidden="true"></span>Email<span class="pv-sr" data-step-sr> (not started)</span></li>
+    </ol>
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="verifying">
+<div class="pv-center">
+      <h2 class="pv-title">Enter your code</h2>
+      <p class="pv-sub">Enter the 6-digit code we sent to</p>
+      <p><span class="pv-chip" data-value="masked-phone">+44 •••• •• 0123</span>
+        <button type="button" class="pv-change" data-action="change-number" disabled aria-disabled="true" data-locked-by="in-flight">Change number</button></p>
+    </div>
+    <form class="pv-form" data-form="code" novalidate>
+      <div class="pv-otp" data-component="otp-input" data-otp-state="disabled" role="group" aria-label="6-digit code">
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 1 of 6" autocomplete="one-time-code" value="4" disabled />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 2 of 6" autocomplete="off" value="8" disabled />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 3 of 6" autocomplete="off" value="2" disabled />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 4 of 6" autocomplete="off" value="9" disabled />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 5 of 6" autocomplete="off" value="1" disabled />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 6 of 6" autocomplete="off" value="3" disabled />
+      </div>
+      <p class="pv-help pv-center">Paste the whole code into any box — it fills all six. On Android the code can fill in automatically.</p>
+      <div class="pv-actions">
+        <button type="submit" class="pv-btn pv-btn--primary" data-action="verify-contact" disabled aria-busy="true"><span class="pv-spinner" aria-hidden="true"></span>Checking…</button>
+
+      </div>
+      <div class="pv-resend-row">
+        <button type="button" class="pv-resend" data-action="resend" data-resend-via="session" data-resend-state="disabled" disabled>↻ Resend code</button>
+        <span class="pv-help" style="margin:0" data-expiry>Code expires in <span class="pv-count" data-countdown="expiry">9:41</span></span>
+      </div>
+    </form>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite">Checking your code.</p>
+  </section>
+      </div>
+    </div>
+  </div>
+    </div>
+    <div class="pv-state">
+      <p class="pv-state__label"><b>enter-code</b> · resend ready (cooldown elapsed)</p>
+      <p class="pv-state__note">Resend calls <code>POST /verify/phone/resend</code> with an <b>empty body</b> (Δ). The server re-sends to the pending number it holds for this session, so the client never needs the full number, and this works the same after a reload. While the earlier code is still valid, the provider may re-send <b>the same code</b> without extending its lifetime. So the expiry countdown keeps the <b>server's remaining time</b> from the new ack (<code>expiresInSeconds</code>) and only the resend cooldown restarts. Typed digits are kept, and whichever code the server accepts works. The announcer speaks once when the cooldown ends.</p>
+      <div data-viewport="375">
+    <p class="pv-viewport-label">Mobile · 375px (Android TWA)</p>
+    <div class="pv-device">
+      <header class="pv-device__bar">
+        <span class="pv-device__title">Verify your phone</span>
+        <span class="pv-device__right"><button type="button" class="pv-btn pv-btn--link" data-action="skip" style="width:auto">Skip for now</button></span>
+      </header>
+      <div class="pv-device__body">
+    <ol class="pv-progress" data-component="signup-progress" data-email-step="shown" aria-label="Sign-up progress">
+      <li class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Account<span class="pv-sr" data-step-sr> (completed)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="phone" data-step-state="current" aria-current="step"><span class="pv-progress__dot" aria-hidden="true"></span>Phone<span class="pv-sr" data-step-sr> (current step)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot" aria-hidden="true"></span>Email<span class="pv-sr" data-step-sr> (not started)</span></li>
+    </ol>
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="enter-code" data-resend="ready">
+<div class="pv-center">
+      <h2 class="pv-title">Enter your code</h2>
+      <p class="pv-sub">Enter the 6-digit code we sent to</p>
+      <p><span class="pv-chip" data-value="masked-phone">+44 •••• •• 0123</span>
+        <button type="button" class="pv-change" data-action="change-number">Change number</button></p>
+    </div>
+    <form class="pv-form" data-form="code" novalidate>
+      <div class="pv-otp" data-component="otp-input" data-otp-state="idle" role="group" aria-label="6-digit code">
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 1 of 6" autocomplete="one-time-code" data-focus="true" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 2 of 6" autocomplete="off" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 3 of 6" autocomplete="off" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 4 of 6" autocomplete="off" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 5 of 6" autocomplete="off" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 6 of 6" autocomplete="off" />
+      </div>
+      <p class="pv-help pv-center">Paste the whole code into any box — it fills all six. On Android the code can fill in automatically.</p>
+      <div class="pv-actions">
+        <button type="submit" class="pv-btn pv-btn--primary" data-action="verify-contact" disabled>Confirm</button>
+        <button type="button" class="pv-btn pv-btn--link" data-action="skip">Skip for now</button>
+      </div>
+      <div class="pv-resend-row">
+        <button type="button" class="pv-resend" data-action="resend" data-resend-via="session" data-resend-state="ready">↻ Resend code</button>
+        <span class="pv-help" style="margin:0" data-expiry>Code expires in <span class="pv-count" data-countdown="expiry">9:41</span></span>
+      </div>
+    </form>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite">You can request a new code now.</p>
+  </section>
+      </div>
+    </div>
+  </div>
+    </div>
+    <div class="pv-state">
+      <p class="pv-state__label"><b>enter-code</b> · resend in flight</p>
+      <p class="pv-state__note">On press, Resend goes into <code>sending</code> <b>immediately</b>: it is disabled with a spinner, so a double-click sends <b>one</b> SMS. Change number is locked too. Each resend carries a client sequence number, and only the response to the <b>latest</b> request may update the timers. An older response that arrives out of order is ignored, and the cooldown restarts only from the latest acknowledgement.</p>
+      <div data-viewport="375">
+    <p class="pv-viewport-label">Mobile · 375px (Android TWA)</p>
+    <div class="pv-device">
+      <header class="pv-device__bar">
+        <span class="pv-device__title">Verify your phone</span>
+        <span class="pv-device__right"><button type="button" class="pv-btn pv-btn--link" data-action="skip" style="width:auto">Skip for now</button></span>
+      </header>
+      <div class="pv-device__body">
+    <ol class="pv-progress" data-component="signup-progress" data-email-step="shown" aria-label="Sign-up progress">
+      <li class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Account<span class="pv-sr" data-step-sr> (completed)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="phone" data-step-state="current" aria-current="step"><span class="pv-progress__dot" aria-hidden="true"></span>Phone<span class="pv-sr" data-step-sr> (current step)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot" aria-hidden="true"></span>Email<span class="pv-sr" data-step-sr> (not started)</span></li>
+    </ol>
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="enter-code" data-resend="sending">
+<div class="pv-center">
+      <h2 class="pv-title">Enter your code</h2>
+      <p class="pv-sub">Enter the 6-digit code we sent to</p>
+      <p><span class="pv-chip" data-value="masked-phone">+44 •••• •• 0123</span>
+        <button type="button" class="pv-change" data-action="change-number" disabled aria-disabled="true" data-locked-by="in-flight">Change number</button></p>
+    </div>
+    <form class="pv-form" data-form="code" novalidate>
+      <div class="pv-otp" data-component="otp-input" data-otp-state="idle" role="group" aria-label="6-digit code">
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 1 of 6" autocomplete="one-time-code" data-focus="true" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 2 of 6" autocomplete="off" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 3 of 6" autocomplete="off" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 4 of 6" autocomplete="off" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 5 of 6" autocomplete="off" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 6 of 6" autocomplete="off" />
+      </div>
+      <p class="pv-help pv-center">Paste the whole code into any box — it fills all six. On Android the code can fill in automatically.</p>
+      <div class="pv-actions">
+        <button type="submit" class="pv-btn pv-btn--primary" data-action="verify-contact" disabled>Confirm</button>
+        <button type="button" class="pv-btn pv-btn--link" data-action="skip">Skip for now</button>
+      </div>
+      <div class="pv-resend-row">
+        <button type="button" class="pv-resend" data-action="resend" data-resend-via="session" data-resend-state="sending" data-request-seq="latest" disabled aria-busy="true"><span class="pv-spinner pv-spinner--inline" aria-hidden="true"></span>Sending a new code…</button>
+        <span class="pv-help" style="margin:0" data-expiry>Code expires in <span class="pv-count" data-countdown="expiry">9:41</span></span>
+      </div>
+    </form>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite">Sending a new code.</p>
+  </section>
+      </div>
+    </div>
+  </div>
+    </div>
+  </div>
+
+<nav class="pv-nav" aria-label="Frame navigation">
+  <span class="pv-nav__caption"><b>03 / 08 · Enter code</b> — POST /v1/security/verify/phone/confirm { code } → 200 VerificationStatus</span>
+  <span class="pv-nav__links">
+    <a class="pv-btn pv-btn--secondary" href="index.html" data-nav="index">Index</a>
+    <a class="pv-btn pv-btn--secondary" href="02-enter-phone.html" data-nav="02-enter-phone">← Enter phone</a>
+    <a class="pv-btn pv-btn--primary" href="04-verified.html" data-nav="04-verified">Next: Verified → continue →</a>
+  </span>
+</nav>
+</body>
+</html>

@@ -1,5 +1,5 @@
 {
-  "product": "quality",
+  "product": "fuzequality",
   "name": "Quality",
   "resources": [
     {
@@ -55,6 +55,11 @@
           "name": "Read"
         }
       }
+    },
+    {
+      "key": "Execution",
+      "name": "Test execution",
+      "actions": { "run": { "name": "Run" } }
     },
     {
       "key": "OrganizationAccess",
@@ -126,6 +131,7 @@
         "Suggestion:suppress",
         "TestImplementation:read",
         "TestImplementation:create",
+        "Execution:run",
         "OrganizationAccess:read",
         "OrganizationAccess:manage",
         "RepositoryAdministration:manage",
