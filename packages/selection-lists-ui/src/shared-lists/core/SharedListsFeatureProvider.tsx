@@ -41,6 +41,17 @@ export interface SharedListsContextValue {
    * is OFF. The service still enforces `publish_platform`.
    */
   isPlatformOrg: boolean
+  /**
+   * The active organization's id — lets a flow tell a list the caller's own
+   * organization owns from a common list read through the shared read. Optional:
+   * absent ⇒ the flow falls back to the list's own `visibility`.
+   */
+  organizationId?: string
+  /**
+   * The active organization's display name, for copy such as "Fork “Priority”
+   * for Globex Freight". Optional: absent ⇒ generic "your organization" copy.
+   */
+  organizationName?: string
 }
 
 /** What a tree with no provider sees: OFF. */
@@ -56,19 +67,38 @@ export interface SharedListsFeatureProviderProps {
   sharedLists?: boolean
   /** The active organization is the platform org. Default: `false`. */
   isPlatformOrg?: boolean
+  /** The active organization's id. Optional. */
+  organizationId?: string
+  /** The active organization's display name. Optional. */
+  organizationName?: string
   children?: ReactNode
 }
 
 export function SharedListsFeatureProvider({
   sharedLists = false,
   isPlatformOrg = false,
+  organizationId,
+  organizationName,
   children,
 }: SharedListsFeatureProviderProps) {
   const enabled = sharedLists === true
   const platform = enabled && isPlatformOrg === true
+  const orgId = typeof organizationId === 'string' ? organizationId : undefined
+  const orgName =
+    typeof organizationName === 'string' && organizationName !== ''
+      ? organizationName
+      : undefined
   const value = useMemo<SharedListsContextValue>(
-    () => (enabled ? { enabled, isPlatformOrg: platform } : OFF),
-    [enabled, platform]
+    () =>
+      enabled
+        ? {
+            enabled,
+            isPlatformOrg: platform,
+            organizationId: orgId,
+            organizationName: orgName,
+          }
+        : OFF,
+    [enabled, platform, orgId, orgName]
   )
   return (
     <SharedListsContext.Provider value={value}>
