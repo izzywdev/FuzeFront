@@ -22,7 +22,12 @@
       "components.schemas.MfaChallengeRequest",
       "components.schemas.MfaChallengeAck",
       "components.schemas.MfaVerifyRequest",
-      "components.schemas.AuthMethods"
+      "components.schemas.AuthMethods",
+      "components.schemas.RecoveryCodesStatus",
+      "components.schemas.MfaFactorVerifyRequest",
+      "components.schemas.MfaRecoveryVerifyRequest",
+      "components.schemas.MfaRequiredChallenge",
+      "components.schemas.ErrorBody"
     ],
     "endpoints": [
       "GET /v1/security/methods",
@@ -30,10 +35,12 @@
       "POST /v1/security/mfa/factors",
       "POST /v1/security/mfa/factors/{factorId}/activate",
       "DELETE /v1/security/mfa/factors/{factorId}",
+      "GET /v1/security/mfa/recovery-codes",
       "POST /v1/security/mfa/recovery-codes",
       "POST /v1/security/mfa/challenge",
       "POST /v1/security/mfa/verify"
-    ]
+    ],
+    "contractVersion": "1.3.0 (#1660 — recovery-code redemption at step-up)"
   },
   "honestDegrade": {
     "signal": "GET /v1/security/methods -> mfa.types / verification.sms",
@@ -65,25 +72,39 @@
         "id": "sms-enroll",
         "orchestrator": "SmsEnrollFlow",
         "route": "/account/security/mfa/add/phone",
-        "approved": true,
-        "approvedBy": "izzywdev",
-        "approvedAt": "2026-10-21T06:50:02.427Z"
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null
       },
       {
         "id": "recovery-codes",
         "orchestrator": "RecoveryCodesFlow",
         "route": "/account/security/mfa/recovery-codes",
-        "approved": true,
-        "approvedBy": "izzywdev",
-        "approvedAt": "2026-10-21T06:49:59.912Z"
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null,
+        "responsive": {
+          "mobileFrame": "04-recovery-codes",
+          "coveredViewports": [
+            "desktop",
+            "mobile"
+          ]
+        }
       },
       {
         "id": "mfa-step-up",
         "orchestrator": "MfaStepUpFlow",
         "route": "/login/mfa",
-        "approved": true,
-        "approvedBy": "izzywdev",
-        "approvedAt": "2026-10-21T06:50:05.651Z"
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null,
+        "responsive": {
+          "coveredViewports": [
+            "desktop",
+            "mobile"
+          ],
+          "note": "The 375px treatment of this same flow (route /login/mfa, same MfaChallengeCard/FactorPicker/OtpInput) is frozen in design/frames/mfa-stepup-mobile (flow mfa-stepup-mobile: 01-choose-factor, 02-enter-code, 05-recovery-code). responsive.mobileFrame cannot name another feature's frame id, so the coverage is declared here and the frames live there."
+        }
       }
     ],
     "components": [
@@ -155,15 +176,16 @@
       "label": "(03) Add a phone (text message)",
       "route": "/account/security/mfa/add/phone",
       "flow": "sms-enroll",
-      "summary": "Enter phone -> confirm code. LEADS with the channel-unavailable state (prod reality: text delivery not configured); shows available enter/confirm and invalid-code states too.",
-      "acceptanceNotes": "Gate the entire flow on methods.mfa.types including 'sms'. When absent, render ChannelUnavailableNotice with a disabled field and route the user to TOTP. Never send a code that cannot be delivered.",
+      "summary": "Enter phone -> confirm code. LEADS with the channel-unavailable state (prod reality: text delivery not configured); shows available enter/confirm and invalid-code states too. Both the confirm-code and invalid-code states offer 'Use a different number'.",
+      "acceptanceNotes": "Gate the entire flow on methods.mfa.types including 'sms'. When absent, render ChannelUnavailableNotice with a disabled field and route the user to TOTP. Never send a code that cannot be delivered. 'Use a different number' (data-action='change-number') is a secondary action on BOTH the confirm-code and error-invalid states: it discards the pending, not-yet-activated phone factor (DELETE /mfa/factors/{factorId}) and returns to the enter-phone step with the previous number prefilled. Returning to step 1 is not blocked if that discard request fails; the pending factor was never active and cannot be used to sign in.",
       "testHooks": [
         "[data-frame='03-sms-enroll']",
         "[data-component='channel-unavailable'][data-available='false']",
         "[data-component='sms-enroll'][data-state='enter-phone']",
         "[data-component='sms-enroll'][data-state='confirm-code']",
         "[data-action='send-code']",
-        "[data-state='error-invalid']"
+        "[data-state='error-invalid']",
+        "[data-action='change-number']"
       ]
     },
     {
@@ -172,16 +194,29 @@
       "label": "(04) Recovery codes",
       "route": "/account/security/mfa/recovery-codes",
       "flow": "recovery-codes",
-      "summary": "Shown-once reveal (copy/download/print), returning status with codes hidden, and a regenerate confirm that invalidates the prior set.",
-      "acceptanceNotes": "Codes from POST /mfa/recovery-codes are rendered once and never re-fetched. Regenerate requires an explicit acknowledgement that old codes stop working.",
+      "summary": "Shown-once reveal of the POST response (copy/download/print), then returning states driven ONLY by GET /mfa/recovery-codes -> {remaining, total}: loading, N-of-M status, running low (remaining <= 2), all used (remaining 0, total > 0), never generated (0/0), count load error with retry, and regenerate confirm. Includes a 375px (TWA) treatment of the status and error cards. No code tiles in any returning state.",
+      "acceptanceNotes": "Codes from POST /mfa/recovery-codes are rendered once, exactly as returned — today XXXX-XXXX-XXXX-XXXX (80-bit Crockford base32) — with no client regrouping or reformatting, and never re-fetched. Every returning state reads GET /mfa/recovery-codes and renders counts only: there are NO masked, used or struck-through code tiles, because the API never returns codes or which ones were used. loading: skeleton lines, regenerate disabled until the count resolves (its label depends on it). status: '<remaining> of <total> left' (data-value='remaining'/'total'). low (1 <= remaining <= 2): warning callout + primary 'Generate new codes'. exhausted (remaining 0, total > 0): error callout stating sign-in with a recovery code will not be offered until a new set is generated. none (remaining 0, total 0): empty state with 'Generate recovery codes' (data-action='generate-codes'), which goes straight to POST and the shown-once state (there is no old set to invalidate). error (GET failed): error callout 'We couldn't check how many recovery codes you have left. Your codes are unchanged.' + 'Try again' (data-action='retry', re-issues the GET) + 'Generate new codes', which opens the same regenerate confirm. Never render a guessed or cached count. Regenerate requires an explicit acknowledgement that old codes stop working; after success re-read the count. At 375px the card is full-width and actions stack full-width.",
       "testHooks": [
         "[data-frame='04-recovery-codes']",
         "[data-component='recovery-codes'][data-state='shown-once']",
         "[data-codes]",
         "[data-action='download-codes']",
+        "[data-component='recovery-codes'][data-state='loading']",
+        "[data-component='recovery-codes'][data-state='status']",
+        "[data-component='recovery-codes'][data-state='low']",
+        "[data-component='recovery-codes'][data-state='exhausted']",
+        "[data-component='recovery-codes'][data-state='none']",
+        "[data-component='recovery-codes'][data-state='error']",
+        "[data-value='remaining']",
+        "[data-value='total']",
+        "[data-error='status-load']",
+        "[data-action='retry']",
+        "[data-action='generate-codes']",
+        "[data-action='regenerate-open']",
         "[data-state='regenerate-confirm']",
         "[data-action='regenerate-confirm']"
-      ]
+      ],
+      "viewport": "responsive"
     },
     {
       "id": "05-step-up-challenge",
@@ -189,15 +224,55 @@
       "label": "(05) Step-up challenge (mid sign-in)",
       "route": "/login/mfa",
       "flow": "mfa-step-up",
-      "summary": "TOTP prompt, factor picker (from MfaRequiredChallenge.factors), invalid/expired fail-closed, and an SMS delivery-failure fallback.",
-      "acceptanceNotes": "Driven by an mfa_required SessionResult (challengeId + factors). Verify via POST /mfa/verify; bad/expired codes fail closed. SMS delivery failure surfaces and offers other factors.",
+      "summary": "TOTP prompt, factor picker (from MfaRequiredChallenge.factors) with the recovery choice gated on recoveryAvailable (offered when true; absent row when false/missing), invalid/expired fail-closed, 429 too-many-attempts, and an SMS delivery-failure fallback. Recovery-code entry itself is frame 07.",
+      "acceptanceNotes": "Driven by an mfa_required SessionResult (challengeId + factors + recoveryAvailable). Verify via POST /mfa/verify; bad/expired codes fail closed. The 'Recovery code' picker row is rendered ONLY when recoveryAvailable === true; false or absent (pre-1.3.0 server) means the row is not rendered at all (not disabled). Choosing it opens frame 07. 429 RATE_LIMITED: warning callout 'Too many attempts' — copy must not say the code was wrong; the entered code is kept and not marked as an error; the wait comes from the 429 Retry-After header (integer seconds): render 'Try again in <m:ss>' as a live countdown in the callout (data-value='retry-after') and on the 'Try again' button, which is disabled (data-state='cooldown') until it reaches zero and then re-enables; a retry that gets 429 again restarts the countdown from the new header; if Retry-After is missing or not a positive integer, show 'Wait a few minutes, then try again.' with the button enabled. The limiter is shared with recovery codes, so the copy says switching method won't skip the wait. SMS delivery failure surfaces and offers other factors.",
       "testHooks": [
         "[data-frame='05-step-up-challenge']",
         "[data-component='mfa-challenge'][data-state='totp-prompt']",
         "[data-component='factor-picker']",
         "[data-action='verify-mfa']",
         "[data-state='error-invalid']",
-        "[data-state='error-delivery']"
+        "[data-state='error-delivery']",
+        "[data-component='mfa-challenge'][data-state='choose-factor'][data-recovery-available='true']",
+        "[data-component='mfa-challenge'][data-state='choose-factor'][data-recovery-available='false']",
+        "[data-factor='recovery']",
+        "[data-action='use-recovery']",
+        "[data-component='mfa-challenge'][data-state='rate-limited'][data-http-status='429']",
+        "[data-error='rate-limited']",
+        "[data-action='back-to-sign-in']",
+        "[data-value='retry-after']",
+        "[data-action='verify-mfa'][data-state='cooldown']"
+      ]
+    },
+    {
+      "id": "07-recovery-code-entry",
+      "file": "07-recovery-code-entry.html",
+      "label": "(07) Recovery-code entry (step-up)",
+      "route": "/login/mfa",
+      "flow": "mfa-step-up",
+      "summary": "Recovery-code entry reached from frame 05's 'Recovery code' choice: a single text field (not OTP cells) with helper text, verifying, 401 RECOVERY_CODE_INVALID, 429 RATE_LIMITED, 401 NOT_ACTIVE (sign-in expired) and a generic couldn't-check error.",
+      "acceptanceNotes": "Offered only when MfaRequiredChallenge.recoveryAvailable === true. Submits POST /mfa/verify with { challengeId, recoveryCode } and no prior /mfa/challenge call; success is handled exactly like a factor verify (same LoginResponse). Input: ONE single-line DS CodeField (mono), type=text, autocomplete=one-time-code, autocapitalize=none, spellcheck=false, maxlength=64, no numeric inputmode, no placeholder implying a format. Helper text: 'Each code works once. Spaces and dashes are fine — type it the way you saved it.' The value is sent as typed (the server trims, strips spaces/hyphens and case-folds); the client does no format validation — 'Verify' is disabled only while the trimmed value is empty. verifying: field + button disabled, spinner, no double submit. 401 RECOVERY_CODE_INVALID: inline field error 'That recovery code didn't work. Check it for typos, or try another of your codes — each code works only once.' One message for wrong/used/superseded (indistinguishable by design); it must NOT mention time or 'codes change every 30 seconds'. The challenge stays live: keep the value, focus and select it, allow retry. 429 RATE_LIMITED: same warning callout and rules as frame 05 (not a wrong-code message, field not red, value kept, the wait comes from the 429 Retry-After header (integer seconds): render 'Try again in <m:ss>' as a live countdown in the callout (data-value='retry-after') and on the 'Try again' button, which is disabled (data-state='cooldown') until it reaches zero and then re-enables; a retry that gets 429 again restarts the countdown from the new header; if Retry-After is missing or not a positive integer, show 'Wait a few minutes, then try again.' with the button enabled). 401 NOT_ACTIVE: neutral callout titled 'Your sign-in expired' with body 'Start again to sign in.', no field, single 'Back to sign in' (restart login). Copy must NOT say the recovery code was or was not used: NOT_ACTIVE also covers an already-completed challenge (e.g. a successful verify whose response was lost, then retried), where the code WAS consumed. Network/5xx/unrecognised: 'We couldn't check your code' + retry; copy must NOT claim the code is unused (a lost success response may have consumed it) and must not call it a wrong code. 'Use a different method' returns to the factor picker; 'Lost your recovery codes too? Contact support' is always present on the entry state.",
+      "testHooks": [
+        "[data-frame='07-recovery-code-entry']",
+        "[data-component='mfa-challenge'][data-state='recovery-prompt']",
+        "[data-component='recovery-code-input']",
+        "[data-field='recovery-code']",
+        "[data-help='recovery-code']",
+        "[data-action='verify-recovery']",
+        "[data-component='mfa-challenge'][data-state='recovery-verifying']",
+        "[data-component='mfa-challenge'][data-state='recovery-error-invalid'][data-http-status='401']",
+        "[data-error='recovery-invalid']",
+        "[data-component='mfa-challenge'][data-state='recovery-rate-limited'][data-http-status='429']",
+        "[data-error='rate-limited']",
+        "[data-component='mfa-challenge'][data-state='recovery-error-expired'][data-http-status='401']",
+        "[data-error='challenge-expired']",
+        "[data-action='restart-sign-in']",
+        "[data-component='mfa-challenge'][data-state='recovery-error-generic']",
+        "[data-error='recovery-generic']",
+        "[data-action='choose-factor']",
+        "[data-action='contact-support']",
+        "[data-value='retry-after']",
+        "[data-action='verify-recovery'][data-state='cooldown']"
       ]
     },
     {
@@ -217,5 +292,5 @@
       ]
     }
   ],
-  "stamp": "c3192d0d18be096625094fbc4d4ca973ba47b063c3e33bd21390316d4fe39c5b"
+  "stamp": "de11665ca9357f6fb2afbc2b7c432f5eda666a0dbd9938b3ab7b1ea8390e8986"
 }

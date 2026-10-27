@@ -34,6 +34,9 @@
       "components.schemas.VerifyConfirmRequest",
       "components.schemas.VerificationStatus",
       "components.schemas.AuthMethods",
+      "components.schemas.MfaRequiredChallenge",
+      "components.schemas.MfaFactorVerifyRequest",
+      "components.schemas.MfaRecoveryVerifyRequest",
       "components.schemas.ErrorBody"
     ],
     "endpoints": [
@@ -43,7 +46,8 @@
       "POST /v1/security/verify/phone/start",
       "POST /v1/security/verify/phone/confirm",
       "DELETE /v1/security/mfa/factors/{factorId}"
-    ]
+    ],
+    "contractVersion": "1.3.0 (#1660 — recovery-code redemption at step-up)"
   },
   "build": {
     "flows": [
@@ -51,9 +55,9 @@
         "id": "mfa-stepup-mobile",
         "orchestrator": "MfaStepUpMobileFlow",
         "route": "/login/mfa",
-        "approved": true,
-        "approvedBy": "izzywdev",
-        "approvedAt": "2026-10-21T06:50:28.925Z",
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null,
         "implementation": {
           "paths": [
             "packages/account-security-ui/src/components/mfa/**"
@@ -121,7 +125,8 @@
         "[data-nav='01-choose-factor']",
         "[data-nav='02-enter-code']",
         "[data-nav='03-confirm-contact']",
-        "[data-nav='04-security-status']"
+        "[data-nav='04-security-status']",
+        "[data-nav='05-recovery-code']"
       ]
     },
     {
@@ -130,8 +135,9 @@
       "label": "(01) Choose a factor",
       "route": "/login/mfa",
       "flow": "mfa-stepup-mobile",
-      "summary": "Mobile factor picker (authenticator / email / SMS / recovery) at 375px, plus loading skeleton, generic load-error, and a zero-factors fail-closed state not present in the desktop frame.",
-      "acceptanceNotes": "Factor list driven by mfa_required.factors; SMS/email offered only when enrolled. Loading shows skeleton rows, not a blank screen. Load error offers retry only (no silent fallback). Zero-factors is fail-closed to a support contact, never a dead end.",
+      "viewport": "mobile",
+      "summary": "Mobile factor picker (authenticator / email / SMS / recovery) at 375px with the recovery choice gated on recoveryAvailable, plus loading skeleton, generic load-error, and a zero-factors fail-closed state not present in the desktop frame.",
+      "acceptanceNotes": "Factor list driven by mfa_required.factors; SMS/email offered only when enrolled. Loading shows skeleton rows, not a blank screen. Load error offers retry only (no silent fallback). Zero-factors is fail-closed to a support contact, never a dead end. The 'Recovery code' row is rendered ONLY when mfa_required.recoveryAvailable === true and opens frame 05; false or absent (pre-1.3.0 server) means the row is not rendered at all (not disabled).",
       "testHooks": [
         "[data-frame='01-choose-factor']",
         "[data-panel='choose-factor'][data-state='loaded']",
@@ -144,7 +150,11 @@
         "[data-factor='sms']",
         "[data-action='challenge']",
         "[data-action='retry']",
-        "[data-action='contact-support']"
+        "[data-action='contact-support']",
+        "[data-panel='choose-factor'][data-recovery-available='true']",
+        "[data-panel='choose-factor'][data-recovery-available='false']",
+        "[data-factor='recovery']",
+        "[data-action='use-recovery']"
       ]
     },
     {
@@ -153,8 +163,9 @@
       "label": "(02) Enter code",
       "route": "/login/mfa",
       "flow": "mfa-stepup-mobile",
-      "summary": "Mobile OTP entry (auto-advance, paste-aware, 44px+ touch cells) with in-flight/verifying, wrong/expired fail-closed (no navigation), expiry countdown + resend cooldown, and delivery-failure fallback.",
-      "acceptanceNotes": "Verify via POST /mfa/verify; a wrong/expired code stays on screen with an inline error, never navigates away. The verify button disables and shows a spinner while in flight so a slow network can't produce a double-submit. Resend is disabled during the cooldown window with a live countdown.",
+      "viewport": "mobile",
+      "summary": "Mobile OTP entry (auto-advance, paste-aware, 44px+ touch cells) with in-flight/verifying, wrong/expired fail-closed (no navigation), 429 too-many-attempts, expiry countdown + resend cooldown, and delivery-failure fallback.",
+      "acceptanceNotes": "Verify via POST /mfa/verify; a wrong/expired code stays on screen with an inline error, never navigates away. The verify button disables and shows a spinner while in flight so a slow network can't produce a double-submit. Resend is disabled during the cooldown window with a live countdown. 429 RATE_LIMITED: warning callout 'Too many attempts' (shared limiter with recovery codes, so switching method won't skip the wait); copy must not say the code was wrong; code kept and not marked red; the wait comes from the 429 Retry-After header (integer seconds): render 'Try again in <m:ss>' as a live countdown in the callout (data-value='retry-after') and on the 'Try again' button, which is disabled (data-state='cooldown') until it reaches zero and then re-enables; a retry that gets 429 again restarts the countdown from the new header; if Retry-After is missing or not a positive integer, show 'Wait a few minutes, then try again.' with the button enabled; 'Back to sign in' available.",
       "testHooks": [
         "[data-frame='02-enter-code']",
         "[data-panel='enter-code'][data-state='idle']",
@@ -165,7 +176,12 @@
         "[data-action='verify-mfa']",
         "[data-action='resend']",
         "[data-state='cooldown']",
-        "[data-error='invalid-code']"
+        "[data-error='invalid-code']",
+        "[data-panel='enter-code'][data-state='rate-limited'][data-http-status='429']",
+        "[data-error='rate-limited']",
+        "[data-action='back-to-sign-in']",
+        "[data-value='retry-after']",
+        "[data-action='verify-mfa'][data-state='cooldown']"
       ]
     },
     {
@@ -174,6 +190,7 @@
       "label": "(03) Confirm your phone",
       "route": "/account/security/verify/phone",
       "flow": "confirm-contact-phone",
+      "viewport": "mobile",
       "summary": "Phone-only OTP verification: enter phone -> sending -> enter code -> verified, with wrong-code and generic send-failure fail-closed states, and 'Skip for now' (re-prompts from profile). Email verification intentionally stays on the existing approved link-click pattern (linked in copy, not re-implemented here) — see manifest reconciliation notes.",
       "acceptanceNotes": "POST /verify/phone/start then /verify/phone/confirm. Wrong/expired code shows inline error, no navigation. A generic send failure (not a bad code) offers retry or skip, never a silent hang. Skip is always available and the manifest records that profile re-prompts until verified.",
       "testHooks": [
@@ -196,6 +213,7 @@
       "label": "(04) Security status (profile)",
       "route": "/account/security",
       "flow": "security-status-mobile",
+      "viewport": "mobile",
       "summary": "Combined mobile 2FA + contact-verification status (Active/Verified/Unverified chips), with loading skeleton, generic load-error, and the remove-last-2FA-factor -> 409 fail-closed guard (reusing mfa-management's RemoveFactorDialog pattern) when the account's only active factor is removed under an enforced-MFA policy.",
       "acceptanceNotes": "Status rows render only confirmed server state (no optimistic 'Active'/'Verified' before the server says so). DELETE /mfa/factors/{factorId} on the only active factor returns 409 and the UI blocks removal via the bottom-sheet dialog, routing to 'Add another method first' rather than silently succeeding. Password state is out of scope here (owned by account-security/02-states.html) and is not duplicated.",
       "testHooks": [
@@ -212,7 +230,39 @@
         "[data-error='remove-last']",
         "[data-action='retry']"
       ]
+    },
+    {
+      "id": "05-recovery-code",
+      "file": "05-recovery-code.html",
+      "label": "(05) Use a recovery code",
+      "route": "/login/mfa",
+      "flow": "mfa-stepup-mobile",
+      "viewport": "mobile",
+      "summary": "Mobile (375px) recovery-code entry reached from frame 01's 'Recovery code' choice: one full-width text field (not OTP cells) with helper text, verifying, 401 RECOVERY_CODE_INVALID, 429 RATE_LIMITED, 401 NOT_ACTIVE (sign-in expired) and a generic couldn't-check error. Same behavioural contract as mfa-management frame 07.",
+      "acceptanceNotes": "Offered only when recoveryAvailable === true. POST /mfa/verify { challengeId, recoveryCode }. Field: DS CodeField full-width, touch height >= the 48px space-12 token, type=text, autocomplete=one-time-code, autocapitalize=none, spellcheck=false, maxlength=64, default text keyboard (no numeric inputmode). Value sent as typed; no client format check; 'Verify' disabled only while trimmed value is empty. 401 RECOVERY_CODE_INVALID: inline error 'That recovery code didn't work. Check it for typos, or try another of your codes — each code works only once.' — one message for wrong/used/superseded, no time-based copy; stays on screen, value kept, retry allowed. 429 RATE_LIMITED: 'Too many attempts' warning callout, field not red, value kept, the wait comes from the 429 Retry-After header (integer seconds): render 'Try again in <m:ss>' as a live countdown in the callout (data-value='retry-after') and on the 'Try again' button, which is disabled (data-state='cooldown') until it reaches zero and then re-enables; a retry that gets 429 again restarts the countdown from the new header; if Retry-After is missing or not a positive integer, show 'Wait a few minutes, then try again.' with the button enabled. 401 NOT_ACTIVE: neutral callout 'Your sign-in expired' / 'Start again to sign in.', no field, 'Back to sign in' only; must NOT claim the code was or was not used (NOT_ACTIVE also covers an already-completed challenge whose success reply was lost). Network/5xx: 'We couldn't check your code' + retry; must not claim the code is unused. Actions stack full-width.",
+      "testHooks": [
+        "[data-frame='05-recovery-code']",
+        "[data-panel='recovery-code'][data-state='idle']",
+        "[data-panel='recovery-code'][data-state='verifying']",
+        "[data-panel='recovery-code'][data-state='error-invalid'][data-http-status='401']",
+        "[data-panel='recovery-code'][data-state='rate-limited'][data-http-status='429']",
+        "[data-panel='recovery-code'][data-state='error-expired'][data-http-status='401']",
+        "[data-panel='recovery-code'][data-state='error-generic']",
+        "[data-component='recovery-code-input']",
+        "[data-field='recovery-code']",
+        "[data-help='recovery-code']",
+        "[data-action='verify-recovery']",
+        "[data-error='recovery-invalid']",
+        "[data-error='rate-limited']",
+        "[data-error='challenge-expired']",
+        "[data-error='recovery-generic']",
+        "[data-action='restart-sign-in']",
+        "[data-action='choose-factor']",
+        "[data-action='contact-support']",
+        "[data-value='retry-after']",
+        "[data-action='verify-recovery'][data-state='cooldown']"
+      ]
     }
   ],
-  "stamp": "9da49f3b629209412ee20c7fae94ecdb8d01eaa38d3c6010cb6da8587aa163f3"
+  "stamp": "fa186df3683d42e6191c734fb96e2949379061ee01ceaeea54bd31366638f575"
 }
