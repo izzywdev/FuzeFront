@@ -8,6 +8,7 @@
  * The autofill modal (frame 09) is a dialog rendered in both screens.
  */
 import React, { useState, useEffect, useCallback } from 'react'
+import { ForkListFlow, useMutationRefusal } from './shared-lists/fork'
 import { useParams, useNavigate } from 'react-router-dom'
 import type {
   LocaleIndexEntry,
@@ -85,6 +86,7 @@ function AutofillModal({
   const [error, setError] = useState<ApiError | null>(null)
   const [forbidden, setForbidden] = useState(false)
   const [nothingToDo, setNothingToDo] = useState(false)
+  const { refusal, capture, clear } = useMutationRefusal()
 
   // The run finished: keep the dialog open so the summary / "nothing to do"
   // note is actually seen (frame 09). The user dismisses it with Close.
@@ -95,6 +97,7 @@ function AutofillModal({
     setError(null)
     setForbidden(false)
     setNothingToDo(false)
+    clear()
     try {
       const res = await autofillTranslations(listId, locale, { overwrite_machine: overwriteMachine })
       if (res.items_translated === 0 && res.items_skipped === 0 && !res.list_translated) {
@@ -104,6 +107,9 @@ function AutofillModal({
       }
       onComplete()
     } catch (err) {
+      // SL9: a refusal on a common list (fork_required / 404) belongs to the fork flow.
+      const refused = capture(err)
+      if (refused && refused.kind !== 'forbidden') return
       const e = err as ApiError & { status?: number }
       if (e.code === 'FORBIDDEN') {
         setForbidden(true)
@@ -155,7 +161,19 @@ function AutofillModal({
 
         {/* Errors */}
         {error && <div data-error="autofill-failed" style={s.errorBox}>{error.message ?? 'Autofill failed'}</div>}
-        {forbidden && (
+        {refusal && (
+          <ForkListFlow
+            refusal={refusal}
+            listId={listId}
+            onBack={onClose}
+            fallback={
+              forbidden ? (
+                <div data-error="FORBIDDEN" style={s.errorBox}>You do not have the translate action.</div>
+              ) : null
+            }
+          />
+        )}
+        {!refusal && forbidden && (
           <div data-error="FORBIDDEN" style={s.errorBox}>You do not have the translate action.</div>
         )}
 
@@ -367,11 +385,15 @@ function LocaleEditor({
   listId,
   locale,
   onBack,
+  onBackToList,
 }: {
   listId: string
   locale: string
   onBack: () => void
+  onBackToList: () => void
 }) {
+  const sharedLists = useSharedLists().enabled
+  const { refusal, capture, clear } = useMutationRefusal()
   const [translations, setTranslations] = useState<TranslationEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -402,6 +424,7 @@ function LocaleEditor({
   const handleSaveRow = async (t: TranslationEntry) => {
     setSavingRow(t.item_id)
     setSaveErrors(prev => ({ ...prev, [t.item_id]: '' }))
+    clear()
     const label = localEdits[t.item_id] ?? t.label
     try {
       await saveTranslation(listId, t.item_id, locale, { label })
@@ -410,6 +433,10 @@ function LocaleEditor({
       )
       setLocalEdits(prev => { const n = { ...prev }; delete n[t.item_id]; return n })
     } catch (err) {
+      // SL9: a refusal on a common list (fork_required / 404) belongs to the fork flow;
+      // the typed text stays in `localEdits` either way.
+      const refused = capture(err)
+      if (refused && refused.kind !== 'forbidden') return
       const e = err as ApiError
       if (e.code === 'FORBIDDEN') {
         setForbiddenAll(true)
@@ -477,7 +504,19 @@ function LocaleEditor({
         </div>
       </div>
 
-      {forbiddenAll && (
+      {refusal && (
+        <ForkListFlow
+          refusal={refusal}
+          listId={listId}
+          onBack={onBackToList}
+          fallback={
+            forbiddenAll ? (
+              <div data-error="FORBIDDEN" style={s.errorBox}>You do not have the translate action.</div>
+            ) : null
+          }
+        />
+      )}
+      {!refusal && forbiddenAll && (
         <div data-error="FORBIDDEN" style={s.errorBox}>You do not have the translate action.</div>
       )}
 
@@ -536,6 +575,7 @@ function LocaleEditor({
                 type="text"
                 aria-label={`${locale.toUpperCase()} translation for ${t.item_id}`}
                 value={currentLabel}
+                data-unsaved={sharedLists && localEdits[t.item_id] !== undefined ? 'true' : undefined}
                 onChange={e => setLocalEdits(prev => ({ ...prev, [t.item_id]: e.target.value }))}
                 disabled={forbiddenAll}
                 style={{
@@ -589,6 +629,7 @@ export function TranslationWorkbenchFlow() {
         listId={listId}
         locale={locale}
         onBack={() => navigate(`${INDEX_PATH}/${listId}/translations`)}
+        onBackToList={() => navigate(`${INDEX_PATH}/${listId}`)}
       />
     ) : (
       <TranslationIndex
