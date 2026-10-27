@@ -37,7 +37,17 @@ export const acc: jest.It = ((name: string, fn: any, t?: number) =>
     : // fail fast and deterministically (no broker/db dance); the body is the contract spec and runs for real once the package resolves
       (it as any).failing(name, async () => { throw new Error(PKG_REASON) }, t)) as any
 export const accName = (n: string) => (PKG_AVAILABLE ? n : `${n} [${PKG_REASON}]`)
-export const describeInfra: jest.Describe = (INFRA_READY ? describe : describe.skip) as any
+// `describe` is a Jest global, present only when this module is loaded by the Jest runtime
+// (the *.test.ts suites). cli.ts (case 7's cross-language helper) imports this same adapter but
+// runs under `npx tsx`, where no Jest runtime exists - an eager read of `describe` here threw
+// `ReferenceError: describe is not defined` at import, crashing the CLI (returncode 1) and failing
+// the Python cross-language tests. Guard with typeof (the one safe read of an undeclared global)
+// so the CLI path gets a harmless no-op it never calls, while the Jest path is unchanged.
+export const describeInfra: jest.Describe = (
+  typeof describe === 'undefined'
+    ? (((..._args: any[]) => {}) as any)
+    : INFRA_READY ? describe : describe.skip
+) as any
 
 // ---------- contract helpers (independent of the package) ----------
 // Fixed table of literal paths keyed by a union type: no function parameter flows into path.join/resolve.
