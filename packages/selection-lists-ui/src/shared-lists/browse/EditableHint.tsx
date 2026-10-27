@@ -23,9 +23,16 @@ export function EditableHint({ list, variant = 'row' }: EditableHintProps) {
   if (state === 'unknown') return null
   const editable = state === 'editable'
   const copy = ACCESS_LABEL[state][variant]
+  // A row in a narrow table shows the glyph only (the label drops at <= 40em);
+  // the label is visually hidden, not removed, so it stays the accessible name.
   return (
-    <span data-editable={editable ? 'true' : 'false'} style={accessHint}>
-      <span aria-hidden="true">{editable ? '✎' : '🔒'}</span> {copy}
+    <span
+      data-editable={editable ? 'true' : 'false'}
+      title={copy}
+      style={accessHint}
+    >
+      <span aria-hidden="true">{editable ? '✎' : '🔒'}</span>{' '}
+      <span className={variant === 'row' ? 'fz-sl-icon-only-sm' : undefined}>{copy}</span>
     </span>
   )
 }

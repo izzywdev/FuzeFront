@@ -20,7 +20,15 @@ const CSS = `
   }
   .fz-sl-scroll { max-inline-size: 100%; overflow-x: auto; }
   @media (max-width: 40em) {
-    .fz-sl-hide-sm { display: none; }
+    .fz-sl-hide-sm { display: none !important; }
+    .fz-sl-icon-only-sm {
+      position: absolute;
+      inline-size: var(--border-width);
+      block-size: var(--border-width);
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+    }
     .fz-sl-head { flex-direction: column; align-items: stretch; }
     .fz-sl-cta { display: flex; inline-size: 100%; }
     .fz-sl-cta > * { inline-size: 100%; min-block-size: var(--touch-target); }

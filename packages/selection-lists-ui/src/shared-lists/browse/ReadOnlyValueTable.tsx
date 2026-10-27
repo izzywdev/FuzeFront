@@ -109,8 +109,8 @@ export function ReadOnlyValueTable({ values, footNote }: ReadOnlyValueTableProps
                       {archived ? DETAIL_COPY.statusArchived : DETAIL_COPY.statusActive}
                     </Badge>
                   </td>
-                  <td className="fz-sl-hide-sm" style={{ ...css.td, ...css.mono }}>
-                    {item.id}
+                  <td className="fz-sl-hide-sm" style={css.td}>
+                    <span style={css.mono}>{item.id}</span>
                   </td>
                 </tr>
               )

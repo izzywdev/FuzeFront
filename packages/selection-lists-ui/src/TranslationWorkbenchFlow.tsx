@@ -603,18 +603,16 @@ export function TranslationWorkbenchFlow() {
   if (!sharedLists) return workbench()
 
   return (
-    <>
-      <SharedTranslationsGate
-        listId={listId}
-        locale={locale}
-        renderWorkbench={workbench}
-        hrefForLocale={loc => `${INDEX_PATH}/${listId}/translations/${loc}`}
-        onOpenLocale={loc => navigate(`${INDEX_PATH}/${listId}/translations/${loc}`)}
-        onBackToLocales={() => navigate(`${INDEX_PATH}/${listId}/translations`)}
-        onOpenValues={() => navigate(`${INDEX_PATH}/${listId}`)}
-        onBackToIndex={() => navigate(INDEX_PATH)}
-        indexHref={INDEX_PATH}
-      />
-    </>
+    <SharedTranslationsGate
+      listId={listId}
+      locale={locale}
+      renderWorkbench={workbench}
+      hrefForLocale={loc => `${INDEX_PATH}/${listId}/translations/${loc}`}
+      onOpenLocale={loc => navigate(`${INDEX_PATH}/${listId}/translations/${loc}`)}
+      onBackToLocales={() => navigate(`${INDEX_PATH}/${listId}/translations`)}
+      onOpenValues={() => navigate(`${INDEX_PATH}/${listId}`)}
+      onBackToIndex={() => navigate(INDEX_PATH)}
+      indexHref={INDEX_PATH}
+    />
   )
 }
