@@ -53,7 +53,6 @@ import { withReqId } from '../lib/logger'
 import { ROOT_ORG_ID } from '../migrations/014_seed_root_platform_organization'
 import { authenticateKubernetesWorkload } from '../services/workload-identity'
 import { isAuthExperienceEnabled } from '../identity/flags'
-import { withReqId } from '../lib/logger'
 import { describeUnmet, evaluatePassword, getPasswordPolicy } from '../services/passwordPolicy'
 import {
   CaptchaRejectedError,
