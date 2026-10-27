@@ -4,6 +4,7 @@ import { Button } from '@fuzefront/design-system'
 import {
   useCurrentUser,
   useAppContext,
+  useOrganizations,
   MenuItem,
   resetWorkspaceSessionIfUserChanged,
 } from './lib/shared'
@@ -68,6 +69,8 @@ import {
   TranslationWorkbenchFlow,
   SelectionListAccessFlow,
   SelectionListPickerHarness,
+  SharedListsFeatureProvider,
+  SHARED_LISTS_FLAG_KEY,
 } from '@fuzeone/selection-lists-ui'
 import { useSelectionListsAuth } from './lib/selectionListsAuth'
 
@@ -303,10 +306,44 @@ function App() {
             below AuthWrapper so the provisional session has already been
             adopted and the roster reflects real accounts. */}
         <AccountsProvider>
-          <AppContent />
+          <SharedListsHost>
+            <AppContent />
+          </SharedListsHost>
         </AccountsProvider>
       </FeatureFlagProvider>
     </AuthWrapper>
+  )
+}
+
+/**
+ * Mounts `SharedListsFeatureProvider` (SL9 shared lists, frames manifest
+ * `selection-lists-shared` -> `hostMounting`) for every selection-list surface:
+ * the `/settings/selection-lists*` routes and the public
+ * `/embed/selection-list-picker` harness.
+ *
+ * Release flag `fuzefront.selection-lists.shared-lists` (default OFF). Read
+ * through the shell's `useFlag` with an explicit OFF fallback, so it is OFF
+ * while `/api/flags` is loading, on any fetch failure, with no session token
+ * (the public embed), and when the key is absent. `/api/flags` evaluates the
+ * flag WITHOUT an org context, so it is global, not per organization; no org
+ * context is invented here. The provider treats anything but boolean `true` as
+ * OFF and, while OFF, renders no shared-lists element and sends no
+ * `include_shared` / `visibility` param, so the shell behaves as before.
+ *
+ * `isPlatformOrg` is only a UI hint for the "Every organization" option; the
+ * service still enforces `publish_platform` through Permit. The provider renders
+ * no DOM of its own.
+ */
+function SharedListsHost({ children }: { children: ReactNode }) {
+  const sharedLists = useFlag(SHARED_LISTS_FLAG_KEY, false)
+  const { activeOrganization } = useOrganizations()
+  return (
+    <SharedListsFeatureProvider
+      sharedLists={sharedLists}
+      isPlatformOrg={activeOrganization?.type === 'platform'}
+    >
+      {children}
+    </SharedListsFeatureProvider>
   )
 }
 

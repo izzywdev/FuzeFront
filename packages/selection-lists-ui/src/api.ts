@@ -20,6 +20,13 @@ import type {
 
 const BASE = '/api/v1/selection-lists'
 
+/**
+ * The same-origin list collection path. Exported (not from the package index) for
+ * `shared-lists/core/api`, so the shared-lists wrappers build their URLs from the
+ * one constant and can never drift to a different base.
+ */
+export const SELECTION_LISTS_API_BASE = BASE
+
 // ── Authentication ────────────────────────────────────────────────────────────
 //
 // This package is host-agnostic: it never reads storage and never knows which
@@ -76,7 +83,12 @@ async function bearerFor(kind: TokenKind): Promise<string | null> {
   }
 }
 
-async function request<T>(
+/**
+ * The one authenticated, same-origin request path (org-scoped bearer, error
+ * decoration). Exported (not from the package index) so `shared-lists/core/api`
+ * rides the SAME auth wiring instead of growing a second one.
+ */
+export async function request<T>(
   url: string,
   options: RequestInit = {},
   tokenKind: TokenKind = 'org',
