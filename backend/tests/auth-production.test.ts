@@ -4,6 +4,7 @@ import cors from 'cors'
 import jwt from 'jsonwebtoken'
 import authRoutes from '../src/routes/auth'
 import { initializeDatabase, db } from '../src/config/database'
+import { toUuid } from '@izzywdev/fuzefront-identity'
 
 const JWT_REGEX = /^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_]*$/
 
@@ -95,10 +96,11 @@ describe('Authentication - Real Postgres Integration Tests', () => {
       expect(response.body.user.roles).toContain('admin')
 
       const session = await db('sessions')
-        .where('id', response.body.sessionId)
+        .where('id', toUuid(response.body.sessionId))
         .first()
       expect(session).toBeDefined()
-      expect(session.user_id).toBe(response.body.user.id)
+      // Wire ids are TypeIDs; the column stores the native uuid.
+      expect(session.user_id).toBe(toUuid(response.body.user.id))
     })
 
     it('should reject invalid password', async () => {
@@ -212,7 +214,7 @@ describe('Authentication - Real Postgres Integration Tests', () => {
         .post('/api/auth/login')
         .send({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD })
       authToken = loginResponse.body.token
-      userId = loginResponse.body.user.id
+      userId = toUuid(loginResponse.body.user.id)
     })
 
     it('should logout successfully and remove the session', async () => {

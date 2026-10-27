@@ -106,6 +106,7 @@ afterAll(async () => {
 
 // ── fixtures, seeded fresh per describe-block via db() (live after beforeAll) ──
 import { db } from '../src/config/database'
+import { toWireId } from '../src/identity/serializer'
 
 async function seedApps(): Promise<void> {
   await db('apps').del()
@@ -723,7 +724,11 @@ describe('FF-EPIC-12-S3 — portal catalog admin routes', () => {
       expect(pages).toBeLessThan(20)
     } while (cursor)
 
-    for (const id of seededIds) expect(seen.has(id)).toBe(true)
+    // seededIds are bare DB UUIDs (used for inserts + POST bodies); the GET
+    // catalog response serializes appId to the TypeID wire form (FFRNT-185:
+    // unconditional), so compare in the same wire form. Still asserts the full
+    // walk sees every seeded id — no dup/gaps.
+    for (const id of seededIds) expect(seen.has(toWireId('app', id))).toBe(true)
   })
 
   it('every route is rate-limited (standard RateLimit headers present)', async () => {

@@ -41,9 +41,6 @@ jest.mock('../src/services/eventPublisher', () => ({
   },
 }))
 
-jest.mock('../src/identity/flags', () => ({
-  isPrefixedIdsEnabled: jest.fn().mockResolvedValue(false),
-}))
 
 jest.mock('../src/utils/identityFlag', () => ({
   getRequestPortalScopingEnabled: jest.fn().mockResolvedValue(false),

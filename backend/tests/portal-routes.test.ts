@@ -1,3 +1,5 @@
+import { toUuid } from '@izzywdev/fuzefront-identity'
+import { toWireId } from '../src/identity/serializer'
 import request from 'supertest'
 import express from 'express'
 import jwt from 'jsonwebtoken'
@@ -226,7 +228,7 @@ describe('GET /api/v1/portal/current — flag ON (FF-EPIC-10-S3 JWT/session bind
       .set('Host', 'acme.fuzefront.test')
 
     expect(res.status).toBe(200)
-    expect(res.body.id).toBe(portalId)
+    expect(res.body.id).toBe(toWireId('portal', portalId))
     expect(res.body.slug).toBe('acme')
     expect(res.body.domains).toEqual(
       expect.arrayContaining([expect.objectContaining({ domain: 'acme.fuzefront.test' })])
@@ -262,7 +264,7 @@ describe('GET /api/v1/portal/current — flag ON (FF-EPIC-10-S3 JWT/session bind
       .set('Host', 'unresolvable-host.example.com') // falls back to root
 
     expect(res.status).toBe(200)
-    expect(res.body.id).toBe(rootOrg.portalId)
+    expect(res.body.id).toBe(toWireId('portal', rootOrg.portalId))
   })
 
   // Root cause B fix (gate-code-review round 4) — a legacy token (no
@@ -447,7 +449,7 @@ describe('FF-EPIC-10-S1/S4 bootstrap-mode fix — fail-closed must not mean fail
       .set('Host', 'still-unknown.example.com')
 
     expect(res.status).toBe(200)
-    expect(res.body.id).toBe(rootId)
+    expect(res.body.id).toBe(toWireId('portal', rootId))
     expect(res.body.slug).toBe(ROOT_PORTAL_SLUG)
   })
 })
@@ -503,7 +505,7 @@ describe('FF-EPIC-10-S3 bug 5 fix — login token binding reuses the request-res
     expect(decoded.portalId).toBe(portalId)
 
     // Session's active_organization_id must match the SAME resolved portal.
-    const session = await db('sessions').where({ id: res.body.sessionId }).first()
+    const session = await db('sessions').where({ id: toUuid(res.body.sessionId) }).first()
     expect(session.active_organization_id).toBe(organizationId)
 
     // Exactly ONE flag evaluation for this request (resolvePortalContext) —
@@ -607,7 +609,7 @@ describe('FF-EPIC-10-S3 bug 5 fix — login token binding reuses the request-res
     expect(decoded.portalId).toBe(ROOT_PORTAL_ID)
     // ...but the session's active org must be UNCHANGED from pre-epic
     // behavior — never force-set to the platform org.
-    const session = await db('sessions').where({ id: res.body.sessionId }).first()
+    const session = await db('sessions').where({ id: toUuid(res.body.sessionId) }).first()
     expect(session.active_organization_id).toBeNull()
   })
 
@@ -620,7 +622,7 @@ describe('FF-EPIC-10-S3 bug 5 fix — login token binding reuses the request-res
       .send({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD })
 
     expect(res.status).toBe(200)
-    const session = await db('sessions').where({ id: res.body.sessionId }).first()
+    const session = await db('sessions').where({ id: toUuid(res.body.sessionId) }).first()
     expect(session.active_organization_id).toBeNull()
   })
 })
