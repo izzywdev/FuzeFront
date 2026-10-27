@@ -354,7 +354,7 @@ jobs:
         # storage consumer. integration-tests below rebuilds from source so the
         # artifact is not needed on every PR/push run.
         if: github.event_name == 'release'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: build-artifacts
           path: |
@@ -669,7 +669,7 @@ jobs:
 
       - name: Upload Playwright report
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: selection-lists-e2e-report
           path: frontend/playwright-report/
@@ -1566,7 +1566,7 @@ jobs:
       # one tool.
       - name: Upload Trivy scan artifact (all severities)
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: trivy-ci-fs-scan-sarif
           path: trivy-results.sarif
