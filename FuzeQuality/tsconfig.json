@@ -14,6 +14,7 @@
     "baseUrl": ".",
     "paths": {
       "@fuzequality/contracts": ["packages/contracts/src/index.ts"],
+      "@fuzequality/contracts/workflow-execution": ["packages/contracts/src/workflow-execution.ts"],
       "@fuzequality/core": ["packages/core/src/index.ts"],
       "@fuzequality/github-app": ["packages/github-app/src/index.ts"],
       "@fuzequality/scanner": ["packages/scanner/src/index.ts"],

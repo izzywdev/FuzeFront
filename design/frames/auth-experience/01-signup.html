@@ -20,21 +20,24 @@
       <p class="auth-sub">Start your workspace in a minute. No credit card required.</p>
 
       <form data-form="signup" novalidate>
-        <div class="field__row">
-          <div class="field">
-            <label class="field__label" for="firstName">First name</label>
-            <div class="input-wrap">
-              <input class="input" id="firstName" name="firstName" type="text"
-                     autocomplete="given-name" value="Ada" />
-            </div>
+        <!-- Single OPTIONAL full-name field (replaces first/last). autocomplete="name"
+             maps 1:1 to the identity store's single `name` field; it is i18n-safe
+             (no given/family split → handles mononyms and family-name-first ordering).
+             Label + help are localizable: `data-i18n` names the i18n key the React
+             component will route through; the English copy here is the reference string.
+             RTL (ar/he): the field is plain single-column and auth.css positions all
+             adornments with logical properties, so it mirrors correctly under dir="rtl". -->
+        <div class="field">
+          <label class="field__label" for="fullName" data-i18n="auth.signup.fullName.label">
+            <span>Full name <span class="field__optional">optional</span></span>
+          </label>
+          <div class="input-wrap">
+            <input class="input" id="fullName" name="fullName" type="text"
+                   autocomplete="name" data-field="full-name"
+                   placeholder="Ada Lovelace" value="Ada Lovelace" />
           </div>
-          <div class="field">
-            <label class="field__label" for="lastName">Last name</label>
-            <div class="input-wrap">
-              <input class="input" id="lastName" name="lastName" type="text"
-                     autocomplete="family-name" value="Lovelace" />
-            </div>
-          </div>
+          <p class="field__help" data-i18n="auth.signup.fullName.help">How your name appears
+            across FuzeFront. Any script, in your own order — you can add or change it later.</p>
         </div>
 
         <!-- email + inline availability (GET /v1/security/signup/email-available) -->
@@ -63,9 +66,16 @@
             <a href="06-states.html" style="color:var(--accent-color)">States</a>.</p>
         </div>
 
-        <!-- password + strength meter (policy: 12+, upper/lower/digit/symbol) -->
+        <!-- password + inline requirements checklist. The checklist ticks each rule live
+             as the field satisfies it (data-met flips false→true) so a weak password is
+             surfaced BEFORE submit, not only as a generic post-submit error. The rules
+             shown are a PLACEHOLDER set — the authoritative list comes from
+             AuthMethods.passwordPolicy (minLength/requireUpper/…) and must be confirmed
+             against Authentik's configured policy before copy is frozen. Rule labels are
+             localizable (data-i18n keys). Post-submit rejection + service-down states:
+             see 06-states.html (signup-pw-weak-submit, signup-service-unavailable). -->
         <div class="field">
-          <label class="field__label" for="password">Password</label>
+          <label class="field__label" for="password" data-i18n="auth.signup.password.label">Password</label>
           <div class="input-wrap">
             <input class="input input--has-adornment" id="password" name="password"
                    type="password" autocomplete="new-password" value="Corr3ct-Horse!Batt"
@@ -84,13 +94,13 @@
               <span class="pwmeter__bar pwmeter__bar--on"></span>
               <span class="pwmeter__bar pwmeter__bar--on"></span>
             </div>
-            <div class="pwmeter__label"><span>Password strength</span><b>Strong</b></div>
-            <ul class="pwreq">
-              <li data-met="true" data-req="length"><svg class="tick" viewBox="0 0 20 20" fill="none"><path d="M4 10.5 8 14.5 16 5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>12+ characters</li>
-              <li data-met="true" data-req="upper"><svg class="tick" viewBox="0 0 20 20" fill="none"><path d="M4 10.5 8 14.5 16 5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Uppercase letter</li>
-              <li data-met="true" data-req="lower"><svg class="tick" viewBox="0 0 20 20" fill="none"><path d="M4 10.5 8 14.5 16 5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Lowercase letter</li>
-              <li data-met="true" data-req="digit"><svg class="tick" viewBox="0 0 20 20" fill="none"><path d="M4 10.5 8 14.5 16 5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Number</li>
-              <li data-met="true" data-req="symbol"><svg class="tick" viewBox="0 0 20 20" fill="none"><path d="M4 10.5 8 14.5 16 5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Symbol</li>
+            <div class="pwmeter__label"><span data-i18n="auth.signup.password.strength">Password strength</span><b>Strong</b></div>
+            <ul class="pwreq" data-pwreq>
+              <li data-met="true" data-req="length" data-i18n="auth.signup.password.req.length"><svg class="tick" viewBox="0 0 20 20" fill="none"><path d="M4 10.5 8 14.5 16 5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>12+ characters</li>
+              <li data-met="true" data-req="upper" data-i18n="auth.signup.password.req.upper"><svg class="tick" viewBox="0 0 20 20" fill="none"><path d="M4 10.5 8 14.5 16 5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Uppercase letter</li>
+              <li data-met="true" data-req="lower" data-i18n="auth.signup.password.req.lower"><svg class="tick" viewBox="0 0 20 20" fill="none"><path d="M4 10.5 8 14.5 16 5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Lowercase letter</li>
+              <li data-met="true" data-req="digit" data-i18n="auth.signup.password.req.digit"><svg class="tick" viewBox="0 0 20 20" fill="none"><path d="M4 10.5 8 14.5 16 5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Number</li>
+              <li data-met="true" data-req="symbol" data-i18n="auth.signup.password.req.symbol"><svg class="tick" viewBox="0 0 20 20" fill="none"><path d="M4 10.5 8 14.5 16 5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Symbol</li>
             </ul>
           </div>
         </div>
@@ -147,7 +157,7 @@
 </main>
 
 <nav class="frame-nav" aria-label="Frame navigation">
-  <span class="caption"><b>01 · Create account</b> — email availability ✓, strength meter, confirm-match, Turnstile, Google</span>
+  <span class="caption"><b>01 · Create account</b> — optional full name, email availability ✓, strength meter + live requirements checklist, confirm-match, Turnstile, Google</span>
   <span>
     <a class="btn-ds btn-ds--secondary" href="index.html" style="min-height:36px;padding:0 var(--space-4);width:auto;display:inline-flex">Index</a>
     <a class="btn-ds btn-ds--primary" href="03-check-inbox.html" style="min-height:36px;padding:0 var(--space-4);width:auto;display:inline-flex">Next: Check inbox →</a>

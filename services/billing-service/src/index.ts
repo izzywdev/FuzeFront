@@ -1,4 +1,5 @@
 import { Pool } from 'pg';
+import { initTelemetry, type TelemetryHandle } from '@fuzefront/telemetry';
 import {
   createKafkaClient,
   TypedProducer,
@@ -20,6 +21,7 @@ import { CustomerService } from './services/customer.service';
 import { PlanService } from './services/plan.service';
 import { SubscriptionService } from './services/subscription.service';
 import { PermitSyncService } from './services/permit.service';
+import { UnleashFlagSyncService } from './services/unleash-flag-sync.service';
 import { getAuthzClient } from './services/authz';
 import { getMachineToken, machineTokenConfigFromEnv } from './services/machineToken';
 import { MeteringService } from './services/metering.service';
@@ -31,6 +33,20 @@ import { startUserDeletedConsumer } from './kafka/user-deleted.consumer';
 import { HandlerContext } from './handlers/types';
 
 const FLUSH_INTERVAL_SEC = parseInt(process.env.BILLING_METER_FLUSH_INTERVAL_SEC || '60', 10);
+
+// Bootstrap OpenTelemetry BEFORE the express app is constructed below (see
+// backend/security/src/index.ts for the full rationale). Sends OTLP to
+// FuzeInfra's Collector; endpoint/protocol/sampling default from OTEL_* env.
+// npm_package_version is only set by an npm lifecycle script; the production
+// Dockerfile runs `node dist/index.js` directly, so it's always undefined
+// there and every span's service.version would be silently empty. Read the
+// version straight from package.json instead.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const SERVICE_VERSION: string = require('../package.json').version;
+const telemetry: TelemetryHandle = initTelemetry({
+  serviceName: 'billing-service',
+  serviceVersion: SERVICE_VERSION,
+});
 
 async function main() {
   const config = loadConfig();
@@ -47,11 +63,22 @@ async function main() {
     }
   }
 
-  // Without DB or Stripe we can only serve /health (degraded mode).
+  // Without DB or Stripe we can only serve /health (degraded mode). Still
+  // register a shutdown hook here: without it, SIGTERM/SIGINT in this mode
+  // exits without ever calling telemetry.shutdown(), discarding every
+  // buffered health-request span on each restart in this supported mode.
   if (!pool || !config.stripeSecretKey) {
     console.warn('[billing-service] DATABASE_URL or STRIPE_SECRET_KEY missing — serving /health only');
     const app = createApp();
-    startHttp(app, config.port);
+    const server = startHttp(app, config.port);
+    const degradedShutdown = () => {
+      console.log('[billing-service] Shutting down (degraded mode)...');
+      server.close(() => {
+        telemetry.shutdown().catch(() => {}).finally(() => process.exit(0));
+      });
+    };
+    process.on('SIGTERM', degradedShutdown);
+    process.on('SIGINT', degradedShutdown);
     return;
   }
 
@@ -76,7 +103,9 @@ async function main() {
     brokers: config.kafka.brokers,
   });
   const producer = new TypedProducer(kafka);
-  await producer.connect();
+  // Producer.connect() is deferred to startKafka() below, after the HTTP health
+  // port binds, so a broker that is unreachable at boot degrades the service
+  // instead of blocking startup and CrashLoopBackOff-ing it on the /health probe.
   const emitter = new KafkaBillingEmitter(producer);
 
   // --- Services ---
@@ -87,11 +116,19 @@ async function main() {
 
   const permit = new PermitSyncService(getAuthzClient(), () => getMachineToken(machineTokenConfigFromEnv()));
 
+  // Unleash plan-flag sync — wired only when UNLEASH_ADMIN_TOKEN is set.
+  // The service itself also checks the PLAN_FLAG_SYNC_ENABLED feature flag
+  // before making any API call, so this is doubly dark until both are enabled.
+  const unleashFlagSync = config.unleash.adminToken
+    ? new UnleashFlagSyncService({
+        adminUrl: config.unleash.adminUrl,
+        adminToken: config.unleash.adminToken,
+        project: config.unleash.project,
+        environment: config.unleash.environment,
+      }, console, pool)
+    : undefined;
+
   const consumer = new TypedConsumer(kafka, config.kafka.groupId);
-  // The usage consumer runs in the background; failures dead-letter via producer.
-  startUsageConsumer(consumer, metering, producer).catch((err) =>
-    console.error('[billing-service] usage consumer failed to start:', err),
-  );
 
   // --- L1 referential integrity (FFRNT-184) ---
   // Its OWN consumer group: this consumer replays from the beginning when the
@@ -99,33 +136,16 @@ async function main() {
   // replay billing.usage.recorded too — re-metering usage that was already
   // billed. Separate groups keep a projection rebuild from touching money.
   const refIndexConsumer = new TypedConsumer(kafka, `${config.kafka.groupId}-ref-index`);
-  startRefIndexConsumer(refIndexConsumer, refIndex, producer).catch((err) =>
-    console.error('[billing-service] ref-index consumer failed to start:', err),
-  );
 
   // --- identity.org.deleted -> cancel the org's Stripe subscription ---
   // Its OWN consumer group: TypedConsumer.run binds a single schema per loop,
   // and this reaction must not share offsets with the usage/ref-index consumers.
   const orgDeletedConsumer = new TypedConsumer(kafka, `${config.kafka.groupId}-org-deleted`);
-  startOrgDeletedConsumer(
-    orgDeletedConsumer,
-    { customers: customerRepo, subscriptions: subscriptionRepo, subscriptionService },
-    producer,
-  ).catch((err) =>
-    console.error('[billing-service] org-deleted consumer failed to start:', err),
-  );
 
   // --- identity.user.deleted -> cancel any user-scoped Stripe subscription ---
   // Its OWN consumer group: keeps offsets independent of org-deleted / ref-index
   // so a user.deleted replay cannot re-trigger org-deleted logic.
   const userDeletedConsumer = new TypedConsumer(kafka, `${config.kafka.groupId}-user-deleted`);
-  startUserDeletedConsumer(
-    userDeletedConsumer,
-    { customers: customerRepo, subscriptions: subscriptionRepo, subscriptionService },
-    producer,
-  ).catch((err) =>
-    console.error('[billing-service] user-deleted consumer failed to start:', err),
-  );
 
   // --- Metering flush loop ---
   const flushTimer = setInterval(() => {
@@ -144,6 +164,7 @@ async function main() {
     plans: planRepo,
     payments: paymentRepo,
     permit,
+    unleashFlagSync,
     emitter,
     // Lets the checkout.session.completed handler fetch the full subscription
     // (the session payload only carries its id) to mirror price/status/periods.
@@ -172,6 +193,48 @@ async function main() {
   const app = createApp(deps);
   const server = startHttp(app, config.port);
 
+  // --- Kafka (background; producer connect retried) ---
+  // Connect the producer AFTER the health port is up, retrying so a broker that
+  // is unreachable at boot degrades the service (requests that publish fail, but
+  // /health stays green) instead of CrashLoopBackOff-ing the pod. The consumers
+  // are started only once the producer has connected; each still dead-letters
+  // via the producer, so they must not run before it is ready.
+  const startKafka = async (): Promise<void> => {
+    for (;;) {
+      try {
+        await producer.connect();
+        break;
+      } catch (err) {
+        console.error('[billing-service] Kafka producer connect failed; retrying in 5s:', err);
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+      }
+    }
+    console.log('[billing-service] Kafka producer connected');
+
+    // The usage consumer runs in the background; failures dead-letter via producer.
+    startUsageConsumer(consumer, metering, producer).catch((err) =>
+      console.error('[billing-service] usage consumer failed to start:', err),
+    );
+    startRefIndexConsumer(refIndexConsumer, refIndex, producer).catch((err) =>
+      console.error('[billing-service] ref-index consumer failed to start:', err),
+    );
+    startOrgDeletedConsumer(
+      orgDeletedConsumer,
+      { customers: customerRepo, subscriptions: subscriptionRepo, subscriptionService },
+      producer,
+    ).catch((err) =>
+      console.error('[billing-service] org-deleted consumer failed to start:', err),
+    );
+    startUserDeletedConsumer(
+      userDeletedConsumer,
+      { customers: customerRepo, subscriptions: subscriptionRepo, subscriptionService },
+      producer,
+    ).catch((err) =>
+      console.error('[billing-service] user-deleted consumer failed to start:', err),
+    );
+  };
+  void startKafka();
+
   // Sync the plan catalogue at startup (best-effort).
   plans.syncPlans().catch((err) => console.error('[billing-service] plan sync failed:', err));
 
@@ -189,6 +252,11 @@ async function main() {
     } catch (err) {
       console.error('[billing-service] shutdown teardown error:', err);
     }
+    // Flush any spans still buffered before the process exits — otherwise the
+    // last few requests before shutdown silently never reach Tempo.
+    await telemetry.shutdown().catch((err) =>
+      console.error('[billing-service] telemetry shutdown error:', err),
+    );
     process.exit(0);
   };
   process.on('SIGTERM', shutdown);

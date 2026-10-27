@@ -51,7 +51,7 @@ docker compose -f docker-compose.e2e.yml exec -T postgres psql -v ON_ERROR_STOP=
 
 Success: `INSERT 0 1`. Refresh http://localhost:4173, open **Clock** under **APPS** in the sidebar, and it mounts inside the shell showing "Mounted inside FuzeFront: yes" and your signed-in email. The dashboard itself may still say "No applications available"; use the sidebar.
 
-From here, inspect the runtime app registry, the example federated application, routing, and the integration SDK.
+From here, inspect the runtime app registry, the example federated application, routing, and the integration SDK. To see the *full* onboarding contract this shortcut skips — the registration API calls, the manifest shape, auth/routing assumptions, and health/heartbeat — follow [`docs/guides/reference-app-onboarding.md`](guides/reference-app-onboarding.md), which walks `clock-app` through the actual `/api/v1/app-registry` flow a real external app uses.
 
 **Stop:** `docker compose -f docker-compose.e2e.yml down`. Add `-v` to also delete the data (users, registered apps).
 
@@ -62,6 +62,7 @@ From here, inspect the runtime app registry, the example federated application, 
 - **`open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified`** (Windows): Docker Desktop isn't running. Start it and wait for "Engine running", for example after a reboot.
 - **"Incorrect email or password" when creating an account:** the password didn't meet the policy above. Check `docker compose -f docker-compose.e2e.yml logs security` for the exact reason.
 - **`clock-app` isn't listed after `npm run dev`:** the dev server doesn't produce `remoteEntry.js`, and self-registration from the browser is blocked in this stack. Use the build + preview + register steps above.
+- **Your own app registers but doesn't show up** (init container crash-looping, stuck in `registered`, or activated but blank): work through [`docs/troubleshooting/APP_REGISTRATION_DECISION_TREE.md`](troubleshooting/APP_REGISTRATION_DECISION_TREE.md) — covers connectivity, auth/token, payload validation, duplicate registration, remote URL reachability, and heartbeat/health failures.
 
 ### 2. Platform engineer: run the Kubernetes path
 
@@ -116,6 +117,11 @@ For each real evaluation we want to capture:
 - deployment and operational friction;
 - security or governance concerns;
 - whether a second application becomes materially easier than the first.
+
+Want to turn that into a comparable, publishable number instead of an
+anecdote? See [`docs/benchmarks/app-onboarding-benchmark.md`](benchmarks/app-onboarding-benchmark.md) —
+a fixed procedure and results template for exactly the two bullets above
+("time to onboard" and "second app vs. first").
 
 ## Contribute
 

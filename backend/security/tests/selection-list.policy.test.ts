@@ -5,18 +5,20 @@ import { syncPermitSchema } from '../src/permit/sync-permit-schema'
 import authzRoutes from '../src/routes/authz'
 import { setIdentityProvider } from '../src/providers/factory'
 import { setAuthorizationProvider } from '../src/providers/authzFactory'
-import { findMembershipByUserAndOrg } from '../src/repositories/organizationRepository'
+import { findMembershipByUserAndOrg, findUserActiveState } from '../src/repositories/organizationRepository'
 import { introspectMachineToken } from '../src/services/machine-identity'
 import jwt from 'jsonwebtoken'
 
 jest.mock('../src/repositories/organizationRepository', () => ({
   findMembershipByUserAndOrg: jest.fn(),
+  findUserActiveState: jest.fn(),
 }))
 jest.mock('../src/services/machine-identity', () => ({
   introspectMachineToken: jest.fn(),
 }))
 
 const membership = findMembershipByUserAndOrg as jest.Mock
+const userState = findUserActiveState as jest.Mock
 const introspect = introspectMachineToken as jest.Mock
 const authz = {
   check: jest.fn(),
@@ -33,6 +35,7 @@ beforeEach(() => {
   setIdentityProvider({ getUserInfo: async () => ({ user: { id: 'usr_00000000000000000000000001' } }) } as any)
   setAuthorizationProvider(authz as any)
   membership.mockResolvedValue({ status: 'active' })
+  userState.mockResolvedValue({ id: 'u', is_active: true })
   introspect.mockResolvedValue({ active: false })
   authz.check.mockResolvedValue(false)
   authz.grant.mockImplementation(async (body) => body)
@@ -200,4 +203,205 @@ test('UUID grant tuples validate and convert membership references without chang
     .set('Authorization', 'Bearer valid').send({ ...listGrant, subject, tenant }).expect(201)
   expect(membership).toHaveBeenCalledWith(expect.stringMatching(/^usr_/), expect.stringMatching(/^org_/))
   expect(authz.grant).toHaveBeenCalledWith(expect.objectContaining({ subject, tenant }))
+})
+
+// ── Grant cleanup workload scope (revoke-only, gone principals only) ────────────
+
+const SIGNING_KEY = 'selection-list-test-signing-key'
+function workloadToken(scope: string, sub = 'service:selection-list-service', opts: { audience?: string; issuer?: string } = {}) {
+  return jwt.sign({ kind: 'fuze-workload', sub, scope },
+    SIGNING_KEY, { issuer: opts.issuer ?? 'fuzefront-security', audience: opts.audience ?? 'fuzefront-services', expiresIn: 60 })
+}
+
+describe('selection-list:grant-cleanup workload scope', () => {
+  const cleanupScopes = 'selection-list:owner-grant selection-list:grant-cleanup'
+  let previous: string | undefined
+  beforeEach(() => {
+    previous = process.env.JWT_SECRET
+    process.env.JWT_SECRET = SIGNING_KEY
+    setIdentityProvider({ getUserInfo: async () => { throw new Error('not a session') } } as any)
+  })
+  afterEach(() => {
+    if (previous === undefined) delete process.env.JWT_SECRET
+    else process.env.JWT_SECRET = previous
+  })
+  const revoke = (token: string, body: object = { ...listGrant, role: 'list-owner' }) =>
+    request(app).delete('/api/v1/security/authz/grants').set('Authorization', `Bearer ${token}`).send(body)
+
+  test('revokes the grants of a deactivated user whose membership is still active', async () => {
+    userState.mockResolvedValue({ id: 'u', is_active: false })
+    membership.mockResolvedValue({ status: 'active' })
+    await revoke(workloadToken(cleanupScopes)).expect(204)
+    expect(authz.revoke).toHaveBeenCalledTimes(1)
+    expect(authz.revoke).toHaveBeenCalledWith(expect.objectContaining({
+      subject: listGrant.subject, tenant: listGrant.tenant, role: 'list-owner',
+      resource: listGrant.resource,
+    }))
+  })
+
+  test('revokes for a hard-deleted user (no user row) and for a departed member (membership not active)', async () => {
+    userState.mockResolvedValue(undefined)
+    await revoke(workloadToken(cleanupScopes)).expect(204)
+    userState.mockResolvedValue({ id: 'u', is_active: true })
+    membership.mockResolvedValue({ status: 'revoked' })
+    await revoke(workloadToken(cleanupScopes), listGrant).expect(204)
+    membership.mockResolvedValue(undefined)
+    await revoke(workloadToken(cleanupScopes), listGrant).expect(204)
+    expect(authz.revoke).toHaveBeenCalledTimes(3)
+  })
+
+  test('CANNOT revoke a live member: active user with active membership is refused', async () => {
+    await revoke(workloadToken(cleanupScopes)).expect(403)
+    expect(authz.revoke).not.toHaveBeenCalled()
+  })
+
+  test('is revoke-only: it cannot grant, not even the owner role the owner-grant scope allows alone', async () => {
+    userState.mockResolvedValue({ id: 'u', is_active: false })
+    await request(app).post('/api/v1/security/authz/grants')
+      .set('Authorization', `Bearer ${workloadToken('selection-list:grant-cleanup')}`)
+      .send({ ...listGrant, role: 'list-owner' }).expect(403)
+    expect(authz.grant).not.toHaveBeenCalled()
+  })
+
+  test('requires the cleanup scope: the owner-grant scope alone still cannot revoke', async () => {
+    userState.mockResolvedValue({ id: 'u', is_active: false })
+    await revoke(workloadToken('selection-list:owner-grant')).expect(403)
+    expect(authz.revoke).not.toHaveBeenCalled()
+  })
+
+  test('requires the selection-list-service identity', async () => {
+    userState.mockResolvedValue({ id: 'u', is_active: false })
+    await revoke(workloadToken(cleanupScopes, 'service:other')).expect(403)
+    expect(authz.revoke).not.toHaveBeenCalled()
+  })
+
+  test.each([
+    ['wrong audience', { audience: 'another-service' }],
+    ['wrong issuer', { issuer: 'untrusted-issuer' }],
+  ])('rejects a cleanup token with %s', async (_n, opts) => {
+    userState.mockResolvedValue({ id: 'u', is_active: false })
+    await revoke(workloadToken(cleanupScopes, 'service:selection-list-service', opts)).expect(401)
+    expect(authz.revoke).not.toHaveBeenCalled()
+  })
+
+  test('is confined to SelectionList instances and list roles', async () => {
+    userState.mockResolvedValue({ id: 'u', is_active: false })
+    const t = workloadToken(cleanupScopes)
+    await revoke(t, { ...listGrant, role: 'admin' }).expect(403)
+    await revoke(t, { ...listGrant, resource: { type: 'Organization', key: 'x' } }).expect(403)
+    await revoke(t, { ...listGrant, resource: { type: 'SelectionList' } }).expect(403)
+    expect(authz.revoke).not.toHaveBeenCalled()
+  })
+
+  test('does not unlock revokes outside the list surface: a tenant-wide or non-list revoke still needs authz:admin', async () => {
+    userState.mockResolvedValue({ id: 'u', is_active: false })
+    const t = workloadToken(cleanupScopes)
+    await revoke(t, { subject: listGrant.subject, tenant: listGrant.tenant, role: 'admin' }).expect(403)
+    await revoke(t, { subject: listGrant.subject, tenant: listGrant.tenant, role: 'owner', resource: { type: 'Organization', key: 'x' } }).expect(403)
+    expect(authz.revoke).not.toHaveBeenCalled()
+  })
+
+  test('malformed references are 400 before any SQL lookup', async () => {
+    await revoke(workloadToken(cleanupScopes), { ...listGrant, subject: 'not-a-user' }).expect(400)
+    expect(userState).not.toHaveBeenCalled()
+    expect(authz.revoke).not.toHaveBeenCalled()
+  })
+
+  test('fails closed (502) when the SQL proof is unavailable', async () => {
+    userState.mockRejectedValue(new Error('db down'))
+    await revoke(workloadToken(cleanupScopes)).expect(502)
+    expect(authz.revoke).not.toHaveBeenCalled()
+  })
+})
+
+// ── DELETE /authz/grants: machine caller without authz:admin (regression pins) ──────
+//
+// Pins that BOTH request forms (grantId and explicit subject/tenant/role) are gated
+// for a machine caller that holds neither `authz:admin` nor the cleanup scope, on the
+// list-role and non-list-role branches alike.
+
+describe('DELETE /authz/grants — machine caller without authz:admin', () => {
+  const MACHINE_TOKEN = 'machine-token-no-admin'
+  const ADMIN_MACHINE_TOKEN = 'machine-token-authz-admin'
+  const { subject, tenant } = listGrant
+  const nonListRole = 'admin'
+  const del = (token: string, body: object) =>
+    request(app).delete('/api/v1/security/authz/grants').set('Authorization', `Bearer ${token}`).send(body)
+
+  let previous: string | undefined
+  beforeEach(() => {
+    previous = process.env.JWT_SECRET
+    process.env.JWT_SECRET = SIGNING_KEY
+    setIdentityProvider({ getUserInfo: async () => { throw new Error('not a session') } } as any)
+    introspect.mockImplementation(async (token: string) => {
+      if (token === MACHINE_TOKEN) return { active: true, client_id: 'some-backend', scope: 's2s:some' }
+      if (token === ADMIN_MACHINE_TOKEN) return { active: true, client_id: 'operator', scope: 's2s:platform authz:admin' }
+      return { active: false }
+    })
+    // A live, active member: nothing but the caller's missing scope can explain a 403.
+    userState.mockResolvedValue({ id: 'u', is_active: true })
+    membership.mockResolvedValue({ status: 'active' })
+  })
+  afterEach(() => {
+    if (previous === undefined) delete process.env.JWT_SECRET
+    else process.env.JWT_SECRET = previous
+  })
+
+  test('positive control: an authz:admin machine caller revokes a non-list grantId -> 204, provider.revoke once', async () => {
+    await del(ADMIN_MACHINE_TOKEN, { grantId: `${tenant}:${subject}:${nonListRole}` }).expect(204)
+    expect(authz.revoke).toHaveBeenCalledTimes(1)
+    expect(authz.revoke).toHaveBeenCalledWith(expect.objectContaining({ subject, tenant, role: nonListRole }))
+  })
+
+  test('positive control: an authz:admin machine caller revokes a list grantId -> 204, provider.revoke once', async () => {
+    await del(ADMIN_MACHINE_TOKEN, { grantId: `${tenant}:${subject}:list-viewer`, resource: listGrant.resource }).expect(204)
+    expect(authz.revoke).toHaveBeenCalledTimes(1)
+    expect(authz.revoke).toHaveBeenCalledWith(expect.objectContaining({ subject, tenant, role: 'list-viewer' }))
+  })
+
+  test('control: an unrecognized token is 401, not 403', async () => {
+    await del('machine-token-unknown', { grantId: `${tenant}:${subject}:${nonListRole}` }).expect(401)
+    expect(authz.revoke).not.toHaveBeenCalled()
+  })
+
+  test('(a) non-list role via grantId -> 403, never revoked', async () => {
+    await del(MACHINE_TOKEN, { grantId: `${tenant}:${subject}:${nonListRole}` }).expect(403)
+    expect(authz.revoke).not.toHaveBeenCalled()
+  })
+
+  test('(b) non-list role via explicit subject/tenant/role -> 403, never revoked', async () => {
+    await del(MACHINE_TOKEN, { subject, tenant, role: nonListRole }).expect(403)
+    expect(authz.revoke).not.toHaveBeenCalled()
+  })
+
+  test('(c) list role (SelectionList resource) via grantId -> 403, never revoked', async () => {
+    await del(MACHINE_TOKEN, { grantId: `${tenant}:${subject}:list-viewer`, resource: listGrant.resource }).expect(403)
+    expect(authz.revoke).not.toHaveBeenCalled()
+  })
+
+  test('(d) list role (SelectionList resource) via explicit fields -> 403, never revoked', async () => {
+    await del(MACHINE_TOKEN, { subject, tenant, role: 'list-viewer', resource: listGrant.resource }).expect(403)
+    expect(authz.revoke).not.toHaveBeenCalled()
+  })
+
+  test('a gone principal does not open the list path to a caller lacking the cleanup scope', async () => {
+    userState.mockResolvedValue({ id: 'u', is_active: false })
+    await del(MACHINE_TOKEN, { grantId: `${tenant}:${subject}:list-viewer`, resource: listGrant.resource }).expect(403)
+    expect(authz.revoke).not.toHaveBeenCalled()
+  })
+
+  test('a cleanup-scope workload token cannot revoke a NON-list role via grantId, even for a gone principal', async () => {
+    userState.mockResolvedValue({ id: 'u', is_active: false })
+    membership.mockResolvedValue({ status: 'revoked' })
+    const token = workloadToken('selection-list:owner-grant selection-list:grant-cleanup')
+    await del(token, { grantId: `${tenant}:${subject}:${nonListRole}` }).expect(403)
+    expect(authz.revoke).not.toHaveBeenCalled()
+  })
+
+  test('control: the same cleanup-scope workload token DOES revoke a list role for the gone principal', async () => {
+    userState.mockResolvedValue({ id: 'u', is_active: false })
+    const token = workloadToken('selection-list:owner-grant selection-list:grant-cleanup')
+    await del(token, { grantId: `${tenant}:${subject}:list-viewer`, resource: listGrant.resource }).expect(204)
+    expect(authz.revoke).toHaveBeenCalledTimes(1)
+  })
 })

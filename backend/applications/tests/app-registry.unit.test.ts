@@ -43,6 +43,13 @@ function appWith(
     builtin: false,
     organizationId: organizationId ?? null,
     manifest: { ...baseManifest, visibility: visibility ?? 'private' } as any,
+    scopeLevel: 'both',
+    orgInstallMode: 'both',
+    personalRemovable: true,
+    orgRemovable: true,
+    systemApp: false,
+    defaultInstallPersonal: false,
+    defaultInstallOrg: false,
     isHealthy: null,
     lastSeenAt: null,
     createdAt: new Date().toISOString(),
@@ -195,6 +202,33 @@ describe('app-registry manifest validation', () => {
   it('rejects unknown extra fields (strict)', () => {
     const r = appManifestSchema.safeParse({ ...baseManifest, bogus: true })
     expect(r.success).toBe(false)
+  })
+
+  it('accepts only explicitly declared public mobile distribution links', () => {
+    const result = appManifestSchema.safeParse({
+      ...baseManifest,
+      distribution: {
+        appleAppStoreUrl: 'https://apps.apple.com/app/id123456789',
+        googlePlayUrl: 'https://play.google.com/store/apps/details?id=com.example.app',
+        apkUrl: 'https://github.com/example/app/releases/latest/download/app.apk',
+      },
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('keeps mobile distribution closed to unknown destinations', () => {
+    expect(
+      appManifestSchema.safeParse({
+        ...baseManifest,
+        distribution: { apkUrl: 'https://example.com/app.apk', invented: 'nope' },
+      }).success
+    ).toBe(false)
+    expect(
+      appManifestSchema.safeParse({
+        ...baseManifest,
+        distribution: { apkUrl: 'javascript:alert(1)' },
+      }).success
+    ).toBe(false)
   })
 
   // The same-origin remoteEntry shape (`/apps/<slug>/assets/remoteEntry.js`)

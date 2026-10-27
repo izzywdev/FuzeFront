@@ -1,8 +1,12 @@
 # Runbook — widen master's required status checks (and the merge-queue prerequisite)
 
 **Status:** SUPERSEDED in part — see §3. There is an automated path; it needs no admin and no
-GitHub UI. Applying it is gated on Stage 0, which has not landed.
-**Owner:** `@izzywdev` · **Measured:** 2026-08-27 · **Ruleset:** *Protect Master*, id `17974934`
+GitHub UI. Applying it is gated on Stage 0, which has not landed. The active, copy-pasteable
+hand-off for the two UX gates (`gate-frames-schema`, `gate-ds-artifact`) is **§4a**.
+**Owner:** `@izzywdev` · **Measured:** 2026-08-27, live-re-verified 2026-10-26 · **Ruleset:**
+id `17974934`, live name **`Protect default branch`** (the earlier *Protect Master* label in
+this doc and in `governance/required-status-checks.json` was stale; `apply_ruleset.sh` matches
+the ruleset by target + condition, not by name, so the stale label never blocked anything).
 
 Desired state lives in [`governance/required-status-checks.json`](../../governance/required-status-checks.json).
 
@@ -223,6 +227,142 @@ for anything the ruleset requires."*
 
 Then add those contexts to `governance/required-status-checks.json` and re-run step 3.
 
+## 4a. ADMIN HAND-OFF — require `gate-frames-schema` + `gate-ds-artifact` on master
+
+**This is the active, copy-pasteable procedure. A human with admin / `GOVERNANCE_TOKEN` can
+execute it top to bottom without further research.** The two UX gates were added to this repo's
+desired set ([`required-status-checks.json`](../../governance/required-status-checks.json)) and
+registered in the regression guard
+([`required-check-triggers.json`](../../governance/required-check-triggers.json)), per owner
+decision to block merges on them. (`Playwright sign-in flow` — the mobile-layout spec — is also
+in the desired set and registered in the guard; promote it by the same procedure, adding its name
+wherever the two below appear.)
+
+### Verified current state (2026-10-26)
+
+```
+$ gh api repos/izzywdev/FuzeFront/rulesets/17974934 --jq '.name'
+Protect default branch
+$ gh api repos/izzywdev/FuzeFront/rulesets/17974934 \
+    --jq '[.rules[]|select(.type=="required_status_checks")|.parameters.required_status_checks[].context]|length'
+11
+```
+
+**Live required (11):** `In-repo packages resolve from source`, `Security Scan`, `gate-build`,
+`gate-dependency-scan`, `gate-ds-conformance`, `gate-frontend-build`, `gate-lint`, `gate-sast`,
+`gate-sealed-keys`, `gate-secret-scan`, `gate-test`.
+
+**Desired − live (the gap this hand-off closes for two of them):** `gate-frames-schema` and
+`gate-ds-artifact` are in the desired set and are NOT yet live-required.
+
+### These two are safe to require — evidence, not assertion
+
+| Context | Workflow | Unfiltered on PR? | Able to fail? | merge_group ready? |
+|---|---|---|---|---|
+| `gate-frames-schema` | `gate-frames-schema.yml` | yes — no `paths:` on `pull_request:` | yes — hard-fails on schema error / missing mobile coverage for a **changed** feature; self-unit-tested (`scripts/__tests__/check-frames-schema.test.mjs`), not vacuous | **yes** — `merge_group:` added 2026-10-26; sub-second, dependency-free; under merge_group it diffs the candidate against the default branch |
+| `gate-ds-artifact` | `gate-ds-artifact.yml` | yes — no `paths:` on `pull_request:` | yes — pure regenerate-and-diff of the committed DS mirror vs source; `npm run check:ds-artifact`, no `\|\| true` | **yes** — `merge_group:` added 2026-10-26; reads no PR context, so identical under every trigger |
+
+Verify both facts locally (both must stay green):
+
+```bash
+node scripts/check-required-check-triggers.mjs            # unfiltered + merge_group for required entries
+python3 scripts/gate_vacuous_check.py .                   # neither gate flagged → non-vacuous
+```
+
+### Precondition — Stage 0 (de-vacuum) comes FIRST, by policy
+
+Policy (`governance/required-checks.json` `order`: *"listed is last"*) is **de-vacuum before
+widen**. Run this repo's own auditor to see the remaining Stage-0 worklist:
+
+```bash
+GITHUB_REPOSITORY=izzywdev/FuzeFront python3 scripts/gate_required_checks.py .
+```
+
+Measured 2026-10-26 — **6 of the 11 already-required contexts still cannot fail** (warnings, not
+errors, so the auditor PASSes in enforcing mode): `gate-test`, `gate-build`, `gate-sast`,
+`gate-dependency-scan`, `Security Scan` (all vacuous), and `gate-ds-conformance` (partial —
+enforces on `pull_request`, advisory on the `push` branch). Land Stage 0 (§3, FuzeSDLC's
+`stages.stage_0`) and confirm green before the listing step below. Adding two sound gates on top
+of a set that is still >50% vacuous is defensible for these two specifically (both genuinely
+enforce), but the staging order is the owner's to waive — the two steps are kept separate so that
+choice is explicit.
+
+### The ordered hand-off (what · where · who)
+
+The live flip is a change to **FuzeSDLC** (the governance repo), applied by FuzeSDLC's
+`apply-ruleset.yml` under `GOVERNANCE_TOKEN`. A FuzeFront session cannot do it (a consuming repo
+never edits the governance repo; the token lives only as a FuzeSDLC secret). **Owner: platform-governance**
+authors the FuzeSDLC edit; **devops-engineer / an admin holding `GOVERNANCE_TOKEN`** dispatches.
+
+**Step 0 — precondition (platform-governance / owner).** Land Stage 0 per §3, or obtain the
+owner's explicit waiver to list these two ahead of it. Confirm `gate_required_checks.py` is green.
+
+**Step 1 — FuzeSDLC `required_now` + audit (platform-governance).** In **`izzywdev/FuzeSDLC`**,
+edit `governance/required-checks.json`. Under `repos.FuzeFront.required_now`, add the two contexts;
+under `repos.FuzeFront.audit`, add a matching entry for EACH (C5 `honest_audit` fails a required
+context that has no audit entry — unclassified is not fine):
+
+```jsonc
+// repos.FuzeFront.required_now  — append:
+"gate-frames-schema",
+"gate-ds-artifact"
+
+// repos.FuzeFront.audit  — add:
+"gate-frames-schema": {
+  "can_fail": true,
+  "note": "Hard-fails on a schema-invalid manifest or a changed feature's flow missing mobile coverage; self-unit-tested in scripts/__tests__/check-frames-schema.test.mjs. Unfiltered on pull_request and carries merge_group (FuzeFront gate-frames-schema.yml). Changed-scope, so it never retro-fails the backlog."
+},
+"gate-ds-artifact": {
+  "can_fail": true,
+  "note": "Pure regenerate-and-diff of docs/design-system/artifact/** vs source (npm run check:ds-artifact), no || true. Unfiltered on pull_request and carries merge_group; reads no PR context so identical under every trigger."
+}
+```
+
+Open and merge that as a FuzeSDLC PR. (FuzeSDLC's own `gate-required-checks` will re-audit these
+two against FuzeFront's workflows via its fleet tooling; the audit entries above make them pass.)
+
+**Step 2 — apply to the live ruleset (devops-engineer / admin with `GOVERNANCE_TOKEN`).** From
+FuzeSDLC, dispatch the ruleset sync. It MERGES onto the live set and matches the ruleset by
+target + condition (not name), so it updates id `17974934` in place and cannot drop the existing
+`pull_request`/`required_signatures` rules:
+
+```bash
+# in a checkout of izzywdev/FuzeSDLC, or via the Actions UI:
+gh workflow run apply-ruleset.yml -R izzywdev/FuzeSDLC \
+  -f repo=izzywdev/FuzeFront -f mode=apply
+# then watch it:
+gh run watch "$(gh run list -R izzywdev/FuzeSDLC -w apply-ruleset.yml -L1 --json databaseId --jq '.[0].databaseId')" -R izzywdev/FuzeSDLC
+```
+
+(Field names follow `apply-ruleset.yml`'s `workflow_dispatch.inputs`; if an input is named
+differently there, use that name — the operative inputs are the target repo and apply mode.)
+
+**Step 3 — verify live (anyone).** The count must become 13 and both names must appear:
+
+```bash
+gh api repos/izzywdev/FuzeFront/rulesets/17974934 \
+  --jq '[.rules[]|select(.type=="required_status_checks")|.parameters.required_status_checks[].context]
+         | {count: length, has_frames: (index("gate-frames-schema")!=null), has_ds: (index("gate-ds-artifact")!=null)}'
+# expect: {"count":13,"has_frames":true,"has_ds":true}
+```
+
+**Step 4 — reconcile the record back in FuzeFront (platform-governance, follow-up PR).** Once
+step 3 confirms them live, flip their `requiredInRuleset` to `true` in this repo's
+[`governance/required-check-triggers.json`](../../governance/required-check-triggers.json) and
+add them to the local [`governance/required-checks.json`](../../governance/required-checks.json)
+`repos.FuzeFront.required_now` + `audit` (mirroring Step 1), so this repo's own guards track live
+reality. **No workflow edit is needed** — the `merge_group:` triggers are already in place, so
+`check-required-check-triggers.mjs` stays green the moment `requiredInRuleset` becomes `true`.
+
+### What remains blocked here, and by whom
+
+Until Step 2 runs, both gates **run and report on every PR and go red when violated** — they
+simply do not yet *block* auto-merge. Everything inside FuzeFront is in place: the desired set
+lists them, the regression guard registers them, both workflows are unfiltered, non-vacuous, and
+now carry `merge_group`. **The only blocked action is the cross-repo, admin-scoped ruleset write
+(Steps 1–2), owned by platform-governance + an admin holding `GOVERNANCE_TOKEN`** — a FuzeFront
+session holds no such token and cannot perform it.
+
 ## 5. Merge queue — do NOT enable it yet
 
 Merge queue is the right fix for a separate problem: `strict_required_status_checks_policy`
@@ -230,12 +370,21 @@ is `true` and master is deploy-on-push, so **every merge lands a release commit 
 every other open PR behind**, costing a full CI matrix per PR per merge. A queue tests the
 merged result and merges in order, which removes that treadmill entirely.
 
-**It cannot be switched on as-is.** Two hard prerequisites, both verified 2026-08-27:
+**It cannot be switched on as-is.** The prerequisites, re-verified 2026-10-26:
 
-1. **No workflow in this repo has a `merge_group` trigger.** Audited all 58 PR-triggered
-   jobs: zero. GitHub dispatches queue entries as `merge_group` events, so with no workflow
-   listening, **no check ever reports on a queue entry** and every entry sits until it times
-   out and is ejected. Enabling the queue in this state stops merges completely.
+1. **~~No workflow in this repo has a `merge_group` trigger.~~ STALE — partly fixed.** As of
+   2026-10-26, every one of the **11 live-required** contexts' producing workflows DOES carry a
+   `merge_group:` trigger (`harden-gate.yml`, `ci.yml`, `workspace-deps-check.yml`,
+   `gate-sealed-keys.yml`), and `scripts/check-required-check-triggers.mjs` enforces that any
+   `requiredInRuleset: true` entry has one. `gate-frames-schema.yml` and `gate-ds-artifact.yml`
+   were given `merge_group:` in this change too (they are staged for promotion — §4a). So point
+   1 no longer blocks the queue for the required set. What is NOT yet done: the many non-required
+   PR-triggered jobs still lack `merge_group`, which is fine while they stay non-required but must
+   be added before the queue can gate on them. Adding a `merge_group:` trigger to a workflow does
+   **not** by itself enable the queue — the ruleset has no `merge_queue` rule today (verified:
+   `gh api repos/izzywdev/FuzeFront/rulesets/17974934 --jq '.rules[].type'` lists `deletion`,
+   `non_fast_forward`, `pull_request`, `required_status_checks`, `required_signatures`, and no
+   `merge_queue`).
 
 2. **Several required gates read PR context that a `merge_group` event does not have.**
    `gate-ds-conformance` ratchets on lines changed against the PR base; `gate-frames-first`

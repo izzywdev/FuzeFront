@@ -47,6 +47,8 @@
   color: var(--text-secondary); margin-bottom: var(--space-2); }
 .field__row { display: flex; gap: var(--space-3); }
 .field__row .field { flex: 1; margin-bottom: var(--space-4); }
+.field__optional { font-weight: var(--weight-regular); color: var(--text-tertiary);
+  font-size: var(--text-xs); text-transform: lowercase; }
 .input-wrap { position: relative; display: flex; align-items: center; }
 .input {
   width: 100%; font-family: var(--font-sans); font-size: var(--text-md);
@@ -58,14 +60,16 @@
 }
 .input::placeholder { color: var(--text-tertiary); }
 .input:focus { border-color: var(--accent-color); box-shadow: 0 0 0 3px var(--accent-soft); }
-.input--has-adornment { padding-right: var(--space-10); }
+/* logical properties (padding-inline-end / inset-inline-end) so the adornment and
+   show/hide toggle mirror to the correct edge under dir="rtl" (ar/he). */
+.input--has-adornment { padding-inline-end: var(--space-10); }
 .input[aria-invalid="true"] { border-color: var(--error-color); }
 .input[aria-invalid="true"]:focus { box-shadow: 0 0 0 3px var(--error-soft); }
 .input--valid { border-color: var(--success-color); }
-.input-adornment { position: absolute; right: var(--space-3); display: inline-flex;
+.input-adornment { position: absolute; inset-inline-end: var(--space-3); display: inline-flex;
   align-items: center; }
 .input-adornment svg { width: 18px; height: 18px; }
-.pw-toggle { position: absolute; right: var(--space-3); background: none; border: 0;
+.pw-toggle { position: absolute; inset-inline-end: var(--space-3); background: none; border: 0;
   color: var(--text-tertiary); cursor: pointer; display: inline-flex; padding: var(--space-1); }
 .pw-toggle:hover { color: var(--text-secondary); }
 
@@ -248,7 +252,7 @@
   border-radius: var(--radius-lg); padding: var(--space-5); overflow: hidden;
   transition: border-color var(--duration-base) var(--ease-standard),
     transform var(--duration-base) var(--ease-standard); }
-.flow-card::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+.flow-card::before { content: ""; position: absolute; inset-inline-start: 0; top: 0; bottom: 0; width: 3px;
   background: var(--seam); opacity: 0; transition: opacity var(--duration-base) var(--ease-standard); }
 .flow-card:hover { border-color: var(--border-strong); transform: translateY(-2px); }
 .flow-card:hover::before { opacity: 1; }

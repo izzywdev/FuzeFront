@@ -733,6 +733,21 @@ router.get('/oidc/callback', async (req, res) => {
     const user = await getOidcService().handleCallback(code as string, state as string, codeVerifier)
     console.log(`✅ [${requestId}] User authenticated via OIDC:`, user.email)
 
+    // MFA gate: social sign-in must not bypass an enrolled second factor. A user
+    // with an active factor gets NO session here; the code is redeemable only
+    // via POST /api/v1/security/session/exchange, which answers `mfa_required`.
+    const activeFactor = await db('mfa_factors').where({ user_id: user.id, status: 'active' }).first()
+    if (activeFactor) {
+      const ua = req.headers['user-agent']
+      const mfaCode = crypto.randomBytes(32).toString('hex')
+      putBrokerCode(mfaCode, {
+        mfaPendingUser: { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName, roles: user.roles },
+        ctx: { ip: req.ip ?? null, userAgent: typeof ua === 'string' ? ua : null },
+        expiresAt: Date.now() + CODE_TTL_MS,
+      })
+      return res.redirect(`${FRONTEND_BASE}/?code=${mfaCode}`)
+    }
+
     // Create session id first so it can be embedded in the token
     const sessionId = toUuid(mintId('session'))
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
@@ -849,6 +864,13 @@ router.post('/token-exchange', async (req, res) => {
   const pending = takeBrokerCode(code)
   if (!pending) {
     return res.status(401).json({ error: 'invalid or expired code' })
+  }
+  if (pending.mfaPendingUser) {
+    // This legacy endpoint cannot carry an MFA challenge. Fail closed, and put
+    // the (still-unexpired) code back so /api/v1/security/session/exchange can
+    // redeem it and return the `mfa_required` challenge.
+    putBrokerCode(code, pending)
+    return res.status(409).json({ error: 'mfa_required', code: 'MFA_REQUIRED' })
   }
   const prefixedExchange = await isPrefixedIdsEnabled({})
   return res.json(prefixDtoIds({ token: pending.token, sessionId: pending.sessionId }, prefixedExchange, { sessionId: 'session' }))

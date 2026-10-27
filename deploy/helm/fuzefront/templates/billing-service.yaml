@@ -58,6 +58,14 @@ spec:
               value: {{ .Values.billingService.port | quote }}
             - name: KAFKA_BROKERS
               value: {{ .Values.billingService.kafka.brokers | quote }}
+            # @fuzefront/telemetry (initTelemetry() in src/index.ts) reads this
+            # standard OTel env var for its OTLP exporter target. Without it the
+            # package falls back to packages/telemetry's docker-compose default
+            # (`otel-collector:4317`), which has no in-cluster DNS entry — spans
+            # fail to export silently and nothing reaches Tempo/Grafana. See
+            # values.yaml's billingService.otel.endpoint comment.
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.billingService.otel.endpoint | quote }}
             - name: KAFKA_CLIENT_ID
               value: {{ .Values.billingService.kafka.clientId | quote }}
             - name: KAFKA_GROUP_ID

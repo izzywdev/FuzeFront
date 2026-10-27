@@ -389,8 +389,10 @@ describe('LoginPage — social / Google Sign-In UI', () => {
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /create account/i })).toBeInTheDocument()
     })
-    expect(screen.getByLabelText(/first name/i)).toBeInTheDocument()
-    expect(screen.getByLabelText(/last name/i)).toBeInTheDocument()
+    // ONE optional full-name field (the contract's single `name`), not first/last.
+    expect(screen.getByLabelText(/full name/i)).toBeInTheDocument()
+    expect(screen.queryByLabelText(/first name/i)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/last name/i)).not.toBeInTheDocument()
   })
 
   // ── 7: Per-action pending labels — only the clicked button shows progress ─

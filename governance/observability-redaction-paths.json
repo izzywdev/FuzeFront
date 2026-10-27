@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "description": "Family-shared secret-redaction path list for structured logging. The SINGLE source of truth read by both the Node telemetry package (@izzywdev/fuzefront-telemetry) and the Python telemetry package (fuzefront-telemetry, packages/telemetry-py). A field redacted in one language must be redacted in the other (observability-standard.md P24). Edit HERE only; the Python package ships a byte-identical copy (fuzefront_telemetry/redaction_paths.json) for self-contained wheels, and scripts/gate_telemetry_parity.py fails CI if the two drift. Node applies these as pino `redact.paths`; Python redacts any object key whose name matches a path's leaf segment at any depth (a superset-safe reading of the same list).",
+  "paths": [
+    "req.headers.authorization",
+    "req.headers.cookie",
+    "res.headers[\"set-cookie\"]",
+    "*.password",
+    "*.token",
+    "*.access_token",
+    "*.refresh_token",
+    "*.id_token",
+    "*.code",
+    "*.otp",
+    "*.client_secret",
+    "*.apiKey",
+    "*.secret",
+    "password",
+    "token",
+    "authorization",
+    "cookie",
+    "set-cookie"
+  ]
+}

@@ -173,6 +173,9 @@ jobs:
             # app.fuzefront.com after the 301 fast-follow, with no cross-origin/mixed
             # -content risk under the Cloudflare TLS edge. (api.ts: VITE_API_URL || origin)
             VITE_API_URL=
+            # Pre-auth release flag fuzefront.auth.experience (FFRNT-360). Default OFF;
+            # set the repo variable VITE_FF_AUTH_EXPERIENCE=true to ship the UI on.
+            VITE_FF_AUTH_EXPERIENCE=${{ vars.VITE_FF_AUTH_EXPERIENCE || 'false' }}
           tags: |
             ghcr.io/izzywdev/fuzefront-frontend:${{ steps.tag.outputs.sha }}
             ghcr.io/izzywdev/fuzefront-frontend:latest

@@ -3,7 +3,7 @@
 **Status:** Approved and in delivery  
 **Product project:** Jira `FQ` (FuzeQuality)  
 **Deployment:** Contabo production k3s through Helm and Argo CD  
-**Public entry point:** `https://quality.prod.fuzefront.com`
+**Public standalone entry point:** `https://fuzequality.fuzefront.com`
 
 ## Outcome
 

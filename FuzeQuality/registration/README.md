@@ -66,6 +66,12 @@ Changing either side without the other can still produce a schema-valid but
 unloadable app, so validate the manifest and exercise the portal route before
 enabling registration.
 
+The standalone mode is a separate surface at
+`https://fuzequality.fuzefront.com/`. It serves the PWA manifest, Digital Asset
+Links, product shell, and relative `/api` routes used by the Android TWA. The
+portal still loads federation from `app.fuzefront.com`; the direct host must not
+replace `integration.remoteEntry`.
+
 ## Turning registration on
 
 `deploy/helm/fuzequality/templates/registration.yaml` runs `register.sh` from

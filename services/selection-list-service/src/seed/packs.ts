@@ -7,9 +7,20 @@
 // a file whose name disagrees with its content, and any file that fails validation.
 // Call `loadPlatformPacks()` at boot so a bad pack stops the service from starting
 // instead of failing on the first org.
+//
+// Translation provenance (service-local extension of the pack format): a pack file may
+// carry a top-level `translationProvenance` of "human" (the default - the translations
+// were written/reviewed by a person) or "machine" (they were produced by a machine /
+// AI and have not been reviewed by a native speaker). The shared pack schema is strict and
+// frozen with the Kafka contract, so the loader strips this one key before validating the
+// rest against `selectionListSeedPackSchemaV1`; the seed library then writes the pack's
+// non-source translations with `is_machine = (provenance === 'machine')`, so the API
+// (`is_machine`, `machine_translated`) never presents unreviewed text as human-reviewed.
+// Moving a pack from "machine" to "human" (after native review) is a new pack version.
 
 import fs from 'fs';
 import path from 'path';
+import { z } from 'zod';
 import { selectionListSeedPackSchemaV1, type SelectionListSeedPackV1 } from '@fuzefront/shared/kafka';
 
 /** `<service>/seed-packs/platform`, resolved the same from src/ (ts-jest) and dist/ (compiled). */
@@ -26,8 +37,16 @@ export class SeedPackError extends Error {
   }
 }
 
+/** Who wrote the pack's non-source translations: a reviewed human, or a machine (no native review yet). */
+export type TranslationProvenance = 'human' | 'machine';
+
+const translationProvenanceSchema = z.enum(['human', 'machine']);
+
+/** A validated platform pack plus its (service-local) translation provenance. */
+export type PlatformPackContent = SelectionListSeedPackV1 & { translationProvenance: TranslationProvenance };
+
 export interface PlatformPack {
-  pack: SelectionListSeedPackV1;
+  pack: PlatformPackContent;
   file: string;
 }
 
@@ -53,6 +72,15 @@ export function loadPlatformPacks(dir: string = DEFAULT_PLATFORM_PACK_DIR): Plat
     } catch (err) {
       throw new SeedPackError(file, [`cannot read/parse: ${(err as Error).message}`]);
     }
+    // Strip the service-local `translationProvenance` key (default 'human'), validate the rest with the shared schema.
+    let provenance: TranslationProvenance = 'human';
+    if (doc !== null && typeof doc === 'object' && !Array.isArray(doc) && 'translationProvenance' in doc) {
+      const { translationProvenance: rawProvenance, ...rest } = doc as Record<string, unknown>;
+      const p = translationProvenanceSchema.safeParse(rawProvenance);
+      if (!p.success) throw new SeedPackError(file, ['translationProvenance: must be "human" or "machine"']);
+      provenance = p.data;
+      doc = rest;
+    }
     const parsed = selectionListSeedPackSchemaV1.safeParse(doc);
     if (!parsed.success) {
       throw new SeedPackError(
@@ -60,7 +88,7 @@ export function loadPlatformPacks(dir: string = DEFAULT_PLATFORM_PACK_DIR): Plat
         (parsed as import('zod').SafeParseError<unknown>).error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`),
       );
     }
-    const pack = parsed.data;
+    const pack: PlatformPackContent = { ...parsed.data, translationProvenance: provenance };
     if (pack.packKey !== m[1] || pack.version !== Number(m[2])) {
       throw new SeedPackError(file, [`file name says ${m[1]} v${m[2]} but the content says ${pack.packKey} v${pack.version}`]);
     }
@@ -80,7 +108,7 @@ export function loadPlatformPack(
   packKey = 'platform-defaults',
   version?: number,
   dir: string = DEFAULT_PLATFORM_PACK_DIR,
-): SelectionListSeedPackV1 {
+): PlatformPackContent {
   const matches = loadPlatformPacks(dir).filter((p) => p.pack.packKey === packKey && (version === undefined || p.pack.version === version));
   if (matches.length === 0) {
     throw new SeedPackError(dir, [`no platform pack ${packKey}${version === undefined ? '' : ` v${version}`}`]);
@@ -89,8 +117,8 @@ export function loadPlatformPack(
 }
 
 /** The newest version of every platform pack key (what a new org / the reconciler should hold). */
-export function currentPlatformPacks(dir: string = DEFAULT_PLATFORM_PACK_DIR): SelectionListSeedPackV1[] {
-  const latest = new Map<string, SelectionListSeedPackV1>();
+export function currentPlatformPacks(dir: string = DEFAULT_PLATFORM_PACK_DIR): PlatformPackContent[] {
+  const latest = new Map<string, PlatformPackContent>();
   for (const { pack } of loadPlatformPacks(dir)) latest.set(pack.packKey, pack); // sorted ascending, last wins
   return [...latest.values()];
 }
