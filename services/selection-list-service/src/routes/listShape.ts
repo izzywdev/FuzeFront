@@ -1,10 +1,13 @@
-// listShape.ts — the wire shape of a SelectionList (openapi `SelectionList`, 4.1.0), shared by the list
+// listShape.ts — the wire shape of a SelectionList (openapi `SelectionList`, 4.2.0), shared by the list
 // routes and the fork route.
 //
 // 4.1.0 fields (`visibility`, `forked_from`, `editable`): always emitted by the implementation. They are real
 // only while the release flag `fuzefront.selection-lists.shared-lists` is ON; OFF reports the 4.0.0 state of
 // every list (visibility "private", forked_from null) and omits the `editable` hint (= unknown, which the
 // contract tells clients to read as "behave as at 4.0.0").
+//
+// 4.2.0 field (`revision`): ALWAYS the stored `selection_lists.revision`, in both states of the flag (the counter
+// predates shared lists: it is the `listRevision` of every selection-lists.* event; design record 13.3 R1/R4).
 
 import type { Request } from 'express';
 import { isVisibility, sameOrg, sharedListsOn } from '../lib/sharedLists';
@@ -28,6 +31,8 @@ export interface ListRow {
   forked_from_org_id?: string | null;
   forked_from_revision?: number | string | null;
   forked_at?: Date | string | null;
+  /** `selection_lists.revision` (BIGINT -> a string from pg): the list's per-list change counter, >= 1. */
+  revision: number | string;
   name: string | null;
   description: string | null;
   resolved_locale: string | null;
@@ -45,6 +50,7 @@ export const LIST_COLUMNS = `
         sl.created_by,
         sl.seed_source, sl.seed_key, sl.seed_version, sl.seed_user_modified,
         sl.visibility, sl.forked_from_list_id, sl.forked_from_org_id, sl.forked_from_revision, sl.forked_at,
+        sl.revision,
         sl.created_at,
         sl.updated_at,`;
 
@@ -112,6 +118,8 @@ export function formatList(row: ListRow, ctx: FormatCtx = { shared: false }) {
     visibility: ctx.shared && isVisibility(row.visibility) ? row.visibility : 'private',
     forked_from: ctx.shared ? formatForkedFrom(row) : null,
     ...(ctx.editable !== undefined ? { editable: ctx.editable } : {}),
+    // 4.2.0: always emitted, flag-independent. BIGINT arrives as a string from pg; Number() is exact below 2^53.
+    revision: Number(row.revision),
     created_at: row.created_at instanceof Date
       ? row.created_at.toISOString()
       : row.created_at,
