@@ -6,6 +6,7 @@
 import type {
   SelectionList,
   SelectionListItem,
+  QuotaScope,
   QuotaStatus,
   LocaleIndexResponse,
   LocaleEditorResponse,
@@ -163,12 +164,20 @@ export async function getSelectionList(listId: string): Promise<SelectionList> {
 
 export async function listItems(
   listId: string,
-  params: { cursor?: string | null } = {},
+  params: {
+    cursor?: string | null
+    /** `all` lists archived values too (the read-only detail badges them). */
+    status?: 'active' | 'archived' | 'all'
+    signal?: AbortSignal
+  } = {},
 ): Promise<PagedResponse<SelectionListItem>> {
   const qs = new URLSearchParams()
   if (params.cursor) qs.set('cursor', params.cursor)
+  if (params.status) qs.set('status', params.status)
   const url = `${BASE}/${listId}/items${qs.toString() ? '?' + qs.toString() : ''}`
-  const { data } = await request<PagedResponse<SelectionListItem>>(url)
+  const { data } = await request<PagedResponse<SelectionListItem>>(url, {
+    signal: params.signal,
+  })
   return data
 }
 
@@ -215,9 +224,25 @@ export async function reorderItems(
 
 // ── Quota ─────────────────────────────────────────────────────────────────────
 
+/**
+ * `GET /v1/selection-lists/quota` as the service sends it
+ * (`SelectionListQuotaStatus`: `{ organization_id, quotas: [{ scope,
+ * applies_to, limit, current }] }`). The 4.0.0 UI read `scopes`, which the
+ * service has never sent, so the index threw a TypeError on the first 200; this
+ * accepts the wire `quotas` (and the legacy `scopes`) and always returns
+ * `{ scopes }`, dropping the fields the UI does not use.
+ */
+interface QuotaWire {
+  scopes?: QuotaScope[]
+  quotas?: QuotaScope[]
+}
+
 export async function getQuota(): Promise<QuotaStatus> {
-  const { data } = await request<QuotaStatus>(`${BASE}/quota`)
-  return data
+  const { data } = await request<QuotaWire>(`${BASE}/quota`)
+  const entries = data?.quotas ?? data?.scopes ?? []
+  return {
+    scopes: entries.map(({ scope, current, limit }) => ({ scope, current, limit })),
+  }
 }
 
 // ── Translations ──────────────────────────────────────────────────────────────
