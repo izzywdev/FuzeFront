@@ -1,0 +1,65 @@
+name: gate-help-conformance
+
+# The help system cannot ship stale, wrong, or placeholder content.
+#
+# HelpPage.tsx sat in production calling the product "FrontFuse", hard-coding
+# http://localhost:3001 as the API host, telling developers to `npm install
+# @frontfuse/sdk` (a package that has never existed), giving Netlify/Vercel/AWS
+# deploy steps for a Kubernetes/Helm/Argo platform, and pointing support at dead
+# frontfuse.dev / discord.gg / your-org links. Every one was a deterministic,
+# greppable defect; nothing looked. This gate looks — at docs/help/** AND at the
+# help UI source — so that class of rot cannot reach production again.
+#
+# All strength lives in governance/help-system-policy.json (forbidden terms,
+# placeholder/URL patterns, frontmatter contract, media + link + manifest rules,
+# and the rampable freshness check) — the same policy-file idiom as
+# gate-frames-first and gate-ds-conformance, so tightening the gate is a reviewed diff.
+#
+# Triggers on both the content and the code surface so neither can drift alone.
+
+on:
+  pull_request:
+    paths:
+      - 'docs/help/**'
+      - 'frontend/src/pages/HelpPage.tsx'
+      - 'governance/help-system-policy.json'
+      - 'scripts/check-help-conformance.mjs'
+      - 'scripts/__tests__/check-help-conformance.test.mjs'
+      - '.github/workflows/gate-help-conformance.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gate-help-conformance-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  help-conformance:
+    name: Help content is accurate, fresh, and complete
+    runs-on: ubuntu-latest
+    steps:
+      # Actions pinned to immutable commit SHAs (repo hardening standard).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the gate diffs against the merge base
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.x'
+
+      # The gate's own logic — frontmatter parsing, the scanners, media/link/manifest
+      # checks — verified against fixtures, including a regression test asserting it
+      # flags the exact strings that shipped in the old HelpPage. A gate never shown
+      # to fail on the thing it was written for is not evidence of anything.
+      - name: Unit-test the gate itself
+        run: node --test scripts/__tests__/check-help-conformance.test.mjs
+
+      # github context is untrusted; route base_ref through an env var, never interpolate
+      # ${{ ... }} straight into run: (shell-injection path into the runner).
+      - name: Check help content and UI against policy
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags origin "$BASE_REF"
+          node scripts/check-help-conformance.mjs --base "origin/$BASE_REF"

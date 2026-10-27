@@ -5,6 +5,7 @@ import { useAppContext, App } from '../lib/shared'
 import { useFlag } from '../platform/featureFlags'
 import {
   createApp,
+  updateApp,
   updateAppStatus,
   deleteApp,
   fetchApps,
@@ -19,6 +20,15 @@ interface AppFormData {
   scope: string
   module: string
   description: string
+  // Operator-governed placement (DB-authoritative). Booleans are carried as
+  // 'true'/'false' strings so the one string-typed form handler covers them.
+  scopeLevel: 'personal' | 'organization' | 'both'
+  orgInstallMode: 'self' | 'everyone' | 'both'
+  personalRemovable: 'true' | 'false'
+  orgRemovable: 'true' | 'false'
+  systemApp: 'true' | 'false'
+  defaultInstallPersonal: 'true' | 'false'
+  defaultInstallOrg: 'true' | 'false'
 }
 
 const initialFormData: AppFormData = {
@@ -30,6 +40,13 @@ const initialFormData: AppFormData = {
   scope: '',
   module: '',
   description: '',
+  scopeLevel: 'both',
+  orgInstallMode: 'both',
+  personalRemovable: 'true',
+  orgRemovable: 'true',
+  systemApp: 'false',
+  defaultInstallPersonal: 'false',
+  defaultInstallOrg: 'false',
 }
 
 export default function AdminPage() {
@@ -68,9 +85,25 @@ export default function AdminPage() {
 
     try {
       if (editingApp) {
-        // Update existing app (implement PUT endpoint)
-        console.log('Update app:', editingApp.id, formData)
-        // For now, just refresh the list
+        // Persist the edited fields via PUT /api/apps/:id, then refresh. The
+        // governance booleans are carried as strings in the form, so convert.
+        await updateApp(editingApp.id, {
+          name: formData.name,
+          url: formData.url,
+          iconUrl: formData.iconUrl,
+          integrationType: formData.integrationType,
+          remoteUrl: formData.remoteUrl,
+          scope: formData.scope,
+          module: formData.module,
+          description: formData.description,
+          scopeLevel: formData.scopeLevel,
+          orgInstallMode: formData.orgInstallMode,
+          personalRemovable: formData.personalRemovable === 'true',
+          orgRemovable: formData.orgRemovable === 'true',
+          systemApp: formData.systemApp === 'true',
+          defaultInstallPersonal: formData.defaultInstallPersonal === 'true',
+          defaultInstallOrg: formData.defaultInstallOrg === 'true',
+        } as any)
         await loadApps()
       } else {
         // Create new app
@@ -91,6 +124,9 @@ export default function AdminPage() {
 
   const handleEdit = (app: App) => {
     setEditingApp(app)
+    const a = app as any
+    const boolStr = (v: unknown, dflt: boolean): 'true' | 'false' =>
+      (v === undefined || v === null ? dflt : Boolean(v)) ? 'true' : 'false'
     setFormData({
       name: app.name,
       url: app.url,
@@ -100,6 +136,14 @@ export default function AdminPage() {
       scope: app.scope || '',
       module: app.module || '',
       description: app.description || '',
+      scopeLevel: (a.scopeLevel as AppFormData['scopeLevel']) || 'both',
+      orgInstallMode:
+        (a.orgInstallMode as AppFormData['orgInstallMode']) || 'both',
+      personalRemovable: boolStr(a.personalRemovable, true),
+      orgRemovable: boolStr(a.orgRemovable, true),
+      systemApp: boolStr(a.systemApp, false),
+      defaultInstallPersonal: boolStr(a.defaultInstallPersonal, false),
+      defaultInstallOrg: boolStr(a.defaultInstallOrg, false),
     })
     setShowForm(true)
   }
@@ -289,6 +333,101 @@ export default function AdminPage() {
                 />
               </div>
             </div>
+
+            {/* Governance is DB-authoritative and only settable via the update
+                path (PUT /api/apps/:id). The create POST does not persist it, so
+                these controls appear in edit mode only; a new app is configured
+                here right after it is registered. */}
+            {editingApp && (
+              <>
+            <h4 style={{ marginTop: '1.5rem', marginBottom: '0.5rem' }}>
+              Placement &amp; governance
+            </h4>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '1rem',
+              }}
+            >
+              <Select
+                label="Install scope"
+                value={formData.scopeLevel}
+                onChange={e => handleInputChange('scopeLevel', e.target.value)}
+                options={[
+                  { value: 'both', label: 'Personal & organization' },
+                  { value: 'personal', label: 'Personal only' },
+                  { value: 'organization', label: 'Organization only' },
+                ]}
+              />
+              <Select
+                label="Org install mode"
+                value={formData.orgInstallMode}
+                onChange={e =>
+                  handleInputChange('orgInstallMode', e.target.value)
+                }
+                options={[
+                  { value: 'everyone', label: 'Whole org (everyone)' },
+                  { value: 'self', label: 'Per member (self)' },
+                  { value: 'both', label: 'Either' },
+                ]}
+              />
+              <Select
+                label="Default-install for new users"
+                value={formData.defaultInstallPersonal}
+                onChange={e =>
+                  handleInputChange('defaultInstallPersonal', e.target.value)
+                }
+                options={[
+                  { value: 'false', label: 'No' },
+                  { value: 'true', label: 'Yes (personal)' },
+                ]}
+              />
+              <Select
+                label="Default-install for new orgs"
+                value={formData.defaultInstallOrg}
+                onChange={e =>
+                  handleInputChange('defaultInstallOrg', e.target.value)
+                }
+                options={[
+                  { value: 'false', label: 'No' },
+                  { value: 'true', label: 'Yes (org, everyone)' },
+                ]}
+              />
+              <Select
+                label="Removable from personal"
+                value={formData.personalRemovable}
+                onChange={e =>
+                  handleInputChange('personalRemovable', e.target.value)
+                }
+                options={[
+                  { value: 'true', label: 'User can uninstall' },
+                  { value: 'false', label: 'Locked (core / system)' },
+                ]}
+              />
+              <Select
+                label="Removable from org"
+                value={formData.orgRemovable}
+                onChange={e =>
+                  handleInputChange('orgRemovable', e.target.value)
+                }
+                options={[
+                  { value: 'true', label: 'Admin can uninstall' },
+                  { value: 'false', label: 'Locked (core / system)' },
+                ]}
+              />
+              <Select
+                label="System app"
+                value={formData.systemApp}
+                onChange={e => handleInputChange('systemApp', e.target.value)}
+                options={[
+                  { value: 'false', label: 'No' },
+                  { value: 'true', label: 'Yes (platform-managed)' },
+                ]}
+              />
+            </div>
+              </>
+            )}
 
             <div style={{ marginTop: '1.5rem', display: 'flex', gap: '1rem' }}>
               <Button type="submit" variant="primary" disabled={loading}>

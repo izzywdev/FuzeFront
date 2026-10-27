@@ -27,6 +27,7 @@ COPY backend/security/package.json ./backend/security/
 COPY backend/applications/package.json ./backend/applications/
 COPY shared/package.json ./shared/
 COPY packages/identity/package.json ./packages/identity/
+COPY packages/events/package.json ./packages/events/
 COPY packages/auth/package.json ./packages/auth/
 COPY packages/telemetry/package.json ./packages/telemetry/
 COPY packages/service-auth/package.json ./packages/service-auth/
@@ -58,6 +59,9 @@ COPY services/email-service/package.json ./services/email-service/
 COPY services/notification-service/package.json ./services/notification-service/
 COPY services/selection-list-service/package.json ./services/selection-list-service/
 COPY services/devportal-service/package.json ./services/devportal-service/
+COPY packages/billing-types/package.json ./packages/billing-types/
+COPY packages/metered-usage/package.json ./packages/metered-usage/
+COPY services/billing-service/package.json ./services/billing-service/
 
 RUN npm ci
 
@@ -66,19 +70,24 @@ COPY shared/ ./shared/
 COPY backend/core/ ./backend/core/
 COPY packages/feature-flags/ ./packages/feature-flags/
 COPY packages/identity/ ./packages/identity/
+COPY packages/telemetry/ ./packages/telemetry/
 COPY backend/applications/ ./backend/applications/
 
 # Build the shared kafka sub-barrel, then core, then the flag client, then the
-# identity package, then applications-service. @fuzefront/feature-flags and
-# @izzywdev/fuzefront-identity must both be BUILT here: their package `main`
-# points at dist/, and without this the workspace symlink resolves to an empty
-# package. For feature-flags that silently defaulted every flag; for identity
-# apps.ts's top-level `mintId`/`toUuid` import would crashloop the container at
-# boot with "Cannot find module '@izzywdev/fuzefront-identity'".
+# identity package, then telemetry, then applications-service. @fuzefront/
+# feature-flags and @izzywdev/fuzefront-identity must both be BUILT here: their
+# package `main` points at dist/, and without this the workspace symlink
+# resolves to an empty package. For feature-flags that silently defaulted
+# every flag; for identity apps.ts's top-level `mintId`/`toUuid` import would
+# crashloop the container at boot with "Cannot find module
+# '@izzywdev/fuzefront-identity'". @fuzefront/telemetry likewise points at
+# dist/ — index.ts calls initTelemetry()/tracingMiddleware() at module load,
+# so an unbuilt telemetry package crashloops the container the same way.
 RUN cd shared && npm run build:kafka
 RUN cd backend/core && npm run build
 RUN cd packages/feature-flags && npm run build
 RUN cd packages/identity && npm run build
+RUN cd packages/telemetry && npm run build
 RUN cd backend/applications && npm run build
 
 # ---------- production ----------
@@ -100,6 +109,11 @@ COPY --from=build --chown=applications:nodejs /app/packages/feature-flags/packag
 # built dist + manifest so the link resolves at runtime (see the build-stage note).
 COPY --from=build --chown=applications:nodejs /app/packages/identity/dist ./packages/identity/dist
 COPY --from=build --chown=applications:nodejs /app/packages/identity/package.json ./packages/identity/package.json
+# Same reasoning as identity/feature-flags above: ship built telemetry dist +
+# manifest so the node_modules workspace symlink resolves at runtime. Its OTel
+# SDK runtime deps hoist into the shared node_modules copied above.
+COPY --from=build --chown=applications:nodejs /app/packages/telemetry/dist ./packages/telemetry/dist
+COPY --from=build --chown=applications:nodejs /app/packages/telemetry/package.json ./packages/telemetry/package.json
 COPY --from=build --chown=applications:nodejs /app/backend/applications/dist ./backend/applications/dist
 COPY --from=build --chown=applications:nodejs /app/backend/applications/package.json ./backend/applications/package.json
 

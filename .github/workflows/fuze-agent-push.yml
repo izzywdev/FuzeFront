@@ -1,0 +1,37 @@
+# fuze:managed template=fuze-agent-push.yml baseline=v1 digest=sha256:8d21e532bf8714e56459a8514fedfe4ba949512ac622b5cf6463b3c3ebe1f7f7
+name: Fuze agent branch push
+
+# THE SECRET-LESS HALF OF `fuze-auto-pr.yml`. It exists only so that a push to an agent
+# branch (`claude/**`, `fuze/**`) produces a completed workflow run, which is what
+# `fuze-auto-pr.yml` (a `workflow_run` workflow, always defined by the DEFAULT branch) reacts to.
+#
+# WHY THE SPLIT. A `push` workflow is defined by the pushed ref, so anyone who can push an
+# agent branch controls this file's content on that branch. That is harmless HERE and it was
+# not harmless in `fuze-auto-pr.yml`, which used to be `on: push` and held the coder PAT, the
+# bot PAT and the fuze-agent App private key. This workflow therefore:
+#   * declares `permissions: {}` — its GITHUB_TOKEN can do nothing;
+#   * references NO `secrets.*` and NO `vars.*` — there is nothing to steal;
+#   * checks nothing out and runs nothing from the pushed branch;
+#   * does no work of its own. `scripts/gate_credential_exposure.py` (hub CI) fails if a
+#     secret ever appears in a `push`-on-agent-branch workflow.
+#
+# A pusher who edits or deletes this file on their branch only loses the fast path: the hourly
+# `schedule` sweep in `fuze-auto-pr.yml` still finds the branch and opens its PR.
+#
+# The workflow `name:` above is a CONTRACT with fuze-auto-pr.yml's `workflow_run.workflows`.
+# Rename one and you must rename the other, or agent PRs silently stop opening.
+on:
+  push:
+    branches:
+      - 'claude/**'
+      - 'fuze/**'
+
+permissions: {}
+
+jobs:
+  announce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Agent branch pushed
+        run: echo "Agent branch pushed. fuze-auto-pr.yml (workflow_run, default-branch definition) opens the draft PR."

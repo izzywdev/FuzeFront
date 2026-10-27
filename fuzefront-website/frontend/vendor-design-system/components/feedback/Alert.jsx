@@ -9,11 +9,14 @@ const TONES = {
 
 /**
  * Inline alert banner — replaces the recurring `border: 1px solid var(--error-color)`
- * div pattern. Use `tone` to pick the severity; content goes in `children`.
+ * div pattern. Use `tone` to pick the severity (`error` / `warning` / `success` /
+ * `info`); content goes in `children`. An optional decorative `icon` sits on the
+ * logical start edge (inherits the tone colour via `currentColor`).
  */
 export function Alert({
   tone = "error",
   title,
+  icon,
   children,
   onDismiss,
   role = "alert",
@@ -40,6 +43,11 @@ export function Alert({
       }}
       {...rest}
     >
+      {icon && (
+        <span aria-hidden="true" style={{ flex: "none", display: "inline-flex", lineHeight: 0, marginBlockStart: "var(--space-1)" }}>
+          {icon}
+        </span>
+      )}
       <div style={{ flex: 1, minWidth: 0 }}>
         {title && (
           <div style={{ fontWeight: "var(--weight-semibold)", marginBottom: "var(--space-1)" }}>

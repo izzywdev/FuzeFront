@@ -58,15 +58,23 @@ WORKDIR /app/frontend
 # the CF-edge/same-origin prod model.
 ARG VITE_API_URL=
 ARG VITE_APP_TITLE="FuzeFront Platform"
-# NOTE: there is deliberately no VITE_FF_* build arg. Feature flags are resolved
+# fuzefront.auth.experience (FFRNT-360) is the ONE build-time flag: it gates PUBLIC
+# pre-auth routes (/signup/verify, /verify/email, /reset) where no session exists,
+# so GET /api/flags (authenticated) cannot serve it. Default OFF; release.yml
+# sets it from the repo variable VITE_FF_AUTH_EXPERIENCE. Read by
+# isAuthExperienceEnabled() in @fuzefront/auth-ui.
+ARG VITE_FF_AUTH_EXPERIENCE=false
+# NOTE: apart from the pre-auth flag above, there is deliberately no VITE_FF_* build arg. Feature flags are resolved
 # PER USER at runtime via GET /api/flags (backend -> Unleash), so they can be
 # targeted (e.g. the `developers` segment). A build-time constant is baked into
 # the bundle and identical for every user, which made per-user rollout
-# impossible. Local/e2e forcing is done with the backend's FLAGS_FORCE_ON env.
+# impossible. Local/e2e forcing is done with the backend's offline OpenFeature
+# provider (FUZE_FLAGS_PROVIDER=offline).
 
 # Set environment variables for build
 ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_APP_TITLE=$VITE_APP_TITLE
+ENV VITE_FF_AUTH_EXPERIENCE=$VITE_FF_AUTH_EXPERIENCE
 
 RUN npm ci
 

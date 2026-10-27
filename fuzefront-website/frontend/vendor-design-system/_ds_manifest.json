@@ -58,6 +58,10 @@
       "sourcePath": "components/core/Text.jsx"
     },
     {
+      "name": "TextLink",
+      "sourcePath": "components/core/TextLink.jsx"
+    },
+    {
       "name": "DataTable",
       "sourcePath": "components/data/DataTable.jsx"
     },
@@ -110,6 +114,10 @@
       "sourcePath": "components/feedback/Stepper.jsx"
     },
     {
+      "name": "StrengthMeter",
+      "sourcePath": "components/feedback/StrengthMeter.jsx"
+    },
+    {
       "name": "Toast",
       "sourcePath": "components/feedback/Toast.jsx"
     },
@@ -130,6 +138,10 @@
       "sourcePath": "components/forms/FileDropZone.jsx"
     },
     {
+      "name": "InlineValidatedInput",
+      "sourcePath": "components/forms/InlineValidatedInput.jsx"
+    },
+    {
       "name": "Input",
       "sourcePath": "components/forms/Input.jsx"
     },
@@ -138,8 +150,16 @@
       "sourcePath": "components/forms/PasswordChecklist.jsx"
     },
     {
+      "name": "RadioCardGroup",
+      "sourcePath": "components/forms/RadioCardGroup.jsx"
+    },
+    {
       "name": "SearchField",
       "sourcePath": "components/forms/SearchField.jsx"
+    },
+    {
+      "name": "SegmentedControl",
+      "sourcePath": "components/forms/SegmentedControl.jsx"
     },
     {
       "name": "Select",
@@ -152,6 +172,10 @@
     {
       "name": "Toggle",
       "sourcePath": "components/forms/Toggle.jsx"
+    },
+    {
+      "name": "TurnstileContainer",
+      "sourcePath": "components/forms/TurnstileContainer.jsx"
     },
     {
       "name": "AppCard",
@@ -188,6 +212,10 @@
     {
       "name": "Eyebrow",
       "sourcePath": "components/layout/Eyebrow.jsx"
+    },
+    {
+      "name": "HeroPatternOverlay",
+      "sourcePath": "components/layout/HeroPatternOverlay.jsx"
     },
     {
       "name": "InfoRow",

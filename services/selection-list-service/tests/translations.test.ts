@@ -25,6 +25,16 @@ import { computeSourceHash } from '../src/routes/translations';
 
 // ─── Module mocks ────────────────────────────────────────────────────────────
 
+// The platform-org suspension reads (a tiny projection query, see lib/sharedLists.suspendedOrgs) are out of scope
+// for this mocked 4.0.0 suite: nothing is suspended. Their real behaviour is pinned against Postgres in
+// shared-lists.platform-org-guard / suspension-race / suspension-owner.
+jest.mock('../src/lib/sharedLists', () => ({
+  ...jest.requireActual('../src/lib/sharedLists'),
+  suspendedOrgs: async () => [],
+  suspendedOrgsFor: async () => [],
+  orgWritesSuspended: async () => false,
+}));
+
 jest.mock('../src/db', () => {
   const db: any = jest.fn();
   // The mutating routes run inside db.transaction(trx => ...). The trx is the
@@ -32,7 +42,8 @@ jest.mock('../src/db', () => {
   db.transaction = jest.fn((cb: (trx: unknown) => unknown) => cb(db));
   return { db };
 });
-jest.mock('../src/flags', () => ({ isSelectionListsEnabled: jest.fn() }));
+// The shared-lists release flag is pinned OFF here: this suite pins the 4.0.0 behaviour.
+jest.mock('../src/flags', () => ({ isSelectionListsEnabled: jest.fn(), isSharedListsEnabled: jest.fn(async () => false) }));
 // `list_locales` (review M-4): the lock + the locale count are covered against the real counting code in
 // quota.service.test.ts and quota.db.test.ts; here the route's REACTION to a refusal is what is pinned, and
 // the chain fixtures below (a fixed sequence of db() calls) stay exactly as they were.

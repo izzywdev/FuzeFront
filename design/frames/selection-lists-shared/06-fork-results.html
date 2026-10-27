@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Shared lists — Fork results</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="shell">
+  <header class="topbar">
+    <div class="wordmark"><span class="fuse">Fuze</span>Front</div>
+    <div class="spacer"></div>
+    <div class="launch-btn" title="App launcher" aria-label="App launcher">▦</div>
+    <div class="avatar" title="Sam Ortiz · member of Globex Freight">SO</div>
+  </header>
+  <div class="body">
+    <nav class="side" aria-label="Primary">
+      <div class="section-label">Workspace</div>
+      <a class="nav-item" href="#"><span class="ico">▤</span> Dashboard</a>
+      <a class="nav-item" href="#"><span class="ico">▦</span> Applications</a>
+      <div class="section-label">Organization</div>
+      <a class="nav-item" href="#"><span class="ico">☺</span> Members</a>
+      <a class="nav-item active" href="01-shared-index.html" data-nav="selection-lists" aria-current="page"><span class="ico">☰</span> Selection Lists</a>
+      <div class="section-label">Account</div>
+      <a class="nav-item" href="#"><span class="ico">⚙</span> Settings</a>
+    </nav>
+    <main class="content" data-frame="06-fork-results">
+
+      <div class="sl-crumb"><a href="01-shared-index.html">Selection Lists</a> · <a href="02-common-detail.html">Priority</a> · Fork — every answer</div>
+      <h1 class="page-title">Every answer to “Fork list”</h1>
+      <p class="page-sub">The UI branches on HTTP status + <code class="sl-code">code</code> + <code class="sl-code">reason</code> only — never on
+        <code class="sl-code">message</code>. Success closes the dialog and navigates; every refusal keeps the dialog open with the answer in
+        place of the options, and never loses where the user came from.</p>
+
+      <!-- ===== success ===== -->
+      <div class="sl-section" id="created" style="margin-top: var(--space-6);">
+        <h2>201 Created — a new fork</h2>
+        <div class="sl-grid2">
+          <div>
+            <p class="sl-case">Lands on the fork's detail, with a toast</p>
+            <div class="sl-toast" role="status" data-result="created" data-toast="forked">
+              <span aria-hidden="true">⑂</span>
+              <span><b>Forked.</b> Globex Freight now uses its own <b>Priority</b> in every form. You're its owner.</span>
+            </div>
+            <p class="sl-field__hint">Route: <code class="sl-code">/settings/selection-lists/{fork.id}</code> from <code class="sl-code">list.id</code> in the
+              <code class="sl-code">201</code> body. The detail shows the editable 4.0.0 value editor plus the provenance card in its
+              “comparison unavailable” state (<a href="07-fork-detail.html#unknown">frame 7</a>): under 4.1.0 the
+              <code class="sl-code">201</code> carries only <code class="sl-code">forked_from.revision</code> and the source exposes no current
+              revision, so a new fork is <b>never</b> shown as “up to date”. The list index is refreshed: the common
+              <b>Priority</b> leaves the Common group and the fork appears under Your organization.</p>
+          </div>
+          <div>
+            <p class="sl-case">Private draft variant</p>
+            <div class="sl-toast" role="status" data-result="created-private">
+              <span aria-hidden="true">⑂</span>
+              <span><b>Draft fork created.</b> Only people with a role see it — everyone else still uses the common list until you set
+                it to <b>Organization</b>.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sl-section" id="existing">
+        <h2>200 OK — your organization already had a fork</h2>
+        <div class="sl-grid2">
+          <div>
+            <p class="sl-case">Existing fork, active</p>
+            <div class="sl-banner sl-banner--info" data-result="existing" role="status" style="margin-bottom: 0;">
+              <span class="sl-banner__ico" aria-hidden="true">⑂</span>
+              <div class="sl-banner__body">
+                <p class="sl-banner__title">You're on your organization's existing version</p>
+                <p>Globex Freight already had a fork of <b>Priority</b> (made Sep 2). Nothing new was created and nothing was copied.</p>
+              </div>
+            </div>
+            <p class="sl-field__hint">Shown on arrival at the existing fork's detail (the dialog closes and navigates, as for 201). Not an error:
+              no red, no retry.</p>
+          </div>
+          <div>
+            <p class="sl-case">Existing fork, archived (it was the “revert to common”)</p>
+            <div class="sl-banner sl-banner--warn" data-result="existing-archived" role="status" style="margin-bottom: 0;">
+              <span class="sl-banner__ico" aria-hidden="true">⑂</span>
+              <div class="sl-banner__body">
+                <p class="sl-banner__title">Your organization's fork is archived</p>
+                <p>Forms use the common list while it's archived. Restore it to use your version again — its values and translations are
+                  as you left them.</p>
+                <div class="sl-banner__actions">
+                  <button class="btn btn-primary sl-btn-sm" data-action="restore-fork">Restore your version</button>
+                </div>
+              </div>
+            </div>
+            <p class="sl-field__hint">“Restore” is <code class="sl-code">PATCH {"status":"active"}</code> and renders only when the fork's
+              <code class="sl-code">editable</code> is true. Its answers are below — a <code class="sl-code">403</code> is branched on
+              <code class="sl-code">code</code>, never read as “no permission” by status alone.</p>
+          </div>
+        </div>
+
+        <div class="sl-grid2" id="restore-results" style="margin-top: var(--space-5);">
+          <div>
+            <p class="sl-case">Restoring — <code class="sl-code">PATCH {"status":"active"}</code> in flight</p>
+            <div class="sl-banner sl-banner--warn" data-result="existing-archived" data-state="restoring" role="status" aria-busy="true" style="margin-bottom: 0;">
+              <span class="sl-banner__ico" aria-hidden="true">⑂</span>
+              <div class="sl-banner__body">
+                <p class="sl-banner__title">Your organization's fork is archived</p>
+                <div class="sl-banner__actions">
+                  <button class="btn btn-primary sl-btn-sm" data-action="restore-fork" disabled aria-busy="true"><span class="sl-spinner" aria-hidden="true"></span> Restoring…</button>
+                </div>
+              </div>
+            </div>
+            <p class="sl-field__hint">Native <code class="sl-code">disabled</code> while in flight, so a second activation cannot send a second request.</p>
+          </div>
+          <div>
+            <p class="sl-case">Restore refused — 403 QUOTA_EXCEEDED · scope org_lists | user_lists</p>
+            <div class="sl-banner sl-banner--error" data-case="restore-quota" data-error="QUOTA_EXCEEDED" data-quota-scope="org_lists" role="alert" style="margin-bottom: var(--space-3);">
+              <span class="sl-banner__ico" aria-hidden="true">▣</span>
+              <div class="sl-banner__body">
+                <p class="sl-banner__title">Globex Freight has reached its list limit</p>
+                <p>100 of 100 organization lists are active. Restoring makes this fork active again, so it counts. Archive a list you no longer
+                  need, or ask an admin about the limit. The fork stays archived.</p>
+              </div>
+            </div>
+            <dl class="sl-facts" style="margin: 0;" data-case="restore-quota">
+              <dt>user_lists</dt><dd data-quota-scope="user_lists">“The person who created this fork already has the most active lists they may create (25 of 25). The fork stays archived.”</dd>
+              <dt>other scope</dt><dd>“A limit was reached. The fork stays archived.”</dd>
+            </dl>
+            <p class="sl-field__hint">Un-archiving rechecks <code class="sl-code">org_lists</code> and, for a list a user created, that creator's
+              <code class="sl-code">user_lists</code> — the same scope-driven copy as the fork refusal (<a href="#quota">quota</a>), with numbers from
+              <code class="sl-code">limit</code>/<code class="sl-code">current</code>. <code class="sl-code">user_lists</code> counts the fork's
+              <b>creator</b>, who may not be the person restoring it, so it never says “you”.</p>
+          </div>
+          <div>
+            <p class="sl-case">Restore refused — 403 FORBIDDEN</p>
+            <div class="sl-banner sl-banner--error" data-case="restore-forbidden" data-error="FORBIDDEN" role="alert" style="margin-bottom: 0;">
+              <span class="sl-banner__ico" aria-hidden="true">⚠</span>
+              <div class="sl-banner__body"><p class="sl-banner__title">You don't have permission to restore this list</p>
+                <p>The approved 4.0.0 permission message. The fork stays archived.</p></div>
+            </div>
+            <p class="sl-field__hint">Only <code class="sl-code">code: FORBIDDEN</code> reaches this message; <code class="sl-code">QUOTA_EXCEEDED</code> shares the
+              403 status and renders the quota copy instead.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== refusals ===== -->
+      <div class="sl-section">
+        <h2>Refusals — shown inside the dialog</h2>
+        <div class="sl-grid2">
+
+          <div id="fork-exists">
+            <p class="sl-case">409 CONFLICT · reason fork_exists</p>
+            <div class="sl-modal" role="dialog" aria-modal="true" aria-label="Fork refused" data-dialog="fork" data-result="fork_exists">
+              <div class="sl-modal__seam"></div>
+              <div class="sl-modal__body" style="padding-top: var(--space-5);">
+                <div class="sl-banner sl-banner--warn" data-error="CONFLICT" data-reason="fork_exists" role="alert" style="margin-bottom: 0;">
+                  <span class="sl-banner__ico" aria-hidden="true">⑂</span>
+                  <div class="sl-banner__body">
+                    <p class="sl-banner__title">Your organization already has a fork you can't see</p>
+                    <p>Someone in Globex Freight forked <b>Priority</b> as a private draft. A second fork isn't possible. Only that
+                      fork's owner can give you a role on it or share it with the organization — ask whoever is preparing it.</p>
+                  </div>
+                </div>
+              </div>
+              <div class="sl-modal__foot"><a class="btn btn-ghost" href="02-common-detail.html" data-action="close">Close</a></div>
+            </div>
+            <p class="sl-field__hint">The 409 carries no fork id (you can't read it), so there is nothing to link to and the UI does not invent
+              one. Not retryable. No escalation to an organization admin: list permissions are instance-only, so a tenant
+              <code class="sl-code">admin</code> holds no <code class="sl-code">manage_access</code> on the fork either — only its owner can act.</p>
+          </div>
+
+          <div id="not-applicable">
+            <p class="sl-case">409 CONFLICT · reason fork_not_applicable</p>
+            <div class="sl-modal" role="dialog" aria-modal="true" aria-label="Fork refused" data-dialog="fork" data-result="fork_not_applicable">
+              <div class="sl-modal__seam"></div>
+              <div class="sl-modal__body" style="padding-top: var(--space-5);">
+                <div class="sl-banner sl-banner--info" data-error="CONFLICT" data-reason="fork_not_applicable" role="alert" style="margin-bottom: 0;">
+                  <span class="sl-banner__ico" aria-hidden="true">☰</span>
+                  <div class="sl-banner__body">
+                    <p class="sl-banner__title">This list already belongs to your organization</p>
+                    <p>There's nothing to fork — ask the list's owner for an editor role instead.</p>
+                  </div>
+                </div>
+              </div>
+              <div class="sl-modal__foot"><a class="btn btn-ghost" href="03-readonly-states.html" data-action="close">Close</a></div>
+            </div>
+            <p class="sl-field__hint">Defensive only: the CTA is never offered on an <code class="sl-code">org</code>/<code class="sl-code">private</code> list
+              (frame 3). Reaching this means stale data; the detail reloads on close.</p>
+          </div>
+
+          <div id="key-taken">
+            <p class="sl-case">409 CONFLICT · no reason — the key is taken by another list</p>
+            <div class="sl-modal" role="dialog" aria-modal="true" aria-label="Fork refused" data-dialog="fork" data-result="key-conflict">
+              <div class="sl-modal__seam"></div>
+              <div class="sl-modal__body" style="padding-top: var(--space-5);">
+                <div class="sl-banner sl-banner--warn" data-error="CONFLICT" data-reason="none" role="alert" style="margin-bottom: 0;">
+                  <span class="sl-banner__ico" aria-hidden="true">⚠</span>
+                  <div class="sl-banner__body">
+                    <p class="sl-banner__title">Your organization already has a list with the key <span class="sl-key">priority</span></p>
+                    <p>It isn't a fork of this common list (for example, an older copy made before common lists existed), so a fork can't
+                      take its key. Nothing was created.</p>
+                  </div>
+                </div>
+              </div>
+              <div class="sl-modal__foot"><a class="btn btn-ghost" href="01-shared-index.html" data-action="close">Back to lists</a></div>
+            </div>
+            <p class="sl-field__hint">The plain <code class="sl-code">409</code> proves only the key collision. The colliding list may be archived,
+              private or otherwise unreadable to you, so the copy never says forms use it, never names or links it, and the UI looks nothing up.
+              “Not a fork of this common list” is derivable: a fork of this source would have answered <code class="sl-code">200</code> or
+              <code class="sl-code">fork_exists</code>.</p>
+          </div>
+
+          <div id="quota">
+            <p class="sl-case">403 QUOTA_EXCEEDED · scope org_lists | user_lists | list_items</p>
+            <div class="sl-modal" role="dialog" aria-modal="true" aria-label="Fork refused" data-dialog="fork" data-result="quota">
+              <div class="sl-modal__seam"></div>
+              <div class="sl-modal__body" style="padding-top: var(--space-5);">
+                <div class="sl-banner sl-banner--error" data-error="QUOTA_EXCEEDED" data-quota-scope="org_lists" role="alert" style="margin-bottom: var(--space-3);">
+                  <span class="sl-banner__ico" aria-hidden="true">▣</span>
+                  <div class="sl-banner__body">
+                    <p class="sl-banner__title">Globex Freight has reached its list limit</p>
+                    <p>100 of 100 organization lists are in use. A fork is a new list, so it counts. Archive a list you no longer need, or
+                      ask an admin about the limit. Nothing was created.</p>
+                  </div>
+                </div>
+                <dl class="sl-facts" style="margin: 0;">
+                  <dt>user_lists</dt><dd data-quota-scope="user_lists">“You've reached the number of lists you can own (25 of 25).”</dd>
+                  <dt>list_items</dt><dd data-quota-scope="list_items">“This common list has more values (312) than a list in your organization may hold (250).”</dd>
+                </dl>
+              </div>
+              <div class="sl-modal__foot"><a class="btn btn-ghost" href="02-common-detail.html" data-action="close">Close</a></div>
+            </div>
+            <p class="sl-field__hint">Copy is chosen by <code class="sl-code">scope</code>, numbers come from <code class="sl-code">limit</code>/<code class="sl-code">current</code>
+              — the approved 4.0.0 QuotaWarning wording. An unknown scope falls back to “A limit was reached”.</p>
+          </div>
+
+          <div id="too-large">
+            <p class="sl-case">400 VALIDATION_ERROR — source over 5000 values</p>
+            <div class="sl-modal" role="dialog" aria-modal="true" aria-label="Fork refused" data-dialog="fork" data-result="too-large">
+              <div class="sl-modal__seam"></div>
+              <div class="sl-modal__body" style="padding-top: var(--space-5);">
+                <div class="sl-banner sl-banner--error" data-error="VALIDATION_ERROR" data-case="fork-size-cap" role="alert" style="margin-bottom: 0;">
+                  <span class="sl-banner__ico" aria-hidden="true">▣</span>
+                  <div class="sl-banner__body">
+                    <p class="sl-banner__title">This list is too large to fork</p>
+                    <p>Lists with more than 5,000 values (archived ones included) can't be forked. You can still pick from it in every form.</p>
+                  </div>
+                </div>
+              </div>
+              <div class="sl-modal__foot"><a class="btn btn-ghost" href="02-common-detail.html" data-action="close">Close</a></div>
+            </div>
+            <p class="sl-field__hint">Server-decided only — the dialog does <b>not</b> pre-check the size. An organization may already hold a fork
+              of this source the page can't see (archived, so the key lookup skips it); that request answers <code class="sl-code">200</code>
+              with the existing fork and copies nothing (<a href="#existing">existing, archived → Restore</a>), and a client-side cap would have
+              blocked it. Confirm stays enabled; this message renders only from the service's <code class="sl-code">400</code>.</p>
+          </div>
+
+          <div id="forbidden">
+            <p class="sl-case">403 FORBIDDEN — you can't create lists</p>
+            <div class="sl-modal" role="dialog" aria-modal="true" aria-label="Fork refused" data-dialog="fork" data-result="forbidden">
+              <div class="sl-modal__seam"></div>
+              <div class="sl-modal__body" style="padding-top: var(--space-5);">
+                <div class="sl-banner sl-banner--error" data-error="FORBIDDEN" data-case="fork-no-create" role="alert" style="margin-bottom: 0;">
+                  <span class="sl-banner__ico" aria-hidden="true">⚠</span>
+                  <div class="sl-banner__body">
+                    <p class="sl-banner__title">You can't fork lists in Globex Freight</p>
+                    <p>Forking creates a list, and your role can't create lists. Ask an admin or editor to fork <b>Priority</b>.</p>
+                  </div>
+                </div>
+              </div>
+              <div class="sl-modal__foot"><a class="btn btn-ghost" href="02-common-detail.html" data-action="close">Close</a></div>
+            </div>
+            <p class="sl-field__hint">After this the detail page replaces its Fork CTA with this explanation for the rest of the session.</p>
+          </div>
+
+          <div id="not-found">
+            <p class="sl-case">404 NOT_FOUND — the source is gone or unreadable</p>
+            <div class="sl-modal" role="dialog" aria-modal="true" aria-label="Fork refused" data-dialog="fork" data-result="not-found">
+              <div class="sl-modal__seam"></div>
+              <div class="sl-modal__body" style="padding-top: var(--space-5);">
+                <div class="sl-banner sl-banner--error" data-error="NOT_FOUND" role="alert" style="margin-bottom: 0;">
+                  <span class="sl-banner__ico" aria-hidden="true">∅</span>
+                  <div class="sl-banner__body">
+                    <p class="sl-banner__title">This list is no longer available</p>
+                    <p>It may have been removed. Nothing was created.</p>
+                  </div>
+                </div>
+              </div>
+              <div class="sl-modal__foot"><a class="btn btn-ghost" href="01-shared-index.html" data-action="close">Back to lists</a></div>
+            </div>
+          </div>
+
+          <div id="network">
+            <p class="sl-case">Network failure / 5xx — outcome unknown</p>
+            <div class="sl-modal" role="dialog" aria-modal="true" aria-label="Fork failed" data-dialog="fork" data-result="network">
+              <div class="sl-modal__seam"></div>
+              <div class="sl-modal__body" style="padding-top: var(--space-5);">
+                <div class="sl-banner sl-banner--error" data-error="network" role="alert" style="margin-bottom: 0;">
+                  <span class="sl-banner__ico" aria-hidden="true">⚠</span>
+                  <div class="sl-banner__body">
+                    <p class="sl-banner__title">We couldn't confirm the fork</p>
+                    <p>The connection failed before the service answered, so the fork may or may not exist. Trying again is safe — if it was
+                      created, you'll be taken to it.</p>
+                  </div>
+                </div>
+              </div>
+              <div class="sl-modal__foot">
+                <a class="btn btn-ghost" href="02-common-detail.html" data-action="close">Close</a>
+                <button class="btn btn-primary" data-action="retry">Try again</button>
+              </div>
+            </div>
+            <p class="sl-field__hint">Retry re-sends the same body; the service is idempotent per (organization, source), so a fork created by the
+              lost request comes back as <code class="sl-code">200</code> → <a href="#existing">existing</a>.</p>
+          </div>
+        </div>
+      </div>
+
+      <p class="sl-notes">
+        <b>Test hooks:</b> <code>[data-frame='06-fork-results']</code> · <code>[data-result='created']</code> · <code>[data-toast='forked']</code> · <code>[data-result='created-private']</code> · <code>[data-result='existing']</code> · <code>[data-result='existing-archived']</code> · <code>[data-action='restore-fork']</code> · <code>[data-state='restoring'] [data-action='restore-fork'][disabled]</code> · <code>[data-case='restore-quota'][data-error='QUOTA_EXCEEDED'][data-quota-scope='org_lists']</code> · <code>[data-case='restore-quota'] [data-quota-scope='user_lists']</code> · <code>[data-case='restore-forbidden'][data-error='FORBIDDEN']</code> · <code>[data-reason='fork_exists']</code> · <code>[data-reason='fork_not_applicable']</code> · <code>[data-result='key-conflict']</code> · <code>[data-error='QUOTA_EXCEEDED'][data-quota-scope='org_lists']</code> · <code>[data-quota-scope='user_lists']</code> · <code>[data-quota-scope='list_items']</code> · <code>[data-case='fork-size-cap']</code> · <code>[data-case='fork-no-create']</code> · <code>[data-result='not-found']</code> · <code>[data-error='network']</code> · <code>[data-action='retry']</code> · <code>[data-action='close']</code><br />
+        Contract: <code>POST /v1/selection-lists/{listId}/fork</code> → <code>201</code> | <code>200</code> | <code>400</code> | <code>403</code> (<code>FORBIDDEN</code> / <code>QUOTA_EXCEEDED</code> with <code>scope</code>, <code>limit</code>, <code>current</code>) | <code>404</code> | <code>409</code> (<code>reason</code>: <code>fork_exists</code> | <code>fork_not_applicable</code> | absent). An unknown <code>reason</code> renders as the plain-conflict copy. <code>PATCH /v1/selection-lists/{listId} {status: active}</code> (restore).<br />
+        Tokens only — no raw hex, spacing or type outside <code>tokens.css</code> / <code>frame.css</code>.
+      </p>
+    </main>
+  </div>
+</div>
+<nav class="frame-nav" aria-label="Frame navigation">
+  <a class="btn btn-ghost" href="05-fork-dialog.html" data-nav="prev">← Fork dialog</a>
+  <span class="caption"><b>(2c) Fork results</b> · Flow 2 · Fork to edit · frame 6 of 15</span>
+  <a class="btn btn-primary" href="07-fork-detail.html" data-nav="next">Your fork — provenance →</a>
+</nav>
+</body>
+</html>

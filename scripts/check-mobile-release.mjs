@@ -6,21 +6,35 @@ const root = resolve(process.argv[2] || '.')
 const readJson = (path) => JSON.parse(readFileSync(join(root, path), 'utf8'))
 const fail = (message) => { console.error(`mobile-release: ${message}`); process.exitCode = 1 }
 
-const repoManifest = readJson('.fuze/manifest.json')
-const mobile = repoManifest.mobile
-if (!mobile?.required || !mobile.targets?.includes('android')) {
+const repoManifest = existsSync(join(root, '.fuze/manifest.json'))
+  ? readJson('.fuze/manifest.json')
+  : undefined
+const registration = existsSync(join(root, 'registration/manifest.json'))
+  ? readJson('registration/manifest.json')
+  : undefined
+const registrationModes = registration?.modes || (registration?.mode ? [registration.mode] : [])
+const mobile = repoManifest?.mobile
+const nestedProductRequiresAndroid = Boolean(
+  !repoManifest && registrationModes.includes('standalone') &&
+  existsSync(join(root, 'android/twa-manifest.json'))
+)
+if ((!mobile?.required || !mobile.targets?.includes('android')) && !nestedProductRequiresAndroid) {
   console.log('mobile-release: Android packaging is not required; skipped')
   process.exit(0)
 }
 
-for (const path of ['android/twa-manifest.json', 'frontend/public/manifest.webmanifest',
-  'frontend/public/.well-known/assetlinks.json']) {
+const publicDirectory = existsSync(join(root, 'apps/web/public'))
+  ? 'apps/web/public'
+  : 'frontend/public'
+const manifestPath = `${publicDirectory}/manifest.webmanifest`
+const assetlinksPath = `${publicDirectory}/.well-known/assetlinks.json`
+for (const path of ['android/twa-manifest.json', manifestPath, assetlinksPath]) {
   if (!existsSync(join(root, path))) fail(`required file is missing: ${path}`)
 }
 if (process.exitCode) process.exit()
 
 const twa = readJson('android/twa-manifest.json')
-const assetlinks = readJson('frontend/public/.well-known/assetlinks.json')
+const assetlinks = readJson(assetlinksPath)
 const androidTarget = assetlinks.find((entry) =>
   entry?.relation?.includes('delegate_permission/common.handle_all_urls') &&
   entry?.target?.namespace === 'android_app'
@@ -28,6 +42,9 @@ const androidTarget = assetlinks.find((entry) =>
 
 if (!/^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){2,}$/.test(twa.packageId || '')) {
   fail(`invalid Android packageId: ${JSON.stringify(twa.packageId)}`)
+}
+if (!Number.isInteger(twa.minSdkVersion) || twa.minSdkVersion < 24) {
+  fail('TWA minSdkVersion must be an integer of at least 24; androidbrowserhelper:2.7.4 requires Android API 24')
 }
 const allowedHost = /^[a-z0-9-]+\.fuzefront\.com$/.test(twa.host || '') || twa.host === 'live.mendysrobotics.com'
 if (!allowedHost) {
@@ -47,16 +64,14 @@ for (const fingerprint of twaFingerprints) {
   if (!fingerprints.includes(fingerprint)) fail('TWA signing fingerprint is absent from assetlinks.json')
 }
 
-const registrationPaths = ['registration/manifest.json']
-if (existsSync(join(root, registrationPaths[0]))) {
-  const registration = readJson(registrationPaths[0])
+if (registration) {
   if (!(registration.modes || [registration.mode]).includes('standalone')) {
     fail('mobile.required requires standalone in registration modes')
   }
   if (registration.routing?.host !== twa.host) {
     fail('registration routing.host does not match the TWA host')
   }
-} else if (!repoManifest.repo?.endsWith('/FuzeFront') && repoManifest.repo !== 'FuzeFront') {
+} else if (!repoManifest?.repo?.endsWith('/FuzeFront') && repoManifest?.repo !== 'FuzeFront') {
   fail('mobile.required requires registration/manifest.json')
 }
 

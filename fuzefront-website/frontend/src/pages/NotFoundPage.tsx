@@ -1,7 +1,8 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowRight, Home, Search } from 'lucide-react'
+import { Home, Search } from 'lucide-react'
+import { HeroPatternOverlay, Button } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const helpfulLinks = [
@@ -16,10 +17,7 @@ export const NotFoundPage: React.FC = () => {
 
   return (
     <div className="relative min-h-[80vh] flex items-center bg-gradient-to-br from-secondary-900 via-secondary-800 to-primary-900 overflow-hidden pt-16">
-      {/* Separate overlay div: `hero-pattern` and the gradient classes both
-          set `background-image`, so combining them on one element drops the
-          gradient entirely instead of layering. */}
-      <div className="absolute inset-0 hero-pattern pointer-events-none" />
+      <HeroPatternOverlay />
       <div className="absolute top-1/4 left-1/4 w-80 h-80 bg-primary-600/20 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-1/4 right-1/4 w-72 h-72 bg-accent-600/15 rounded-full blur-3xl pointer-events-none" />
 
@@ -48,13 +46,15 @@ export const NotFoundPage: React.FC = () => {
             >
               <Home size={18} /> Back to home
             </Link>
-            <Link
+            <Button
+              as={Link}
               to="/contact"
-              className="btn-ghost flex items-center justify-center gap-2"
+              variant="ghost-inverse"
+              withArrow
               onClick={() => trackEvent('cta_click', { button: '404_contact', location: '404_page' })}
             >
-              Contact us <ArrowRight size={16} />
-            </Link>
+              Contact us
+            </Button>
           </div>
 
           <div className="flex items-center justify-center gap-2 text-secondary-300 text-sm mb-4">

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FuzeFront Security API
-  version: 0.10.1
+  version: 1.5.0
   description: >-
     The FuzeFront-owned, **provider-agnostic** Security API for the whole Fuze
     family. It exposes both authentication (AuthN) and authorization (AuthZ)
@@ -49,11 +49,14 @@ info:
     the product's BACKEND server-to-server (`POST
     /v1/security/broker/token-exchange`), exactly mirroring the existing
     `social/callback` → `session/exchange` code shape. The redirect-URI
-    allowlist enforcement, and the `BrokerClient` registration surface itself,
-    are contract-frozen here but implemented as a follow-up (#238) — see the
-    `broker` tag description. This is a SEPARATE allowlist from the social
-    broker's own `redirectTo` return-origin allowlist (#352), which governs
-    FuzeFront's first-party social handshake, not this third-party handoff.
+    allowlist enforcement is implemented (`backend/security/src/routes/
+    security.ts` + `services/brokerClients.ts`, registry sourced from
+    `BROKER_CLIENTS_JSON`); the `BrokerClient` registration surface itself
+    (a public write/registration endpoint) remains OUT of this contract
+    slice by design — see the `broker` tag description. This is a SEPARATE
+    allowlist from the social broker's own `redirectTo` return-origin
+    allowlist (#352), which governs FuzeFront's first-party social handshake,
+    not this third-party handoff.
 
 
     ## Fail-closed
@@ -265,8 +268,11 @@ paths:
         Exchanges the FuzeFront-minted opaque `code` issued by
         `GET /v1/security/social/callback` for a session. The code is single-use
         and short-lived. Returns a `SessionResult`: an authenticated session, or
-        an `mfa_required` challenge when the account requires step-up.
-        Fail-closed on an unknown/expired code.
+        an `mfa_required` challenge when the account has an active MFA factor.
+        Social sign-in never bypasses MFA: no session is minted until the
+        challenge is completed via `POST /mfa/verify`, and the challenge is
+        bound to the user who signed in. Fail-closed on an unknown/expired or
+        already-redeemed code.
       requestBody:
         required: true
         content:
@@ -286,6 +292,31 @@ paths:
           $ref: '#/components/responses/Unauthorized'
       x-pagination: exempt
       x-pagination-reason: Singleton code-exchange action.
+  /v1/security/session/workspaces:
+    get:
+      tags: [session]
+      summary: List active workspaces available to the current session
+      operationId: listSessionWorkspaces
+      description: >-
+        Returns canonical personal and organization workspace choices backed by
+        the caller's direct active memberships. Discovery is available before a
+        tenant is selected; callers must still prove the chosen workspace with
+        GET /session?tenant= before using tenant-scoped APIs.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Active workspace choices for the current identity.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionWorkspaceList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+      x-pagination: exempt
+      x-pagination-reason: A user has a bounded direct-membership workspace set.
   # ─────────────────────── AuthN: self-service password reset ────────────────
   /v1/security/session/password/reset-request:
     post:
@@ -319,8 +350,11 @@ paths:
       operationId: confirmPasswordReset
       description: >-
         Completes password reset by presenting the single-use `token` from the
-        reset message together with a `newPassword`. Fail-closed on an
-        unknown/expired/consumed token or a password that fails policy.
+        reset message together with a `newPassword`. Fail-closed: an
+        expired/already-used token is `400 TOKEN_EXPIRED`, an unknown token is
+        `400 TOKEN_INVALID`, and a password rejected by the identity provider
+        is `422 PASSWORD_POLICY` (the token is NOT consumed, so the caller may
+        retry with a compliant password).
       requestBody:
         required: true
         content:
@@ -335,7 +369,21 @@ paths:
               schema:
                 $ref: '#/components/schemas/PasswordResetResult'
         '400':
-          $ref: '#/components/responses/BadRequest'
+          description: >-
+            Malformed body (`MALFORMED`), or the token is expired/already used
+            (`TOKEN_EXPIRED`) or unknown (`TOKEN_INVALID`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '422':
+          description: >-
+            The identity provider rejected the new password (`PASSWORD_POLICY`).
+            The token remains live.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
       x-pagination: exempt
       x-pagination-reason: Singleton reset-confirm action; no collection.
   # ─────────────────────── Account: set/add password ────────────────────────
@@ -376,6 +424,59 @@ paths:
                 $ref: '#/components/schemas/ErrorBody'
       x-pagination: exempt
       x-pagination-reason: Singleton set-password action; no collection.
+  /v1/security/password/change:
+    post:
+      tags: [account]
+      summary: Change the password of an account that already has one
+      operationId: changePassword
+      description: >-
+        Verifies `currentPassword`, applies the password policy to
+        `newPassword`, sets it, and revokes every OTHER session of the account
+        (the calling session survives), matching the reset-confirm posture.
+        Accounts with no password get `409 NO_PASSWORD` — send the user to
+        `POST /v1/security/password` (set-first). Failed attempts are
+        rate-limited (`429 RATE_LIMITED`).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '204':
+          description: Password changed; other sessions revoked.
+        '400':
+          description: >-
+            Malformed body (`MALFORMED`), or `currentPassword` is wrong
+            (`INVALID_CREDENTIALS`). Sessions are untouched.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: The account has no password (`NO_PASSWORD`); use set-first.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '422':
+          description: '`PASSWORD_POLICY` — the new password fails the password policy.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '429':
+          description: Too many failed attempts (`RATE_LIMITED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+      x-pagination: exempt
+      x-pagination-reason: Singleton change-password action; no collection.
   # ─────────────────────── Sessions: device management ──────────────────────
   /v1/security/sessions:
     get:
@@ -448,6 +549,79 @@ paths:
           $ref: '#/components/responses/NotFound'
       x-pagination: exempt
       x-pagination-reason: Singleton mutation; no collection.
+  /v1/security/sessions/validate:
+    post:
+      tags: [sessions]
+      summary: Validate that a session is still active (service-to-service)
+      operationId: validateSession
+      description: >-
+        Answers one question for a downstream service: *has this session been
+        revoked or expired?* A FuzeFront session token stays cryptographically
+        valid until its `exp` (24h) even after the user logs out or revokes the
+        device, and only the session store knows. A service that has already
+        verified a session token's signature calls this with the token's
+        `userId` and `sessionId` claims to close that gap.
+
+
+        **Caller.** A machine (service-to-service) caller only: the
+        `Authorization` bearer MUST be a `fuze-workload` token carrying the
+        `sessions:validate` scope (see `@izzywdev/fuzefront-service-auth`). A
+        user session token is not accepted here, so a browser can never use this
+        endpoint to probe sessions.
+
+
+        **Answer.** `{ active: true }` only when the session exists, has not
+        expired, AND belongs to the supplied `userId`. Every other case, an
+        unknown id, a revoked or expired session, or a session owned by a
+        different user, is the same `200 { active: false }`, with no reason
+        given, so the endpoint cannot be used to learn which of the two
+        identifiers was wrong. This operation does NOT verify any token
+        signature; the caller must already have done that.
+
+
+        **Tenant.** Every tenant's sessions are signed with the same secret, so
+        a signature alone cannot tell two tenants' tokens apart; the token's
+        `tid` claim plus the tenant serving the request is what separates them.
+        Send the token's `tid` as `tenantId`. When multi-tenant identity is
+        enabled a session is active only for the tenant that minted it: the
+        answer is `{ active: false }` unless `tenantId` equals the tenant that
+        serves this request (selected by the request `Host`, so call the host of
+        the tenant your service belongs to). A token with no `tid` is active
+        only in single-tenant mode, where `tenantId` may be omitted.
+
+
+        **Fail-closed.** A store outage is `503`, never `{ active: true }` and
+        never `{ active: false }`. A consumer MUST treat `503` as a retryable
+        service condition, not as a revoked session: refusing every user because
+        the store blinked is an outage, not a revocation. A consumer MUST treat
+        anything other than a well-formed `{ active: true }` as inactive.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionValidateRequest'
+      responses:
+        '200':
+          description: >-
+            The session's state. `active` is `false` for an unknown, revoked or
+            expired session and for a user mismatch.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionValidation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+      x-pagination: exempt
+      x-pagination-reason: Singleton lookup; returns one boolean, no collection.
   # ─────────────────────── Account: social linking ──────────────────────────
   /v1/security/social/{provider}/link:
     post:
@@ -685,9 +859,31 @@ paths:
               schema:
                 $ref: '#/components/schemas/LoginResponse'
         '400':
-          $ref: '#/components/responses/BadRequest'
+          description: >-
+            The request is rejected before account creation. `code: MALFORMED`
+            for a malformed/invalid body; `code: CAPTCHA_FAILED` when the supplied
+            Cloudflare Turnstile token is rejected, invalid, or missing (distinct
+            from MALFORMED so the client can prompt for a fresh captcha and retry
+            rather than treating it as a generic bad request). Cloudflare being
+            unreachable is NOT a 400 — it fails closed as `503
+            PROVIDER_UNAVAILABLE`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
         '409':
           description: An account with that email already exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '422':
+          description: >-
+            The chosen password fails the authoritative password policy (`code:
+            PASSWORD_POLICY`), distinct from 409 email-exists and 503 provider
+            errors. The server independently enforces the same policy advertised
+            by `AuthMethods.passwordPolicy`; the client may render the per-rule
+            checklist and let the user retry with a compliant password.
           content:
             application/json:
               schema:
@@ -696,6 +892,65 @@ paths:
           $ref: '#/components/responses/ServiceUnavailable'
       x-pagination: exempt
       x-pagination-reason: Singleton account-creation action.
+  /v1/security/signup/email-available:
+    get:
+      tags: [signup]
+      summary: Inline signup email-availability check
+      operationId: getSignupEmailAvailable
+      description: >-
+        Public, unauthenticated inline check for the signup form: is this email
+        free to register? Backs the debounced "available / already registered"
+        adornment on the create-account field. Consults the SAME source of truth
+        `POST /v1/security/signup` uses to reject a duplicate, so the answer
+        cannot disagree with signup. The email is normalized (trimmed +
+        lowercased) server-side before checking.
+
+
+        **Fail-open (client contract).** This endpoint is a UX convenience, never
+        a gate: the client MUST treat any error (timeout, 4xx, 5xx, network) as
+        "unknown/available" and NEVER block submit on it. Authoritative
+        duplicate-rejection happens at `POST /v1/security/signup` (`409`).
+
+
+        **Enumeration posture.** It intentionally reveals whether an address is
+        registered (the product requires inline feedback), so the enumeration
+        control is PER-IP RATE-LIMITING so it cannot be used as a bulk
+        account-enumeration oracle beyond the signup UX. The backend enforces the
+        limit; this contract specifies the requirement. Exceeding it returns
+        `429`. It is NOT captcha-gated: the check fires per keystroke on a
+        debounce and Turnstile tokens are single-use, so a captcha cannot gate a
+        repeated, interactive check. Captcha applies only to the authoritative
+        `POST /v1/security/signup` action.
+      parameters:
+        - name: email
+          in: query
+          required: true
+          description: The email address to check. Normalized (trim + lowercase) server-side.
+          schema:
+            type: string
+            format: email
+            maxLength: 320
+      responses:
+        '200':
+          description: Availability result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignupEmailAvailability'
+        '400':
+          description: The `email` query param is missing or malformed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '429':
+          description: Rate limit exceeded (per-IP enumeration guard).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+      x-pagination: exempt
+      x-pagination-reason: Singleton boolean availability check; no collection.
   # ─────────────────────────── AuthN: capabilities ──────────────────────────
   /v1/security/methods:
     get:
@@ -730,8 +985,12 @@ paths:
 
         This endpoint intentionally reveals whether an address is registered
         (product requires inline "available / already registered" feedback), so
-        it is per-IP rate-limited (20/min/IP) as the deliberate mitigation for
-        the resulting enumeration exposure. Exceeding the limit returns 429.
+        the enumeration control is per-IP rate-limiting (20/min/IP) as the
+        deliberate mitigation for the resulting enumeration exposure. Exceeding
+        the limit returns 429. It is NOT captcha-gated: the check fires per
+        keystroke on a debounce and Turnstile tokens are single-use, so a captcha
+        cannot gate it; captcha applies only to the authoritative `signup`
+        action.
       parameters:
         - name: email
           in: query
@@ -1742,7 +2001,9 @@ paths:
       tags: [mfa]
       summary: Remove an MFA factor
       operationId: removeMfaFactor
-      description: Removes an enrolled factor. Idempotent.
+      description: >-
+        Removes an enrolled factor. Idempotent. Refused with `409 LAST_FACTOR`
+        when it is the user's last active factor.
       security:
         - bearerAuth: []
       parameters:
@@ -1754,16 +2015,53 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          description: >-
+            `LAST_FACTOR` — this is the user's last ACTIVE factor, so removing it
+            would silently disable two-factor for the account. The factor is NOT
+            removed. Add another method first. The count-and-delete is atomic, so
+            two concurrent removals cannot both succeed. Pending (unactivated)
+            factors can always be removed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
       x-pagination: exempt
       x-pagination-reason: Singleton mutation.
   /v1/security/mfa/recovery-codes:
+    get:
+      tags: [mfa]
+      summary: Get the current user's recovery-code status
+      operationId: getRecoveryCodesStatus
+      description: >-
+        Returns how many of the caller's current recovery codes are still
+        unused, and the size of the set they came from. Never returns the codes
+        themselves (they are stored hashed and shown once, at generation). A user
+        who has never generated codes gets `{ remaining: 0, total: 0 }`. A code
+        redeemed at sign-in (`POST /mfa/verify` with `recoveryCode`) decrements
+        `remaining`; regenerating replaces the set and resets both counts.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The caller's recovery-code status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecoveryCodesStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      x-pagination: exempt
+      x-pagination-reason: Singleton per-user status object; no collection.
     post:
       tags: [mfa]
       summary: (Re)generate one-time recovery codes
       operationId: regenerateRecoveryCodes
       description: >-
         Generates a fresh set of single-use recovery codes, invalidating any
-        prior set. The codes are returned ONCE and never retrievable again.
+        prior set. The codes are returned ONCE and never retrievable again. Each
+        code is redeemable exactly once at sign-in step-up via
+        `POST /mfa/verify` with `{ challengeId, recoveryCode }`.
       security:
         - bearerAuth: []
       responses:
@@ -1812,8 +2110,32 @@ paths:
       summary: Verify an MFA challenge and complete login
       operationId: verifyMfa
       description: >-
-        Verifies the one-time `code` for a `challengeId`/`factorId`. On success
-        returns the authenticated `LoginResponse`. Fail-closed on bad/expired code.
+        Completes login step-up for a `challengeId` (from an `mfa_required`
+        `SessionResult`) by ONE of two proofs, selected by body shape
+        (`MfaVerifyRequest` is a `oneOf`):
+
+
+        - **Factor code** — `{ challengeId, factorId, code }`: the one-time code
+        for an enrolled factor (after `POST /mfa/challenge` for SMS/email).
+
+        - **Recovery code** — `{ challengeId, recoveryCode }`: one of the user's
+        single-use recovery codes (`POST /mfa/recovery-codes`). No
+        `POST /mfa/challenge` call is needed first. Only offer this when the
+        challenge advertised `recoveryAvailable: true`. The code is consumed
+        atomically with the successful verification: a code can satisfy at most
+        one challenge, ever, even under concurrent submissions; a failed attempt
+        consumes nothing. On success `GET /mfa/recovery-codes` reports one fewer
+        `remaining`.
+
+
+        On success either proof returns the same authenticated `LoginResponse`
+        and the challenge is consumed. Fail-closed: an unknown/expired challenge
+        is `401 NOT_ACTIVE` (unchanged); a wrong factor code is `401`; a wrong,
+        already-used, or superseded (regenerated) recovery code is
+        `401 RECOVERY_CODE_INVALID` — the three recovery failure causes are
+        deliberately indistinguishable. Both proofs share ONE failed-attempt
+        limiter (per IP and per challenge), so alternating between them does not
+        buy extra guesses; exceeding it is `429 RATE_LIMITED`.
       requestBody:
         required: true
         content:
@@ -1822,15 +2144,52 @@ paths:
               $ref: '#/components/schemas/MfaVerifyRequest'
       responses:
         '200':
-          description: MFA satisfied; authenticated session returned.
+          description: MFA satisfied (factor code or recovery code); authenticated session returned.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/LoginResponse'
         '400':
-          $ref: '#/components/responses/BadRequest'
+          description: >-
+            `MALFORMED` — the body matches neither `MfaVerifyRequest` variant
+            (e.g. `recoveryCode` sent together with `factorId`/`code`, or a
+            required field missing).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          description: >-
+            Step-up not satisfied; no session issued. `NOT_ACTIVE` — the
+            `challengeId` is unknown, expired, or already completed (start a new
+            login). For a factor-code attempt, the factor/code is invalid. For a
+            recovery-code attempt, `RECOVERY_CODE_INVALID` — the code is wrong,
+            already used, or from a superseded set (indistinguishable by design);
+            the challenge stays live so the user can retry, subject to the
+            limiter.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '429':
+          description: >-
+            `RATE_LIMITED` — too many failed step-up attempts for this IP or
+            challenge. One limiter covers both factor-code and recovery-code
+            attempts. `Retry-After` gives the wait; clients show it and must not
+            retry sooner.
+          headers:
+            Retry-After:
+              description: >-
+                Whole seconds until the exhausted limiter counter resets
+                (rounded up, never less than 1). Always sent with this 429.
+              required: true
+              schema:
+                type: integer
+                minimum: 1
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
       x-pagination: exempt
       x-pagination-reason: Singleton verification action.
   # ──────────────────────── Contact verification: email ─────────────────────
@@ -1840,8 +2199,11 @@ paths:
       summary: Send an email verification link/code
       operationId: startEmailVerification
       description: >-
-        Sends a verification link/code. Targets the current user's email when
-        authenticated, or a signup-scoped address supplied in the body.
+        Sends a verification link/code. When authenticated, the target is ALWAYS
+        the current user's own email; a body `email` is ignored. When
+        unauthenticated, the account is resolved server-side from the body
+        `email`; an unknown address is a silent no-op. Always 202 for an
+        unauthenticated caller (no account enumeration).
       requestBody:
         required: false
         content:
@@ -1860,7 +2222,12 @@ paths:
       tags: [verify]
       summary: Confirm email ownership
       operationId: confirmEmailVerification
-      description: Confirms via `{ token }` (link) or `{ code }` (OTP). Fail-closed on invalid/expired.
+      description: >-
+        Confirms via `{ token }` (link) or `{ code }` (OTP). Fail-closed: an
+        expired/already-used challenge is `400 TOKEN_EXPIRED`; an unknown
+        challenge (or one that no longer matches the account's email) is
+        `400 TOKEN_INVALID`. Never reports `emailVerified: true` unless a user
+        was actually updated.
       requestBody:
         required: true
         content:
@@ -1875,7 +2242,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/VerificationStatus'
         '400':
-          $ref: '#/components/responses/BadRequest'
+          description: >-
+            Malformed body (`MALFORMED`), or the challenge is expired/already
+            used (`TOKEN_EXPIRED`) or unknown/mismatched (`TOKEN_INVALID`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
       x-pagination: exempt
       x-pagination-reason: Singleton confirmation action.
   # ──────────────────────── Contact verification: phone ─────────────────────
@@ -1907,7 +2280,15 @@ paths:
       tags: [verify]
       summary: Confirm phone ownership
       operationId: confirmPhoneVerification
-      description: Confirms `{ phone, code }`. Fail-closed on invalid/expired code.
+      description: >-
+        Confirms `{ phone, code }` for the **calling session's own account
+        only**. Requires a bearer session; the number is marked verified solely
+        for the account resolved from the token, and only when `phone` is that
+        account's current number (set by `startPhoneVerification`). Other
+        accounts holding the same number are never affected. Fail-closed on
+        invalid/expired code or a number that is not the caller's.
+      security:
+        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -1923,6 +2304,8 @@ paths:
                 $ref: '#/components/schemas/VerificationStatus'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
       x-pagination: exempt
       x-pagination-reason: Singleton confirmation action.
   /v1/security/verify/status:
@@ -1991,6 +2374,291 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+
+  # ───────────────────── Org invitations v2 (FFRNT-305 / FFRNT-304) ─────────
+  # Org owner/admin invites people along TWO orthogonal dimensions:
+  #   • invitee kind  — an existing account-holder (by typed userId) OR an
+  #     external identity reached over a `channel` (email address OR WhatsApp
+  #     e164 phone). An external invitee has no account yet: the invite carries
+  #     a single-use, server-minted `bindToken` THROUGH signup/enrollment and
+  #     auto-binds the membership once the account exists (see POST /accept).
+  #   • memberType    — employee | customer, ORTHOGONAL to the access role
+  #     (owner/admin/member/viewer). The root-org owner invites external users
+  #     as `customer`.
+  # Base path is `/api` (servers), so these mount at `/api/organizations/...`
+  # and the public `/api/invitations/...`, matching the deployed routes
+  # (backend/security/src/routes/{organizations,invitations}.ts). The invite
+  # token is opaque and is NEVER a capability on its own — accept still enforces
+  # channel/identity match + org standing (token + Permit), never "knew the id".
+  /organizations/{id}/invitations:
+    get:
+      tags: [organizations]
+      summary: List an organization's invitations
+      operationId: listOrganizationInvitations
+      description: >-
+        Unbounded collection — cursor-paginated per the family pagination
+        standard (`limit` + opaque `cursor`, `{ items, page }` envelope).
+        Optional `status` filter. Org owner/admin capability; a non-privileged
+        caller gets `403 FORBIDDEN` rendered in place (only 401
+        re-authenticates). An id is never a capability.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+        # limit/cursor inlined (structurally identical to components.parameters)
+        # so gate-pagination — which does not resolve $ref — sees them directly.
+        - name: limit
+          in: query
+          required: false
+          description: Max items per page. Clamped server-side to the maximum.
+          schema:
+            type: integer
+            default: 50
+            maximum: 200
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque, server-issued cursor for the next page. Omit for the first page.
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          description: Optional filter by invitation lifecycle status.
+          schema:
+            $ref: '#/components/schemas/InvitationStatus'
+      responses:
+        '200':
+          description: A page of invitations.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [organizations]
+      summary: Create an invitation
+      operationId: createOrganizationInvitation
+      description: >-
+        Invites one person to the organization. The `invitee` is a typed,
+        discriminated reference — an existing `account` (by server-minted
+        userId) or an `external` identity reached over a `channel`
+        (email OR WhatsApp e164 phone). `memberType` (employee|customer) is
+        orthogonal to the access `role`. `owner` can never be invited. The
+        service mints the invitation id and the `bindToken`; the body never
+        carries an id (`additionalProperties: false`). A pending invitation to
+        the same identity returns `409`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvitationCreate'
+      responses:
+        '201':
+          description: Invitation created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invitation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      x-pagination: exempt
+      x-pagination-reason: Singleton creation.
+  /organizations/{id}/invitations/bulk:
+    post:
+      tags: [organizations]
+      summary: Create invitations in bulk
+      operationId: createOrganizationInvitationsBulk
+      description: >-
+        Creates up to 50 invitations in one call, all sharing one `role` and
+        `memberType`. Each `invitee` is a typed, discriminated reference (as in
+        the single create). Per-invitee outcomes are returned individually so a
+        partial batch (some already pending) still reports precisely. The
+        service mints every id and bindToken; the body carries none
+        (`additionalProperties: false`).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkInvitationCreate'
+      responses:
+        '200':
+          description: Per-invitee results for the batch.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkInvitationResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      x-pagination: exempt
+      x-pagination-reason: Bounded batch (max 50), echoing the exact inputs; not a growing collection read.
+  /organizations/{id}/invitations/{invitationId}/resend:
+    post:
+      tags: [organizations]
+      summary: Resend a pending invitation
+      operationId: resendOrganizationInvitation
+      description: >-
+        Re-dispatches the invitation over its original `channel` (email or
+        WhatsApp) and extends its expiry. Only a `pending` invitation can be
+        resent. Org owner/admin capability.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+        - $ref: '#/components/parameters/InvitationId'
+      responses:
+        '200':
+          description: Invitation re-dispatched (expiry extended).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invitation'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      x-pagination: exempt
+      x-pagination-reason: Singleton mutation.
+  /organizations/{id}/invitations/{invitationId}:
+    delete:
+      tags: [organizations]
+      summary: Revoke an invitation
+      operationId: revokeOrganizationInvitation
+      description: >-
+        Revokes a pending invitation (transitions it to `revoked`). Idempotent
+        from the caller's view. Org owner/admin capability.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+        - $ref: '#/components/parameters/InvitationId'
+      responses:
+        '204':
+          description: Invitation revoked.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      x-pagination: exempt
+      x-pagination-reason: Singleton mutation.
+  # Public token surface — the external/invitee side of the flow.
+  /invitations/{token}:
+    get:
+      tags: [organizations]
+      summary: Resolve an invitation by token (public)
+      operationId: resolveInvitation
+      description: >-
+        Public, unauthenticated resolve of an invitation by its opaque token.
+        The invitee's contact identity is MASKED (first char + domain / last
+        digits) — the token is a lookup key, never a data leak and never a
+        capability. Returns `410` when the invitation is expired or revoked.
+      parameters:
+        - $ref: '#/components/parameters/InvitationToken'
+      responses:
+        '200':
+          description: The (masked) invitation and its organization.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationResolveResult'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          $ref: '#/components/responses/Gone'
+      x-pagination: exempt
+      x-pagination-reason: Singleton resolve by token.
+    parameters: []
+  /invitations/{token}/accept:
+    post:
+      tags: [organizations]
+      summary: Accept an invitation (auth-optional; carries the external-signup bind)
+      operationId: acceptInvitation
+      description: >-
+        Redeems an invitation. Two outcomes, distinguished by status code:
+
+        • **Unauthenticated / no account yet (202)** — returns
+        `{ action: 'enroll', enrollUrl, bindToken }`. The `bindToken` is the
+        single-use, short-lived, server-minted carrier of this invite THROUGH
+        signup/enrollment: the client sends it as `SignupRequest.bindToken`, the
+        server verifies the signup identity matches the invited `channel`
+        identity, provisions the account, and auto-binds the membership — so the
+        handler never has to trust that the caller "knew the token".
+
+        • **Authenticated & identity matches (200)** — the membership is bound
+        immediately (CAS pending→accepted, idempotent) and the result carries
+        the `memberType` and `role`. An identity mismatch is `403`; an
+        expired/revoked invite is `410`; a lost accept race is `409`.
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/InvitationToken'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvitationAcceptRequest'
+      responses:
+        '200':
+          description: Invitation accepted and membership bound.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationAcceptResult'
+        '202':
+          description: >-
+            The invitee must sign up / sign in first. Carries the `bindToken` to
+            redeem the invite post-signup.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationEnrollResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          $ref: '#/components/responses/Gone'
+      x-pagination: exempt
+      x-pagination-reason: Singleton mutation by token.
 
   # ───────────────────── Employee (platform-staff) surfaces ─────────────────
   # Commissioned by the merged FF-EPIC-17-S9 Employee cross-org console (frames
@@ -2383,6 +3051,24 @@ components:
       required: true
       schema:
         type: string
+    InvitationId:
+      name: invitationId
+      in: path
+      required: true
+      description: >-
+        Server-minted, typed invitation id (e.g. `inv_…`). Opaque past its
+        prefix; never a capability — standing comes from the token + Permit.
+      schema:
+        type: string
+    InvitationToken:
+      name: token
+      in: path
+      required: true
+      description: >-
+        Opaque, single-use invitation token from the dispatched invite. A lookup
+        key only — never a capability; accept still enforces identity + standing.
+      schema:
+        type: string
   responses:
     Unauthorized:
       description: Authentication failed (fail-closed).
@@ -2414,6 +3100,22 @@ components:
             $ref: '#/components/schemas/ErrorBody'
     ProviderError:
       description: The configured identity or authorization provider rejected the operation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorBody'
+    Conflict:
+      description: >-
+        The request conflicts with current state — e.g. a pending invitation to
+        the same identity already exists, or an accept lost its CAS race.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorBody'
+    Gone:
+      description: >-
+        The invitation has expired or been revoked and can no longer be resolved
+        or accepted.
       content:
         application/json:
           schema:
@@ -2497,7 +3199,8 @@ components:
       description: >-
         MFA-required variant of `SessionResult`. The client picks a factor and
         completes step-up via `/mfa/challenge` + `/mfa/verify`, referencing
-        `challengeId`.
+        `challengeId` — or, when `recoveryAvailable` is true, redeems a recovery
+        code via `/mfa/verify` directly.
       properties:
         status:
           type: string
@@ -2508,6 +3211,17 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/MfaFactorRef'
+        recoveryAvailable:
+          type: boolean
+          description: >-
+            True when the user holds at least one unused recovery code, so
+            `POST /mfa/verify` with `recoveryCode` can succeed. Offer the
+            "use a recovery code" choice ONLY when this is `true`; treat `false`
+            or ABSENT (a server predating contract 1.4.0) as not available
+            (fail-closed). A snapshot at challenge time: a code used or
+            regenerated elsewhere afterwards is still rejected with
+            `401 RECOVERY_CODE_INVALID`. Carries no count, so the pre-auth
+            response leaks nothing beyond "has codes".
       required: [status, challengeId, factors]
     SignupRequest:
       type: object
@@ -2518,13 +3232,42 @@ components:
           format: email
         password:
           type: string
-        firstName:
+        name:
           type: string
-        lastName:
+          description: >-
+            Optional display name. Maps 1:1 to the identity store's single `name`
+            field (i18n-safe), REPLACING the former `firstName`/`lastName` split —
+            many names do not decompose into given/family parts. A client that
+            still sends `firstName`/`lastName` is rejected (`additionalProperties:
+            false`): this is the breaking change behind the 1.0.0 major bump.
+        turnstileToken:
           type: string
+          description: >-
+            Cloudflare Turnstile token for server-side (anti-abuse) captcha
+            verification. REQUIRED when `GET /v1/security/methods` reports
+            `AuthMethods.captcha` (captcha enabled); omitted when captcha is
+            disabled. The condition depends on SERVER configuration
+            (`AuthMethods.captcha`), not on another field of this request body,
+            so it cannot be expressed as a static JSON-Schema constraint here and
+            is enforced server-side (fail-closed: a missing/invalid token when
+            captcha is enabled rejects the signup). `turnstile`/`turnstileToken`
+            is a DELIBERATE, approved exception to the vendor-name rule: a captcha
+            is a browser widget the client must load with the vendor's own script
+            + `siteKey`, so — unlike the hidden IDENTITY provider — the captcha
+            vendor is necessarily consumer-visible.
         tenantName:
           type: string
           description: Optional tenant/organization name to provision on signup.
+        bindToken:
+          type: string
+          description: >-
+            Optional single-use invitation bind token (from the `202` accept
+            response, `InvitationEnrollResponse.bindToken`). When present, the
+            server verifies the signup identity matches the invited channel
+            identity, then auto-binds the invited membership (with its
+            `memberType`/`role`) as part of signup — redeeming the invite without
+            a second round-trip. Mismatch or an expired token fails signup-bind
+            closed (the account may still be created; the bind is rejected).
       required: [email, password]
     ExchangeRequest:
       type: object
@@ -2609,6 +3352,30 @@ components:
         user:
           $ref: '#/components/schemas/User'
       required: [identity, user]
+    SessionWorkspace:
+      type: object
+      additionalProperties: false
+      description: A canonical active workspace the session identity may select.
+      required: [id, name, type]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+        type:
+          type: string
+          enum: [personal, organization]
+    SessionWorkspaceList:
+      type: object
+      additionalProperties: false
+      required: [workspaces]
+      properties:
+        workspaces:
+          type: array
+          items:
+            $ref: '#/components/schemas/SessionWorkspace'
     EmailAvailability:
       type: object
       description: >-
@@ -2624,6 +3391,19 @@ components:
           format: email
           description: The normalized address that was checked (echoed back).
       required: [available, email]
+    SignupEmailAvailability:
+      type: object
+      additionalProperties: false
+      description: >-
+        Result of the inline signup email-availability check
+        (`GET /v1/security/signup/email-available`). `available` is false when an
+        account already exists for the normalized email. The client treats any
+        error as "available" and never blocks submit on this (fail-open).
+      required: [available]
+      properties:
+        available:
+          type: boolean
+          description: True when no account exists for the email and it is free to register.
     AuthMethods:
       type: object
       description: >-
@@ -2659,6 +3439,58 @@ components:
             sms:
               type: boolean
           required: [email, sms]
+        captcha:
+          type: object
+          additionalProperties: false
+          description: >-
+            Captcha capability for pre-auth forms (signup / sign-in). PRESENT
+            only when captcha is enabled; ABSENT when disabled. When present,
+            `SignupRequest.turnstileToken` is required and the client renders the
+            captcha widget. `provider`/`siteKey` is a DELIBERATE, approved
+            exception to the vendor-name rule: the captcha is a browser widget
+            the client must load with the vendor's own script + public
+            `siteKey`, so the captcha vendor is necessarily consumer-visible
+            (unlike the hidden identity provider).
+          required: [provider, siteKey]
+          properties:
+            provider:
+              type: string
+              enum: [turnstile]
+              description: Captcha widget provider. `turnstile` = Cloudflare Turnstile.
+            siteKey:
+              type: string
+              description: >-
+                Public site key for the captcha widget. Safe to expose to the
+                browser (it is designed to be public); the secret key lives only
+                server-side for verification.
+        passwordPolicy:
+          type: object
+          additionalProperties: false
+          description: >-
+            Authoritative password policy so the client renders the REAL rules
+            (strength meter + per-rule checklist) instead of a hard-coded,
+            drift-prone client copy. Advisory for UX; the server independently
+            enforces the same policy and is the source of truth
+            (`422 PASSWORD_POLICY`).
+          required:
+            [minLength, requireUpper, requireLower, requireDigit, requireSymbol]
+          properties:
+            minLength:
+              type: integer
+              minimum: 1
+              description: Minimum password length (currently 12).
+            requireUpper:
+              type: boolean
+              description: Requires at least one uppercase letter.
+            requireLower:
+              type: boolean
+              description: Requires at least one lowercase letter.
+            requireDigit:
+              type: boolean
+              description: Requires at least one digit.
+            requireSymbol:
+              type: boolean
+              description: Requires at least one symbol.
       required: [password, social, mfa, verification]
     SocialProvider:
       type: string
@@ -2961,6 +3793,12 @@ components:
           type: array
           items:
             type: string
+        memberType:
+          $ref: '#/components/schemas/MemberType'
+          description: >-
+            How this member relates to the org (employee|customer), orthogonal
+            to `roles`. Optional for backward compatibility: memberships created
+            before FFRNT-305 may not carry one.
       required: [userId, roles]
     MemberCreate:
       type: object
@@ -2976,6 +3814,9 @@ components:
           type: array
           items:
             type: string
+        memberType:
+          $ref: '#/components/schemas/MemberType'
+          description: How the member relates to the org (employee|customer), orthogonal to roles.
       required: []
     Role:
       type: object
@@ -2993,6 +3834,306 @@ components:
           items:
             type: string
       required: [roles]
+    # ── Org invitations v2 (FFRNT-305) ──
+    MemberType:
+      type: string
+      description: >-
+        How a member relates to the organization — ORTHOGONAL to the access
+        role. `employee` = internal staff of the org; `customer` = an external
+        customer member (the root-org owner invites external users as
+        `customer`). A membership and an invitation each carry exactly one.
+      enum: [employee, customer]
+    InvitationChannel:
+      type: string
+      description: >-
+        The delivery/identity channel for an external invitee. `email` = an
+        email address; `whatsapp` = an E.164 phone reachable over WhatsApp. An
+        invitation to an existing account-holder carries the channel of the
+        contact the invite was dispatched to (defaults to `email`).
+      enum: [email, whatsapp]
+    InvitationRole:
+      type: string
+      description: >-
+        The access role an invitee is granted on accept. `owner` can NEVER be
+        invited (ownership is transferred, not invited), so it is absent here.
+      enum: [admin, member, viewer]
+    InvitationStatus:
+      type: string
+      description: Invitation lifecycle status.
+      enum: [pending, accepted, revoked, expired]
+    AccountInvitee:
+      type: object
+      additionalProperties: false
+      description: >-
+        An invitee who ALREADY has a FuzeFront account. `userId` REFERENCES an
+        existing, server-minted user — it names an entity that already exists, so
+        it is a reference (not identity being created) and carries its referent
+        type via `kind: account`.
+      properties:
+        kind:
+          type: string
+          const: account
+        userId:
+          type: string
+          description: Server-minted, typed user id (e.g. `usr_…`) of the existing account-holder.
+      required: [kind, userId]
+    ExternalInvitee:
+      type: object
+      additionalProperties: false
+      description: >-
+        An invitee with NO account yet, reached over a `channel`. Exactly one
+        contact field is required, selected by `channel`: `email` (RFC 5322) for
+        `channel: email`, `phone` (E.164) for `channel: whatsapp`. The external
+        user must sign up first; the invite then auto-binds via the `bindToken`.
+      properties:
+        kind:
+          type: string
+          const: external
+        channel:
+          $ref: '#/components/schemas/InvitationChannel'
+        email:
+          type: string
+          format: email
+          description: Required when `channel` is `email`.
+        phone:
+          type: string
+          pattern: '^\+[1-9]\d{1,14}$'
+          description: E.164 phone (e.g. `+14155552671`). Required when `channel` is `whatsapp`.
+      required: [kind, channel]
+      allOf:
+        - if:
+            properties:
+              channel:
+                const: email
+          then:
+            required: [email]
+        - if:
+            properties:
+              channel:
+                const: whatsapp
+          then:
+            required: [phone]
+    InviteeRef:
+      description: >-
+        A typed, discriminated invitee reference — an existing `account` or an
+        `external` identity. The `kind` discriminator means no bare id is ever
+        resolved without its referent type (governance/identifier-standard.md 2).
+      oneOf:
+        - $ref: '#/components/schemas/AccountInvitee'
+        - $ref: '#/components/schemas/ExternalInvitee'
+      discriminator:
+        propertyName: kind
+        mapping:
+          account: '#/components/schemas/AccountInvitee'
+          external: '#/components/schemas/ExternalInvitee'
+    InvitationCreate:
+      type: object
+      # additionalProperties:false rejects a client-supplied invitation `id` or
+      # `token` at the boundary — the service mints both
+      # (governance/identifier-standard.md 1). `invitee` carries its own typed
+      # reference; no bare id is accepted.
+      additionalProperties: false
+      description: Create one invitation.
+      properties:
+        invitee:
+          $ref: '#/components/schemas/InviteeRef'
+        role:
+          $ref: '#/components/schemas/InvitationRole'
+        memberType:
+          $ref: '#/components/schemas/MemberType'
+      required: [invitee, memberType]
+    BulkInvitationCreate:
+      type: object
+      additionalProperties: false
+      description: >-
+        Create up to 50 invitations sharing one `role` and `memberType`. The
+        service mints every id and bindToken; none may be supplied.
+      properties:
+        invitees:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/InviteeRef'
+        role:
+          $ref: '#/components/schemas/InvitationRole'
+        memberType:
+          $ref: '#/components/schemas/MemberType'
+      required: [invitees, memberType]
+    Invitation:
+      type: object
+      description: >-
+        An invitation as seen by an org owner/admin (list + create + resend
+        responses). The invitee identity is UNMASKED here because the caller
+        administers the org; the public token resolve (`InvitationPublic`) masks
+        it. `bindToken` is NOT included in this admin projection — it is handed
+        only to the invitee via the accept flow.
+      properties:
+        id:
+          type: string
+          description: Server-minted, typed invitation id (e.g. `inv_…`). Opaque past the prefix.
+        organizationId:
+          type: string
+          description: Typed id of the organization the invite is into.
+        invitee:
+          $ref: '#/components/schemas/InviteeRef'
+        channel:
+          $ref: '#/components/schemas/InvitationChannel'
+        role:
+          $ref: '#/components/schemas/InvitationRole'
+        memberType:
+          $ref: '#/components/schemas/MemberType'
+        status:
+          $ref: '#/components/schemas/InvitationStatus'
+        invitedByUserId:
+          type: string
+          description: Typed user id of the inviter (a reference to an existing user).
+        expiresAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, organizationId, invitee, channel, role, memberType, status]
+    InvitationPublic:
+      type: object
+      additionalProperties: false
+      description: >-
+        Masked public projection of an invitation returned by the unauthenticated
+        token resolve. The contact identity is reduced to a hint
+        (`maskedContact`) — never the full address/number, since the caller is
+        unauthenticated and the token is a lookup key, not a capability.
+      properties:
+        id:
+          type: string
+        maskedContact:
+          type: string
+          description: Masked identity hint, e.g. `u***@example.com` or `+1 *** *** 2671`.
+        channel:
+          $ref: '#/components/schemas/InvitationChannel'
+        role:
+          $ref: '#/components/schemas/InvitationRole'
+        memberType:
+          $ref: '#/components/schemas/MemberType'
+        status:
+          $ref: '#/components/schemas/InvitationStatus'
+        expiresAt:
+          type: string
+          format: date-time
+      required: [id, maskedContact, channel, role, memberType, status]
+    InvitationOrgRef:
+      type: object
+      additionalProperties: false
+      description: Minimal, public-safe org summary shown on the invite landing page.
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+      required: [id, name]
+    InvitationResolveResult:
+      type: object
+      additionalProperties: false
+      description: The masked invitation plus the organization it is into.
+      properties:
+        invitation:
+          $ref: '#/components/schemas/InvitationPublic'
+        organization:
+          $ref: '#/components/schemas/InvitationOrgRef'
+      required: [invitation, organization]
+    InvitationPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Invitation'
+        page:
+          $ref: '#/components/schemas/PageInfo'
+      required: [items, page]
+    BulkInvitationItemResult:
+      type: object
+      additionalProperties: false
+      description: Outcome for one invitee in a bulk create.
+      properties:
+        invitee:
+          $ref: '#/components/schemas/InviteeRef'
+        status:
+          type: string
+          enum: [created, skipped, failed]
+        invitationId:
+          type: string
+          description: Present when `status` is `created`.
+        reason:
+          type: string
+          description: Why an invitee was skipped/failed (e.g. `already-pending`).
+      required: [invitee, status]
+    BulkInvitationResult:
+      type: object
+      additionalProperties: false
+      properties:
+        created:
+          type: integer
+        skipped:
+          type: integer
+        failed:
+          type: integer
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/BulkInvitationItemResult'
+      required: [created, skipped, failed, results]
+    InvitationAcceptRequest:
+      type: object
+      additionalProperties: false
+      description: >-
+        Optional accept body. No fields are required: the token is in the path
+        and, for an authenticated accept, the identity comes from the session.
+      properties: {}
+    InvitationEnrollResponse:
+      type: object
+      additionalProperties: false
+      description: >-
+        Returned `202` when the invitee has no session/account yet. Directs them
+        to sign up / sign in and carries the single-use `bindToken` that threads
+        this invite through signup (sent back as `SignupRequest.bindToken`).
+      properties:
+        action:
+          type: string
+          const: enroll
+        enrollUrl:
+          type: string
+          format: uri
+          description: Where to send the invitee to create an account or sign in.
+        bindToken:
+          type: string
+          description: >-
+            Single-use, short-lived, server-minted carrier of this invitation
+            through signup/enrollment. Redeemed server-side on signup (identity
+            must match the invited channel identity) to auto-bind the membership.
+        message:
+          type: string
+      required: [action, enrollUrl, bindToken]
+    InvitationAcceptResult:
+      type: object
+      additionalProperties: false
+      description: Returned `200` when the membership was bound.
+      properties:
+        action:
+          type: string
+          const: bound
+        organizationId:
+          type: string
+        userId:
+          type: string
+          description: Typed id of the now-bound member (a reference to the accepting user).
+        role:
+          $ref: '#/components/schemas/InvitationRole'
+        memberType:
+          $ref: '#/components/schemas/MemberType'
+      required: [action, organizationId, userId, role, memberType]
     # ── M2M shapes ──
     TokenIssueRequest:
       type: object
@@ -3161,6 +4302,21 @@ components:
           items:
             type: string
       required: [codes]
+    RecoveryCodesStatus:
+      type: object
+      additionalProperties: false
+      description: >-
+        Counts for the caller's current recovery-code set. Never contains codes.
+      properties:
+        remaining:
+          type: integer
+          minimum: 0
+          description: Unused codes left in the current set. `0` means recovery is unavailable at sign-in.
+        total:
+          type: integer
+          minimum: 0
+          description: Codes issued in the current set (`0` if none was ever generated).
+      required: [remaining, total]
     MfaChallengeRequest:
       type: object
       properties:
@@ -3182,6 +4338,25 @@ components:
       required: [challengeId, factorId]
     MfaVerifyRequest:
       type: object
+      description: >-
+        Step-up proof for `POST /mfa/verify`: EITHER a factor code
+        (`MfaFactorVerifyRequest`) OR a recovery code
+        (`MfaRecoveryVerifyRequest`). Exactly one must match: the variants are
+        distinguished by their required keys (`factorId` + `code` vs
+        `recoveryCode`), the factor variant may not carry `recoveryCode`, and
+        the recovery variant forbids any other key, so no body matches both.
+      oneOf:
+        - $ref: '#/components/schemas/MfaFactorVerifyRequest'
+        - $ref: '#/components/schemas/MfaRecoveryVerifyRequest'
+    MfaFactorVerifyRequest:
+      type: object
+      description: >-
+        Factor-code proof — the pre-1.4.0 `MfaVerifyRequest` shape. Unchanged
+        except that it may not also carry `recoveryCode` (a key with no meaning
+        before 1.4.0), so a mixed body is rejected rather than silently ignoring
+        the recovery code. Deliberately NOT closed with
+        `additionalProperties: false`, which would reject other extra keys a
+        1.3.1 server accepted.
       properties:
         challengeId:
           type: string
@@ -3190,6 +4365,27 @@ components:
         code:
           type: string
       required: [challengeId, factorId, code]
+      not:
+        required: [recoveryCode]
+    MfaRecoveryVerifyRequest:
+      type: object
+      additionalProperties: false
+      description: >-
+        Recovery-code proof. Single-use: consumed atomically with the successful
+        verification. The server normalizes before comparison (trims, strips
+        spaces and hyphens, case-folds), so the user may type the code as
+        displayed. The code is opaque — clients must not validate its format
+        beyond non-empty.
+      properties:
+        challengeId:
+          type: string
+          description: From the `mfa_required` `SessionResult`. Server-minted.
+        recoveryCode:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: One of the user's unused recovery codes.
+      required: [challengeId, recoveryCode]
     # ── Contact verification shapes ──
     EmailVerifyStartRequest:
       type: object
@@ -3198,7 +4394,9 @@ components:
         email:
           type: string
           format: email
-          description: Signup-scoped address to verify when unauthenticated.
+          description: >-
+            Address used to look up the account when unauthenticated. Ignored
+            when a bearer token is present (the account's own email is used).
     PhoneVerifyStartRequest:
       type: object
       properties:
@@ -3271,6 +4469,18 @@ components:
           type: string
           description: The password to set; must satisfy the account password policy.
       required: [newPassword]
+    ChangePasswordRequest:
+      type: object
+      additionalProperties: false
+      description: Change the password of an account that already has one.
+      properties:
+        currentPassword:
+          type: string
+          description: The account's current password (verified before the change).
+        newPassword:
+          type: string
+          description: The new password; must satisfy the account password policy.
+      required: [currentPassword, newPassword]
     # ── Sessions: device-management shapes ──
     SessionDevice:
       type: object
@@ -3303,6 +4513,49 @@ components:
           type: boolean
           description: True for the session making this request.
       required: [id, current]
+    SessionValidateRequest:
+      type: object
+      description: >-
+        The session to check, taken verbatim from the `userId` and `sessionId`
+        claims of an already-verified FuzeFront session token. Both identify
+        EXISTING entities (references, not identity being created), and both are
+        required: the session only counts as active for the user it belongs to.
+      additionalProperties: false
+      properties:
+        userId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: The `userId` claim of the session token.
+        sessionId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: The `sessionId` claim of the session token.
+        tenantId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: >-
+            The `tid` claim of the session token, if it has one. Required for a
+            session to count as active when multi-tenant identity is enabled
+            (it must equal the tenant serving the request). Omit it only for a
+            token that carries no `tid`, which is valid only in single-tenant
+            mode.
+      required: [userId, sessionId]
+    SessionValidation:
+      type: object
+      description: >-
+        Whether the session is still active. A consumer MUST treat anything
+        other than a well-formed `{ "active": true }` as inactive.
+      additionalProperties: false
+      properties:
+        active:
+          type: boolean
+          description: >-
+            True only if the session exists, has not expired, and belongs to the
+            supplied `userId`. False in every other case, with no reason given.
+      required: [active]
     # ── Account: social linking / connections shapes ──
     SocialLinkStart:
       type: object
@@ -3408,6 +4661,11 @@ components:
         isSelf:
           type: boolean
           description: True for the calling user's own row (rendered "You"; data-self).
+        memberType:
+          $ref: '#/components/schemas/MemberType'
+          description: >-
+            How this member relates to the org (employee|customer), orthogonal to
+            `role`. Optional: pre-FFRNT-305 memberships may not carry one.
       required: [userId, displayName, role]
     DirectoryPage:
       type: object
@@ -3723,7 +4981,24 @@ components:
     # ── Errors ──
     ErrorBody:
       type: object
-      description: Stable error body. Fail-closed; provider-neutral codes.
+      description: >-
+        Stable error body. Fail-closed; provider-neutral codes. TOKEN_EXPIRED
+        (past TTL or already used) and TOKEN_INVALID (matches nothing) are
+        returned as 400 by the email-verify and password-reset confirm
+        operations; they are NOT session failures and clients must not treat
+        them as 401 session expiry. PASSWORD_POLICY (422) is returned by
+        reset-confirm when the identity provider rejects the new password (and by
+        `POST /v1/security/signup` when the chosen password fails the policy); the
+        reset token stays live so a compliant retry succeeds. CAPTCHA_FAILED (400)
+        is returned by `POST /v1/security/signup` when the supplied Cloudflare
+        Turnstile token is rejected, invalid, or missing — a distinct, explicit
+        failure from a generic MALFORMED body. A rejected captcha is a 400
+        (client-correctable: fetch a fresh token and retry); Cloudflare being
+        unreachable is instead 503 PROVIDER_UNAVAILABLE (fail-closed), never
+        CAPTCHA_FAILED. RECOVERY_CODE_INVALID (401) is returned by
+        `POST /v1/security/mfa/verify` when a submitted recovery code is wrong,
+        already used, or from a superseded set (the causes are deliberately
+        indistinguishable); the challenge stays live.
       properties:
         error:
           type: string
@@ -3747,5 +5022,13 @@ components:
             - FORBIDDEN
             - NOT_FOUND
             - PROVIDER_UNAVAILABLE
+            - TOKEN_EXPIRED
+            - TOKEN_INVALID
+            - PASSWORD_POLICY
+            - CAPTCHA_FAILED
+            - LAST_FACTOR
+            - NO_PASSWORD
+            - RATE_LIMITED
+            - RECOVERY_CODE_INVALID
             - UNKNOWN
       required: [error, code]

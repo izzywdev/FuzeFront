@@ -49,3 +49,18 @@ describe("<ProgressMeter>", () => {
     expect(fill).toHaveStyle({ background: expected });
   });
 });
+
+describe("<ProgressMeter> role", () => {
+  it("renders role=meter with the same aria values when asked", () => {
+    render(<ProgressMeter value={38} max={100} label="Organization lists" role="meter" />);
+    const meter = screen.getByRole("meter", { name: "Organization lists" });
+    expect(meter).toHaveAttribute("aria-valuenow", "38");
+    expect(meter).toHaveAttribute("aria-valuemax", "100");
+    expect(screen.queryByRole("progressbar")).toBeNull();
+  });
+
+  it("falls back to progressbar for any other role value", () => {
+    render(<ProgressMeter value={1} max={2} label="X" role="status" />);
+    expect(screen.getByRole("progressbar", { name: "X" })).toBeInTheDocument();
+  });
+});

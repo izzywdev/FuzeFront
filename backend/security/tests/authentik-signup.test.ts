@@ -95,7 +95,7 @@ describe('authentikSignup()', () => {
       // 3. GET authorize → 302 to our callback with the code
       .mockResolvedValueOnce(mkRes({ status: 302, location: `${REDIRECT_URI}?code=the-code&state=st` }))
 
-    const user = await authentikSignup({ email: 'signup@test.local', password: 'Sup3rSecret!!', firstName: 'New', lastName: 'User' })
+    const user = await authentikSignup({ email: 'signup@test.local', password: 'Sup3rSecret!!', name: 'New User' })
 
     expect(user.email).toBe('signup@test.local')
     expect(oidcService.handleCallback).toHaveBeenCalledWith('the-code', 'st', 'test-code-verifier')
@@ -111,7 +111,58 @@ describe('authentikSignup()', () => {
       password_repeat: 'Sup3rSecret!!',
     })
     expect(body.username).toBeTruthy()
+    // The single `name` is forwarded verbatim to Authentik's single `name` field.
+    expect(body.name).toBe('New User')
     expect(promptInit.headers['X-Authentik-CSRF']).toBe('csrf-tok')
+  })
+
+  /** Drive a successful signup and return the parsed enrollment-prompt POST body. */
+  async function signupPromptBody(input: Parameters<typeof authentikSignup>[0]) {
+    fetchMock
+      .mockResolvedValueOnce(mkRes({ json: { component: 'ak-stage-prompt' }, setCookies: ['authentik_csrf=csrf-tok; Path=/'] }))
+      .mockResolvedValueOnce(mkRes({ json: { component: 'xak-flow-redirect', to: '/' }, setCookies: ['authentik_session=s; Path=/'] }))
+      .mockResolvedValueOnce(mkRes({ status: 302, location: `${REDIRECT_URI}?code=the-code&state=st` }))
+    await authentikSignup(input)
+    return JSON.parse(fetchMock.mock.calls[1][1].body)
+  }
+
+  it.each([
+    ['a family-name-first name is not reordered', '王 小明'],
+    ['a mononym is passed through whole', 'Sukarno'],
+    ['an RTL name is passed through whole', 'محمد علي'],
+  ])('name mapping: %s', async (_label, name) => {
+    const body = await signupPromptBody({ email: 'n@test.local', password: 'Sup3rSecret!!', name })
+    expect(body.name).toBe(name)
+  })
+
+  it('name mapping: surrounding whitespace is trimmed', async () => {
+    const body = await signupPromptBody({ email: 'n@test.local', password: 'Sup3rSecret!!', name: '  Ada Lovelace  ' })
+    expect(body.name).toBe('Ada Lovelace')
+  })
+
+  it.each([[undefined], [''], ['   ']])('name mapping: an absent/blank name (%j) sends no `name` field', async (name) => {
+    const body = await signupPromptBody({ email: 'n@test.local', password: 'Sup3rSecret!!', name: name as string | undefined })
+    expect(body).not.toHaveProperty('name')
+  })
+
+  it('username: an ASCII-safe local-part is kept verbatim (unchanged from before)', async () => {
+    const body = await signupPromptBody({ email: 'jane.doe_1@test.local', password: 'Sup3rSecret!!' })
+    expect(body.username).toBe('jane.doe_1')
+  })
+
+  it.each([
+    ['CJK', '用户@例子.cn'],
+    ['Cyrillic', 'мария@пример.рф'],
+    ['accented Latin', 'josé@test.local'],
+  ])('username: a non-ASCII (%s) local-part is not gutted — the full address is used', async (_l, email) => {
+    const body = await signupPromptBody({ email, password: 'Sup3rSecret!!' })
+    expect(body.username).toBe(email.normalize('NFC').toLowerCase())
+    expect(body.username).not.toBe('')
+  })
+
+  it('username: an explicit username still wins', async () => {
+    const body = await signupPromptBody({ email: 'x@test.local', password: 'Sup3rSecret!!', username: 'chosen' })
+    expect(body.username).toBe('chosen')
   })
 
   it('maps an "already exists" response_error to EnrollmentConflictError', async () => {

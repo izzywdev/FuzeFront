@@ -83,6 +83,17 @@ export interface SeedApplyRequest {
   /** Envelope correlation id for every event this request writes (defaults to the current request id / event id). */
   correlationId?: string;
   /**
+   * Honour the seed lists' `visibility` (HTTP contract 4.1.0). Set by the CALLER from the release flag
+   * `fuzefront.selection-lists.shared-lists` (the library reads no flags): false/absent => `visibility` is
+   * IGNORED and every list is seeded `private`, the 4.0.0 behaviour. True =>
+   *   `org` seeds a list every member of the organization can read; `private` is the default;
+   *   `platform` (platform packs only; an app request carrying it is a VALIDATION_ERROR) seeds a common list
+   *   ONCE, into the platform organization, and is SKIPPED (no row, no result entry) for every other org.
+   * Visibility is applied at CREATION only: a later pack version never changes the visibility of a list it
+   * already seeded (an access setting a human may have chosen; existing data is migrated by the rollout job).
+   */
+  honorVisibility?: boolean;
+  /**
    * 'projection' (default): the org must be known and active in the org projection
    * (`selection_list_ref_index`) - ORG_UNKNOWN / ORG_INACTIVE otherwise.
    * 'skip': no projection check (for callers that already established it).

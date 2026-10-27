@@ -59,8 +59,11 @@ export interface PasswordLoginInput {
 export interface SignupInput {
   email: string;
   password: string;
-  firstName?: string;
-  lastName?: string;
+  /**
+   * Optional single display name (i18n-safe). Maps 1:1 to the identity store's
+   * `name`; replaces the former firstName/lastName split (contract 1.0.0).
+   */
+  name?: string;
   /** Optional tenant/organization name to provision on signup. */
   tenantName?: string;
 }
@@ -374,7 +377,11 @@ export interface IdentityProvider {
   /** Activate a pending factor with a one-time code. Rejects on bad/expired code. */
   activateFactor(token: string, factorId: string, code: string): Promise<MfaFactor>;
 
-  /** Remove an enrolled factor. Idempotent. */
+  /**
+   * Remove an enrolled factor. Idempotent. Rejects with LastFactorError when it
+   * is the user's last ACTIVE factor (atomic with the delete). Pending factors
+   * may always be removed.
+   */
   removeFactor(token: string, factorId: string): Promise<void>;
 
   /** (Re)generate one-time recovery codes; returns them once. */
@@ -390,6 +397,21 @@ export interface IdentityProvider {
     code: string,
     ctx?: SessionContext
   ): Promise<BrokeredSession>;
+
+  /**
+   * Redeem a single-use recovery code for a login challenge (contract 1.3.0).
+   * Rejects with RecoveryCodeInvalidError (wrong/used/replaced — indistinguishable)
+   * or UnauthorizedError (unknown/expired/completed challenge). A failed attempt
+   * consumes nothing.
+   */
+  verifyMfaRecovery(
+    challengeId: string,
+    recoveryCode: string,
+    ctx?: SessionContext
+  ): Promise<BrokeredSession>;
+
+  /** Counts for the caller's current recovery-code set. Never returns codes. */
+  getRecoveryCodesStatus(token: string): Promise<{ remaining: number; total: number }>;
 
   // ── Self-service password reset ──
 
@@ -419,8 +441,12 @@ export interface IdentityProvider {
   /** Send an SMS OTP to a phone number. */
   startPhoneVerification(token: string, phone: string): Promise<void>;
 
-  /** Confirm phone ownership via `{ phone, code }`. */
-  confirmPhoneVerification(phone: string, code: string): Promise<VerificationStatus>;
+  /**
+   * Confirm phone ownership via `{ phone, code }`. Session-bound: only the
+   * caller's own account (resolved from `token`) is marked verified, and only
+   * when `phone` is that account's pending/current number.
+   */
+  confirmPhoneVerification(token: string, phone: string, code: string): Promise<VerificationStatus>;
 
   /** Current contact-verification status for the user. */
   getVerificationStatus(token: string): Promise<VerificationStatus>;
@@ -440,6 +466,26 @@ export interface IdentityProvider {
 
   /** Revoke every session for the caller EXCEPT the one presenting `token`. Idempotent. */
   revokeOtherSessions(token: string): Promise<void>;
+
+  /**
+   * Is this session still live for this user? For a service that has ALREADY
+   * verified a session token's signature and needs the one thing a signature
+   * cannot say: whether the session was revoked or has expired since.
+   *
+   * Resolves `true` only when the session exists, has not expired, belongs to
+   * `userId`, and (in multi-tenant mode) was minted for the tenant serving this
+   * request. `tenantId` is the token's `tid` claim. Every tenant's sessions are
+   * signed with one secret and the session row records no tenant, so the claim
+   * plus the host-derived tenant is the only thing that separates the tenants'
+   * account directories; it is checked exactly as a presented token is. Every
+   * other case (unknown, revoked, expired, owned by someone else, another
+   * tenant's, or an id that is not even well-formed) resolves `false` with no
+   * reason, so the answer cannot tell a caller which identifier was wrong.
+   *
+   * It REJECTS only when the session store cannot be read. The caller must map
+   * that to a retryable 503: an outage is neither "active" nor "revoked".
+   */
+  isSessionActive(userId: string, sessionId: string, tenantId?: string): Promise<boolean>;
 
   // ── Account sign-in connections ──
 
@@ -466,4 +512,13 @@ export interface IdentityProvider {
    * identity store; FuzeFront never stores one.
    */
   setPassword(token: string, newPassword: string): Promise<IdentityConnections>;
+
+  /**
+   * Change the password of an account that already has one. Verifies
+   * `currentPassword` first, applies the new-password policy, and revokes every
+   * session EXCEPT the caller's. Rejects: InvalidInput (malformed), NoPassword
+   * (no password sign-in method), CurrentPasswordInvalid (wrong current
+   * password), PasswordPolicyRejected (new password fails policy).
+   */
+  changePassword(token: string, currentPassword: string, newPassword: string): Promise<void>;
 }

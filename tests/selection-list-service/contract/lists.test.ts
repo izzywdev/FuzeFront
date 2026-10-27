@@ -25,13 +25,14 @@ import {
   collectAllLists,
 } from '../helpers/factories';
 import type { SelectionListId } from '../helpers/factories';
+import { testOrg, testUser } from '../helpers/ids';
 
 // ---------------------------------------------------------------------------
 // Test actors
 // ---------------------------------------------------------------------------
 
-const ORG_ID = 'org_01test00000000000lists0000';
-const USER_OWNER = 'usr_01test00000000000listowner0';
+const ORG_ID = testOrg('lists');
+const USER_OWNER = testUser('listowner');
 
 function ownerToken(): string {
   return mintTestToken({ userId: USER_OWNER, organizationId: ORG_ID });
