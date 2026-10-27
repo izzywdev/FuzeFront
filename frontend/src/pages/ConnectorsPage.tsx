@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@fuzefront/design-system'
-import { getActiveAuthToken } from '../lib/accounts'
+import { getActiveAuthToken, getActiveValue } from '../lib/accounts'
 
 type GmailStatus = {
   provider: 'google-gmail'
@@ -20,6 +20,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       signal: controller.signal,
       headers: {
         'Content-Type': 'application/json',
+        'X-Active-Organization': getActiveValue('activeOrganizationId') || '',
         Authorization: `Bearer ${getActiveAuthToken() || ''}`,
         ...(init?.headers || {}),
       },
