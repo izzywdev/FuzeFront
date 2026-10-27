@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   appendUnique,
+  canonicalOrganizationId,
+  sameOrganization,
   canOfferPlatformPublish,
   createdByKind,
   editableStateOf,
@@ -408,5 +410,45 @@ describe('isSameOriginPath', () => {
     42,
   ])('rejects %s', value => {
     expect(isSameOriginPath(value)).toBe(false)
+  })
+})
+
+describe('organization identity (the same org in either rendering)', () => {
+  // Vectors produced by @izzywdev/fuzefront-identity `fromUuid('organization', uuid)`.
+  const PAIRS: Array<[string, string]> = [
+    ['0195a8f2-7c3e-7b1a-9d2e-3f4a5b6c7d8e', 'org_01jpmf4z1yfcd9tbhz99dprzce'],
+    ['00000000-0000-0000-0000-000000000000', 'org_00000000000000000000000000'],
+    ['ffffffff-ffff-ffff-ffff-ffffffffffff', 'org_7zzzzzzzzzzzzzzzzzzzzzzzzz'],
+    ['1d6b3e2a-9c4f-4a8e-b5d7-0e1f2a3b4c5d', 'org_0xdcz2n72f9a7bbnre3wn3pk2x'],
+  ]
+
+  it.each(PAIRS)('%s and %s are one organization, in both directions', (uuid, typeId) => {
+    expect(canonicalOrganizationId(typeId)).toBe(uuid)
+    expect(canonicalOrganizationId(uuid)).toBe(uuid)
+    expect(canonicalOrganizationId(uuid.toUpperCase())).toBe(uuid)
+    expect(sameOrganization(uuid, typeId)).toBe(true)
+    expect(sameOrganization(typeId, uuid)).toBe(true)
+    expect(sameOrganization(typeId, typeId)).toBe(true)
+  })
+
+  it('different organizations are never the same, whatever the rendering', () => {
+    expect(sameOrganization(PAIRS[0][0], PAIRS[3][1])).toBe(false)
+    expect(sameOrganization(PAIRS[0][1], PAIRS[3][0])).toBe(false)
+    expect(sameOrganization(PAIRS[0][1], PAIRS[3][1])).toBe(false)
+  })
+
+  it('missing ids are never the same; unrecognised ids only equal themselves', () => {
+    expect(sameOrganization(undefined, PAIRS[0][0])).toBe(false)
+    expect(sameOrganization(PAIRS[0][0], null)).toBe(false)
+    expect(sameOrganization('', '')).toBe(false)
+    expect(sameOrganization('acme', 'acme')).toBe(true)
+    expect(sameOrganization('acme', 'globex')).toBe(false)
+    expect(canonicalOrganizationId('org_7zzzzzzzzzzzzzzzzzzzzzzzzz')).not.toBe('org_7zzzzzzzzzzzzzzzzzzzzzzzzz')
+  })
+
+  it('rejects what the codec rejects (overflow, bad alphabet, wrong length)', () => {
+    for (const bad of ['org_8zzzzzzzzzzzzzzzzzzzzzzzzz', 'org_0000000000000000000000000u', 'org_0000', 'org_']) {
+      expect(canonicalOrganizationId(bad)).toBe(bad)
+    }
   })
 })
