@@ -6,7 +6,6 @@
 import type {
   SelectionList,
   SelectionListItem,
-  QuotaScope,
   QuotaStatus,
   LocaleIndexResponse,
   LocaleEditorResponse,
@@ -235,24 +234,16 @@ export async function reorderItems(
 // ── Quota ─────────────────────────────────────────────────────────────────────
 
 /**
- * `GET /v1/selection-lists/quota` as the service sends it
- * (`SelectionListQuotaStatus`: `{ organization_id, quotas: [{ scope,
- * applies_to, limit, current }] }`). The 4.0.0 UI read `scopes`, which the
- * service has never sent, so the index threw a TypeError on the first 200; this
- * accepts the wire `quotas` (and the legacy `scopes`) and always returns
- * `{ scopes }`, dropping the fields the UI does not use.
+ * `GET /v1/selection-lists/quota`, returned exactly as the service sends it: the
+ * contract's `SelectionListQuotaStatus` = `{ organization_id, quotas: [{ scope,
+ * applies_to, limit, current }] }`. There is no second view model to drift from
+ * the wire; the 4.0.0 UI read `scopes`, which the service has never sent. A body
+ * that is not this shape is rejected by the readers (see the management flow's
+ * `isQuotaStatus`), which treat the advisory quota read as unavailable.
  */
-interface QuotaWire {
-  scopes?: QuotaScope[]
-  quotas?: QuotaScope[]
-}
-
 export async function getQuota(): Promise<QuotaStatus> {
-  const { data } = await request<QuotaWire>(`${BASE}/quota`)
-  const entries = data?.quotas ?? data?.scopes ?? []
-  return {
-    scopes: entries.map(({ scope, current, limit }) => ({ scope, current, limit })),
-  }
+  const { data } = await request<QuotaStatus>(`${BASE}/quota`)
+  return data
 }
 
 // ── Translations ──────────────────────────────────────────────────────────────
