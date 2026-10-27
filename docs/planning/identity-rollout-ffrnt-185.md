@@ -1,14 +1,36 @@
 # FFRNT-185 — typed-id rollout across the remaining services
 
-Status: **storage-form mint migrated; wire-prefix still pending.** All 28 genuine
-entity mints now route through `toUuid(mintId(<type>))` (Order-of-work steps 1–2),
-the three services declare the `@izzywdev/fuzefront-identity` dependency and ship
-its built `dist` in their production images, and the `--source` backstop is
-ratcheted to **enforcing** (step 6). Still deliberately deferred: taking
-`EntityId<T>` in the repository signatures (step 3) and prefixing the wire form
-behind `fuzefront.identity.prefixed-ids` with its dual-accept window and row
-backfill (steps 4–5). This document remains the measured inventory and the order
-of work; the "Why this is staged" reasons below still govern the deferred steps.
+Status: **complete — the TypeID wire form is live.** All 28 genuine entity mints
+route through `toUuid(mintId(<type>))`, the
+three services ship `@izzywdev/fuzefront-identity` in their production images, the
+`--source` backstop is **enforcing**, the `fuzefront.identity.prefixed-ids` release
+flag is **ON at 100 % in production**, and migration `024_portal_typeid_backfill`
+(`backend/src/migrations/`) has shipped, converging the legacy `prt_<hex>` portal
+storage form onto a bare `uuid` column rendered as TypeID on the wire.
+
+What is *not* finished, stated precisely so this line cannot be read as "nothing left":
+
+- **Dual-accept windows (`configureIdentity({ legacyUuidTypes })`) are still declared
+  open in code** in all three backends (`backend/src/index.ts`,
+  `backend/security/src/index.ts`, `backend/applications/src/index.ts`) for
+  `organization`, `user`, `app`, `portal`, and in `services/config-service`
+  for `portal`, `organization`, `user`. #1142 closed them; #1594 deliberately
+  re-opened them for the first three services while the flag was still OFF in
+  production (responses were emitting bare UUIDs, and a strict input boundary
+  422'd the ids the frontend round-trips). The flag precondition no longer holds,
+  so the three backends' windows are now closeable; that is a separate,
+  behaviour-changing step (it starts rejecting bare UUIDs) and is tracked as a
+  follow-up, not done here. config-service's window has an independent blocker —
+  see its comment in `services/config-service/src/index.ts`.
+- **Step 3 (`EntityId<T>` in repository signatures) is partial**: only
+  `organizationRepository` (security) and `appRepository` (applications) take the
+  branded type today; the remaining repositories still accept `string`.
+- **The flag itself is retired separately** (see `packages/feature-flags/flag-registry.yaml`
+  `removal_criterion`): once the flag is 100 % global the conditional wire-form
+  branches are dead code and the TypeID form becomes unconditional.
+
+The "Why this is staged" reasons below record how the rollout was sequenced and
+remain the rationale for closing each remaining window one type at a time.
 
 ## What the backlog actually is
 

@@ -8,6 +8,12 @@ export interface SelectionList {
   status: 'active' | 'archived'
   item_count: number
   source_locale: string
+  /**
+   * Contract 4.1.0 caller-relative hint (a service behind the shared-lists flag
+   * omits it): `false` = the caller reads this list only through visibility.
+   * Absent = unknown — never inferred `false`.
+   */
+  editable?: boolean
   created_at: string
   updated_at: string
 }
@@ -21,18 +27,41 @@ export interface SelectionListItem {
   status: 'active' | 'archived'
   sort_order: number
   source_hash: string
+  /** The locale `label` was resolved in (4.1.0 service); absent from older mocks. */
+  resolved_locale?: string
 }
 
+/**
+ * One ceiling in the quota response. Mirrors the contract's
+ * `SelectionListQuotaEntry`; `quota-envelope.test.tsx` binds it to the generated
+ * `@fuzeone/selection-list-client` type in both directions (a tsc error on drift).
+ */
 export interface QuotaScope {
   scope: 'org_lists' | 'user_lists' | 'list_items' | 'list_locales'
+  /** What the ceiling is counted per. */
+  applies_to: 'organization' | 'user' | 'list'
+  /** `null` for per-list ceilings (usage depends on which list is asked about). */
   current: number | null
   limit: number
 }
 
+/**
+ * `GET /v1/selection-lists/quota` — the contract's `SelectionListQuotaStatus`,
+ * returned by `getQuota()` exactly as the service sends it. One entry per scope
+ * under `quotas` (not `scopes`).
+ */
 export interface QuotaStatus {
-  scopes: QuotaScope[]
+  organization_id: string
+  quotas: QuotaScope[]
 }
 
+/**
+ * One row of the workbench's locale index — a VIEW MODEL built by `getLocaleIndex`
+ * from the contract's `TranslationLocaleStatus` (`completeness_pct`,
+ * `machine_translated`, `source_changed`). `total` is exact; `translated` is
+ * recovered from the rounded percentage; `machine_count` / `stale_count` are 0 or
+ * 1 (the contract carries a flag per locale, not a count — the UI shows the flag).
+ */
 export interface LocaleIndexEntry {
   locale: string
   is_source: boolean

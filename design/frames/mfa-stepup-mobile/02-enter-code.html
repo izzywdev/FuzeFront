@@ -40,6 +40,14 @@
     animation: spin 0.8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
   @media (prefers-reduced-motion: reduce){ .spinner{ animation: none; } }
+  .rl-callout { display: flex; gap: var(--space-3); align-items: flex-start; text-align: left; padding: var(--space-4);
+    margin-bottom: var(--space-5); border-radius: var(--radius-md); border: 1px solid var(--warning-color);
+    background: var(--warning-soft); color: var(--text-secondary); font-size: var(--text-sm); line-height: 1.5; }
+  .rl-callout b { display: block; color: var(--text-primary); font-size: var(--text-md); margin-bottom: var(--space-1); }
+  .rl-wait { display: inline; margin: 0; font-size: inherit; font-variant-numeric: tabular-nums; }
+  .btn[disabled] { opacity: 0.6; cursor: not-allowed; }
+  .rl-callout__ico { flex: none; color: var(--warning-color); }
+  .rl-note { margin-top: var(--space-4); font-size: var(--text-xs); color: var(--text-tertiary); line-height: 1.5; text-align: left; }
   .state-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: var(--tracking-wide);
     text-transform: uppercase; color: var(--text-tertiary); margin: 28px 0 10px; text-align: center; }
   .caption { text-align:center; font-size: 11px; color: var(--text-tertiary); margin-top: 6px; }
@@ -104,6 +112,32 @@
       <button class="btn btn-primary" data-action="verify-mfa">Try again</button>
       <button class="btn btn-ghost" data-action="choose-factor">Use a different method</button>
     </div>
+  </main>
+</div>
+
+<div class="state-label">Too many attempts · 429 RATE_LIMITED (fail-closed, Retry-After countdown)</div>
+<div class="phone" data-frame="02-enter-code" data-state="rate-limited">
+  <header class="m-topbar"><span class="back" aria-hidden="true">←</span><span class="title">Enter your code</span></header>
+  <main class="m-body" data-panel="enter-code" data-state="rate-limited" data-http-status="429" data-factor="totp">
+    <div class="rl-callout" role="alert" data-error="rate-limited">
+      <span class="rl-callout__ico" aria-hidden="true">⏳</span>
+      <span><b>Too many attempts</b>
+        For your security we've paused verification. Try again in <b class="rl-wait" data-value="retry-after">4:59</b>. Switching to another method won't skip the wait.</span>
+    </div>
+    <div class="otp" role="group" aria-label="One-time code">
+      <input inputmode="numeric" maxlength="1" value="4" aria-label="digit 1" />
+      <input inputmode="numeric" maxlength="1" value="2" aria-label="digit 2" />
+      <input inputmode="numeric" maxlength="1" value="8" aria-label="digit 3" />
+      <input inputmode="numeric" maxlength="1" value="1" aria-label="digit 4" />
+      <input inputmode="numeric" maxlength="1" value="5" aria-label="digit 5" />
+      <input inputmode="numeric" maxlength="1" value="9" aria-label="digit 6" />
+    </div>
+    <div class="actions">
+      <button class="btn btn-primary" data-action="verify-mfa" data-state="cooldown" disabled aria-disabled="true">Try again in 4:59</button>
+      <button class="btn btn-ghost" data-action="back-to-sign-in">Back to sign in</button>
+    </div>
+    <p class="rl-note">Wait = 429 <code class="mono">Retry-After</code> (seconds), shown as a live m:ss countdown; “Try again” disabled until it
+      hits zero. Header missing/invalid → “Wait a few minutes, then try again.”, button enabled. Code kept, not marked red.</p>
   </main>
 </div>
 

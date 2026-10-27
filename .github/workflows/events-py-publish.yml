@@ -1,0 +1,41 @@
+name: Publish fuzefront-events to PyPI
+
+# Triggered when a tag matching the pattern below is pushed. Tests first, then
+# calls the shared python-publish.yml reusable workflow (PyPI trusted publishing).
+#
+# Versioning: bump the version in packages/events-py/pyproject.toml, commit to
+# master, then tag:
+#
+#   git tag events-py/v0.1.0
+#   git push origin events-py/v0.1.0
+#
+# The verify step in python-publish.yml installs the package from PyPI and
+# imports it, proving the upload succeeded (FFRNT-264).
+#
+# NOTE: PyPI trusted publishing requires a one-time setup in the PyPI web UI
+# (a human action) for the `fuzefront-events` project:
+#   Repository: izzywdev/FuzeFront
+#   Workflow:   python-publish.yml
+#   Environment: pypi
+#
+# DEPENDENCY: fuzefront-events requires `fuzefront-identity`, which today ships
+# as a GitHub Release asset, not on PyPI. Publish fuzefront-identity to PyPI
+# first (it can adopt python-publish.yml unchanged) or `pip install` of this
+# package from PyPI will fail to resolve it.
+
+on:
+  push:
+    tags:
+      - "events-py/v*"
+
+jobs:
+  test:
+    uses: ./.github/workflows/events-py-tests.yml
+
+  publish:
+    needs: test
+    uses: ./.github/workflows/python-publish.yml
+    with:
+      package-dir: packages/events-py
+      package-name: fuzefront-events
+      python-version: "3.12"

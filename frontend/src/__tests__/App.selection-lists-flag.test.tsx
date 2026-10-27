@@ -63,6 +63,10 @@ vi.mock('@fuzeone/selection-lists-ui', () => ({
   SelectionListAccessFlow: () => <div data-testid="sl-access">access</div>,
   SelectionListPickerHarness: () => <div data-testid="sl-picker">picker</div>,
   configureSelectionListsAuth: vi.fn(),
+  // Pass-through: the shell mounts it around the app (SharedListsHost). Its
+  // flag handling is covered in App.selection-lists-shared-flag.test.tsx.
+  SharedListsFeatureProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  SHARED_LISTS_FLAG_KEY: 'fuzefront.selection-lists.shared-lists',
 }))
 
 const FLAG = 'fuzefront.selection-lists.service'

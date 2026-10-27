@@ -249,12 +249,60 @@ export interface SelectionList {
    * absence as `false`.
    */
   editable?: boolean
+  /**
+   * The list's current revision (4.2.0): the same per-list counter the event
+   * contract carries as `listRevision` — `1` at creation, +1 per change event
+   * the service commits about the list or anything inside it, never
+   * decreasing. Compare a fork's `forked_from.revision` with its source's
+   * `revision` to tell whether the fork is behind (see `compareForkToSource`).
+   * Optional until the implementation ships: **absent means unknown** — never
+   * infer a revision from `updated_at`.
+   */
+  revision?: number
   /** Who created the list: a user, a system principal (seeding), or the deleted-user sentinel. */
   created_by: AuthorPrincipal
   /** RFC 3339 creation timestamp. */
   created_at: string
   /** RFC 3339 last-modification timestamp. */
   updated_at: string
+}
+
+/**
+ * Whether a fork is behind its source (contract 4.2.0):
+ * - `'behind'` — the source's current `revision` is greater than the
+ *   `forked_from.revision` captured at copy time: the source changed after the
+ *   fork was made (informational; there is no merge or sync operation);
+ * - `'up-to-date'` — the two revisions are equal;
+ * - `'unknown'` — either side carries no usable revision (a service that does
+ *   not emit `SelectionList.revision` yet), the first argument is not a fork,
+ *   or the second is not its source. Render "comparison unavailable".
+ */
+export type ForkSourceComparison = 'behind' | 'up-to-date' | 'unknown'
+
+/**
+ * Compare a fork with a fresh read of its source (`getList(fork.forked_from.list_id)`).
+ *
+ * Only revisions are compared — never `updated_at`. Whether the source is
+ * archived (`status`) or gone (`404`) is the caller's to render; this answers
+ * the revision question alone.
+ */
+export function compareForkToSource(
+  fork: Pick<SelectionList, 'forked_from'>,
+  source: Pick<SelectionList, 'id' | 'revision'>,
+): ForkSourceComparison {
+  const provenance = fork.forked_from
+  if (!provenance || provenance.list_id !== source.id) return 'unknown'
+  const now = source.revision
+  const then = provenance.revision
+  if (!isRevision(now) || !isRevision(then)) return 'unknown'
+  if (now > then) return 'behind'
+  if (now === then) return 'up-to-date'
+  // A revision never decreases, so this is not a state the contract allows; do not guess.
+  return 'unknown'
+}
+
+function isRevision(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1
 }
 
 /** Body for `POST /v1/selection-lists`. Carries no `id` — the service mints it. */
