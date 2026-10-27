@@ -12,5 +12,7 @@ describe('requirement-analysis failure provenance migration', () => {
     expect(migration).toContain('JIRA_UNAVAILABLE')
     expect(migration).toContain('INTELLIGENCE_UNAVAILABLE')
     expect(migration).toContain('SEMANTIC_INDEX_UNAVAILABLE')
+    expect(migration).toContain('INTELLIGENCE_TIMEOUT')
+    expect(migration).toContain('INTELLIGENCE_INVALID_RESPONSE')
   })
 })

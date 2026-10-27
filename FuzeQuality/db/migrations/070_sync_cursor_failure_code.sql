@@ -12,6 +12,8 @@ ALTER TABLE fuzequality.sync_cursors
     failure_code IS NULL OR failure_code IN (
       'JIRA_UNAVAILABLE',
       'INTELLIGENCE_UNAVAILABLE',
+      'INTELLIGENCE_TIMEOUT',
+      'INTELLIGENCE_INVALID_RESPONSE',
       'SEMANTIC_INDEX_UNAVAILABLE'
     )
   );

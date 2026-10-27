@@ -10,6 +10,8 @@ describe('RequirementFreshnessStatus', () => {
   it.each([
     ['JIRA_UNAVAILABLE', 'Jira requirements are temporarily unavailable.'],
     ['INTELLIGENCE_UNAVAILABLE', 'FuzeInfra LiteLLM analysis is temporarily unavailable.'],
+    ['INTELLIGENCE_TIMEOUT', 'FuzeInfra LiteLLM analysis timed out and will be retried.'],
+    ['INTELLIGENCE_INVALID_RESPONSE', 'FuzeInfra LiteLLM returned an invalid analysis response.'],
     ['SEMANTIC_INDEX_UNAVAILABLE', 'FuzeInfra semantic retrieval is temporarily unavailable.'],
   ] as const)('shows the retained %s dependency failure safely', (failureCode, message) => {
     render(<RequirementFreshnessStatus sync={{

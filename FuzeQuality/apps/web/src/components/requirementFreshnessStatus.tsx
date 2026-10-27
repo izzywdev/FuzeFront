@@ -4,6 +4,8 @@ import { Database } from 'lucide-react'
 const failureMessage: Record<NonNullable<SyncCursor['failureCode']>, string> = {
   JIRA_UNAVAILABLE: 'Jira requirements are temporarily unavailable.',
   INTELLIGENCE_UNAVAILABLE: 'FuzeInfra LiteLLM analysis is temporarily unavailable.',
+  INTELLIGENCE_TIMEOUT: 'FuzeInfra LiteLLM analysis timed out and will be retried.',
+  INTELLIGENCE_INVALID_RESPONSE: 'FuzeInfra LiteLLM returned an invalid analysis response.',
   SEMANTIC_INDEX_UNAVAILABLE: 'FuzeInfra semantic retrieval is temporarily unavailable.',
 }
 

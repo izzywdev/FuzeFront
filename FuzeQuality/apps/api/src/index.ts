@@ -139,7 +139,7 @@ const policyGateReviewSchema = z.object({
 const intelligenceFailureSchema = z.object({
   sourceType: z.literal('jira'),
   sourceKey: z.string().trim().min(1).max(200),
-  code: z.enum(['JIRA_UNAVAILABLE', 'INTELLIGENCE_UNAVAILABLE', 'SEMANTIC_INDEX_UNAVAILABLE']),
+  code: z.enum(['JIRA_UNAVAILABLE', 'INTELLIGENCE_UNAVAILABLE', 'INTELLIGENCE_TIMEOUT', 'INTELLIGENCE_INVALID_RESPONSE', 'SEMANTIC_INDEX_UNAVAILABLE']),
 }).strict()
 const repositoryAdministrationSchema = z.object({
   ownership: z.object({

@@ -69,7 +69,9 @@ await runConsumer(
     const analyzer = new LiteLlmFlowAnalyzer(
       process.env.LITELLM_URL ?? 'http://litellm.fuzeinfra.svc.cluster.local:4000/v1',
       process.env.FUZEQUALITY_LLM_MODEL ?? 'quality-analysis',
-      process.env.LITELLM_MASTER_KEY
+      process.env.LITELLM_MASTER_KEY,
+      fetch,
+      Number(process.env.FUZEQUALITY_REQUIREMENT_ANALYSIS_TIMEOUT_MS ?? 120_000),
     )
     const results = []
     for (const requirement of sync.requirements) {
