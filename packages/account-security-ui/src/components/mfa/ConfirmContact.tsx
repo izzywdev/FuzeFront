@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, Input, OtpInput, Skeleton, Spinner } from '@fuzefront/design-system'
 import { useAccountSecurityI18n } from '../../i18n/AccountSecurityI18nProvider'
-import type { ContactClient } from '../../types'
+import type { AuthMethods, ContactClient, MfaClient } from '../../types'
 import { classifyCodeFailure } from '../../api/errors'
 import {
   Actions,
+  ErrorWithRetry,
   FlowPage,
   FlowRoot,
   Hint,
@@ -14,6 +15,7 @@ import {
   type FlowBaseProps,
 } from '../common/flowKit'
 import { isSendablePhone, maskPhone, normalizePhone } from './factorMeta'
+import { ChannelUnavailableNotice } from './SmsEnroll'
 
 type PanelState = 'enter-phone' | 'sending' | 'enter-code' | 'verifying' | 'error-invalid' | 'error-service' | 'error-send' | 'verified'
 
@@ -167,6 +169,8 @@ export interface ConfirmContactFlowProps extends FlowBaseProps {
   onSkip?: () => void
   /** After "Continue" on the verified state. */
   onDone?: () => void
+  /** Offered on the channel-unavailable state to route to the authenticator flow. */
+  onUseAuthenticator?: () => void
 }
 
 /**
@@ -183,13 +187,37 @@ export function ConfirmContactFlow(props: ConfirmContactFlowProps) {
   )
 }
 
-function ConfirmContactInner({ client, getToken, onSkip, onDone }: ConfirmContactFlowProps) {
+type Capability = 'checking' | 'available' | 'unavailable' | 'failed'
+
+function ConfirmContactInner({ client, getToken, onSkip, onDone, onUseAuthenticator }: ConfirmContactFlowProps) {
   const { messages: m } = useAccountSecurityI18n()
-  const api = useSecurityClient<ContactClient>(client, getToken)
+  const api = useSecurityClient<ContactClient & Pick<MfaClient, 'getMethods'>>(client, getToken)
+  // FAIL CLOSED: nothing is enabled, and nothing (least of all the phone update that
+  // `startPhoneVerification` performs before delivery) is sent until the Security API
+  // has confirmed text-message delivery is available.
+  const [capability, setCapability] = useState<Capability>('checking')
+  const alive = useRef(true)
+  const checkCapability = useCallback(async () => {
+    setCapability('checking')
+    try {
+      const methods: AuthMethods = await api.getMethods()
+      if (alive.current) setCapability(methods.verification?.sms === true ? 'available' : 'unavailable')
+    } catch {
+      if (alive.current) setCapability('failed')
+    }
+  }, [api])
+  useEffect(() => {
+    alive.current = true
+    void checkCapability()
+    return () => {
+      alive.current = false
+    }
+  }, [checkCapability])
   const [state, setState] = useState<PanelState>('enter-phone')
   const [phone, setPhone] = useState('')
 
   const send = async () => {
+    if (capability !== 'available') return
     setState('sending')
     try {
       await api.startPhoneVerification(normalizePhone(phone))
@@ -200,6 +228,7 @@ function ConfirmContactInner({ client, getToken, onSkip, onDone }: ConfirmContac
   }
 
   const verify = async (code: string) => {
+    if (capability !== 'available') return
     setState('verifying')
     try {
       await api.confirmPhoneVerification(normalizePhone(phone), code)
@@ -213,6 +242,37 @@ function ConfirmContactInner({ client, getToken, onSkip, onDone }: ConfirmContac
 
   return (
     <FlowPage title={m.contact.title} maxWidth="100%" data-frame="03-confirm-contact" data-viewport="375">
+      {capability === 'checking' && (
+        <div data-panel="confirm-contact" data-state="checking" role="status" aria-busy="true" aria-label={m.contact.sendingLabel}>
+          <Skeleton width="80%" height="var(--space-4)" />
+          <div style={{ height: 'var(--space-2)' }} />
+          <Skeleton width="55%" height="var(--space-4)" />
+        </div>
+      )}
+      {capability === 'failed' && (
+        <div data-panel="confirm-contact" data-state="capability-error">
+          <ErrorWithRetry
+            data-state="error"
+            title={m.mfa.overview.errorTitle}
+            text={m.mfa.overview.errorText}
+            retryLabel={m.mfa.overview.retry}
+            onRetry={() => void checkCapability()}
+          />
+          {onSkip && (
+            <Actions>
+              <Button variant="ghost" data-action="skip" onClick={onSkip}>
+                {m.contact.skip}
+              </Button>
+            </Actions>
+          )}
+        </div>
+      )}
+      {capability === 'unavailable' && (
+        <div data-panel="confirm-contact" data-state="channel-unavailable" data-channel="phone">
+          <ChannelUnavailableNotice onUseAuthenticator={onUseAuthenticator} onBack={() => onSkip?.()} />
+        </div>
+      )}
+      {capability === 'available' && (
       <ContactVerifyPanel
         state={state}
         phone={phone}
@@ -224,6 +284,7 @@ function ConfirmContactInner({ client, getToken, onSkip, onDone }: ConfirmContac
         onSkip={onSkip}
         onContinue={onDone}
       />
+      )}
     </FlowPage>
   )
 }

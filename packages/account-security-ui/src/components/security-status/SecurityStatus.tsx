@@ -73,6 +73,7 @@ export function SecurityStatusList({
   onAddFactor,
   onVerifyPhone,
   addMethodEnabled = true,
+  phoneVerifyAvailable = false,
 }: {
   factors: MfaFactor[]
   status: VerificationStatus
@@ -81,6 +82,11 @@ export function SecurityStatusList({
   onVerifyPhone: () => void
   /** False when the MFA-management surface it routes to is not available (flag OFF). */
   addMethodEnabled?: boolean
+  /**
+   * Text-message delivery is confirmed available (`methods.verification.sms`). FAIL CLOSED: when
+   * false/unknown the phone Verify action is hidden, because the flow it opens can never complete.
+   */
+  phoneVerifyAvailable?: boolean
 }) {
   const { messages: m } = useAccountSecurityI18n()
   const active = activeFactors(factors)
@@ -147,7 +153,7 @@ export function SecurityStatusList({
         status={status.phoneVerified ? 'verified' : 'unverified'}
         statusLabel={status.phoneVerified ? m.securityStatus.verified : m.securityStatus.unverified}
         action={
-          status.phoneVerified ? undefined : (
+          status.phoneVerified || !phoneVerifyAvailable ? undefined : (
             <Button
               variant="ghost"
               data-action="verify-phone"
@@ -177,7 +183,7 @@ export interface SecurityStatusMobileFlowProps extends FlowBaseProps {
 type State =
   | { status: 'loading' }
   | { status: 'error' }
-  | { status: 'ready'; factors: MfaFactor[]; verification: VerificationStatus }
+  | { status: 'ready'; factors: MfaFactor[]; verification: VerificationStatus; smsAvailable: boolean }
 
 /**
  * Combined mobile 2FA + contact-verification status (frame 04, 375px, additive to
@@ -205,8 +211,13 @@ function SecurityStatusInner({ client, getToken, onNavigate, routes, addMethodEn
   const load = useCallback(async () => {
     setState({ status: 'loading' })
     try {
-      const [factors, verification] = await Promise.all([api.listFactors(), api.getVerificationStatus()])
-      if (alive.current) setState({ status: 'ready', factors, verification })
+      const [factors, verification, smsAvailable] = await Promise.all([
+        api.listFactors(),
+        api.getVerificationStatus(),
+        // A failed capability read must not break the status screen, but it fails closed: no phone Verify.
+        api.getMethods().then((mm) => mm.verification?.sms === true, () => false),
+      ])
+      if (alive.current) setState({ status: 'ready', factors, verification, smsAvailable })
     } catch {
       if (alive.current) setState({ status: 'error' })
     }
@@ -270,6 +281,7 @@ function SecurityStatusInner({ client, getToken, onNavigate, routes, addMethodEn
             onAddFactor={() => go(r.addAuthenticator)}
             onVerifyPhone={() => go(r.verifyPhone)}
             addMethodEnabled={addMethodEnabled}
+            phoneVerifyAvailable={state.smsAvailable}
           />
         </div>
       )}

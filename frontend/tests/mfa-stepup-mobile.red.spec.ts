@@ -352,6 +352,21 @@ test.describe('Confirm phone (frame 03-confirm-contact)', () => {
   test.beforeEach(async ({ page }) => {
     await seedSession(page)
     await mockFlags(page, true)
+    // Text-message delivery is available unless a test says otherwise.
+    await page.route('**/v1/security/methods', route => route.fulfill(json(200, methodsBody(['totp', 'sms']))))
+  })
+
+  test('SMS unavailable: channel-unavailable state, NO phone field and NO request that updates the phone', async ({ page }) => {
+    await page.unroute('**/v1/security/methods')
+    await page.route('**/v1/security/methods', route => route.fulfill(json(200, methodsBody(['totp']))))
+    const sent: string[] = []
+    await page.route('**/v1/security/verify/phone/**', route => { sent.push(route.request().url()); return route.fulfill({ status: 202 }) })
+    await page.goto(ROUTE, { waitUntil: 'domcontentloaded' })
+    await expect(page.locator("[data-panel='confirm-contact'][data-state='channel-unavailable']")).toBeVisible()
+    await expect(page.locator("[data-component='channel-unavailable'][data-available='false']")).toBeVisible()
+    await expect(page.locator("[data-action='send-code']")).toHaveCount(0)
+    await expect(page.locator('#phone')).toHaveCount(0)
+    expect(sent).toEqual([])
   })
 
   test('enter phone -> send code -> enter code -> verified (asserts the start + confirm request bodies)', async ({ page }) => {
@@ -443,6 +458,19 @@ test.describe('Security status, mobile (frame 04-security-status)', () => {
     await expect(panel.locator("[data-status='verified']")).toBeVisible()
     await expect(panel.locator("[data-status='unverified']")).toBeVisible()
     await expect(panel.locator("[data-action='verify-phone']")).toBeVisible()
+  })
+
+  test('SMS unavailable: the phone row has no Verify action (the flow could never complete)', async ({ page }) => {
+    await page.unroute('**/v1/security/methods')
+    await page.route('**/v1/security/methods', route => route.fulfill(json(200, methodsBody(['totp']))))
+    await page.route('**/v1/security/mfa/factors', route => route.fulfill(json(200, { items: [TOTP] })))
+    await page.route('**/v1/security/verify/status', route =>
+      route.fulfill(json(200, { emailVerified: true, phoneVerified: false })),
+    )
+    await page.goto(ROUTE, { waitUntil: 'domcontentloaded' })
+    const panel = page.locator("[data-panel='security-status'][data-state='loaded']")
+    await expect(panel.locator("[data-channel='phone'] [data-status='unverified']")).toBeVisible()
+    await expect(panel.locator("[data-action='verify-phone']")).toHaveCount(0)
   })
 
   test('"Add a method" is hidden (explained) while mfa-management is OFF, offered when ON', async ({ page }) => {

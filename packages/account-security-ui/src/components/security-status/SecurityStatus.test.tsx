@@ -2,11 +2,14 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { FullAccountSecurityClient } from '../../types'
-import { err, makeClient, sms, totp } from '../../test/helpers'
+import { err, makeClient as baseClient, methods, sms, totp } from '../../test/helpers'
 import { SecurityStatusMobileFlow } from './SecurityStatus'
 
 const asClient = (c: unknown) => c as Partial<FullAccountSecurityClient>
 const q = (sel: string) => document.querySelector(sel)
+// Text-message delivery available by default; tests for the gate override getMethods.
+const makeClient = (over: Record<string, unknown> = {}) =>
+  baseClient({ getMethods: vi.fn(async () => methods(['totp', 'sms'])), ...over })
 
 describe('SecurityStatusMobileFlow (frame 04)', () => {
   it('loading skeleton first', () => {
@@ -99,5 +102,29 @@ describe('SecurityStatusMobileFlow (frame 04)', () => {
     await waitFor(() => expect(q('[data-component="remove-factor-dialog"][data-state="remove-last-blocked"]')).toBeTruthy())
     expect(q('[data-component="remove-factor-dialog"] [data-action="add-factor"]')).toBeNull()
     expect(q('[data-error="remove-last"]')).toBeTruthy()
+  })
+
+  describe('phone Verify is gated on text-message delivery (fail-closed)', () => {
+    const unverified = { getVerificationStatus: vi.fn(async () => ({ emailVerified: true, phoneVerified: false })) }
+    it('SMS unavailable: Verify is hidden, the phone row stays Unverified, nothing else changes', async () => {
+      render(<SecurityStatusMobileFlow client={asClient(baseClient({ ...unverified, getMethods: vi.fn(async () => methods(['totp'])) }))} />)
+      await waitFor(() => expect(q('[data-panel="security-status"][data-state="loaded"]')).toBeTruthy())
+      expect(q('[data-action="verify-phone"]')).toBeNull()
+      expect(q('[data-channel="phone"] [data-status="unverified"]')).toBeTruthy()
+      expect(q('[data-action="add-factor"]')).toBeTruthy()
+    })
+    it('capability read fails: Verify hidden but the status screen still renders', async () => {
+      render(<SecurityStatusMobileFlow client={asClient(baseClient({ ...unverified, getMethods: vi.fn(async () => { throw err(500) }) }))} />)
+      await waitFor(() => expect(q('[data-panel="security-status"][data-state="loaded"]')).toBeTruthy())
+      expect(q('[data-action="verify-phone"]')).toBeNull()
+    })
+    it('loading: no Verify action while the capability is unknown', () => {
+      render(<SecurityStatusMobileFlow client={asClient(baseClient({ ...unverified, getMethods: vi.fn(() => new Promise(() => {})) }))} />)
+      expect(q('[data-action="verify-phone"]')).toBeNull()
+    })
+    it('SMS available: Verify is offered (existing behaviour)', async () => {
+      render(<SecurityStatusMobileFlow client={asClient(makeClient(unverified))} />)
+      await waitFor(() => expect(q('[data-action="verify-phone"]')).toBeTruthy())
+    })
   })
 })

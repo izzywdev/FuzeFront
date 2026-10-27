@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { FullAccountSecurityClient, MfaFactorRef } from '../../types'
-import { err, makeClient } from '../../test/helpers'
+import { err, makeClient, methods } from '../../test/helpers'
 import { MfaStepUpFlow, MfaStepUpMobileFlow } from './StepUp'
 import { ConfirmContactFlow } from './ConfirmContact'
 
@@ -642,12 +642,17 @@ describe('MfaStepUpMobileFlow (frames 01-02, 375px)', () => {
   })
 })
 
+const smsOn = (over: Record<string, unknown> = {}) =>
+  makeClient({ getMethods: vi.fn(async () => methods(['totp', 'sms'])), ...over })
+const ready = () => waitFor(() => expect(q('[data-panel="confirm-contact"][data-state="enter-phone"], [data-panel="confirm-contact"][data-state="error-send"]')).toBeTruthy())
+
 describe('ConfirmContactFlow (frame 03, phone)', () => {
   it('enter phone → sending → enter code → verified → continue', async () => {
     const user = userEvent.setup()
     const onDone = vi.fn()
-    const client = makeClient()
+    const client = smsOn()
     render(<ConfirmContactFlow client={asClient(client)} onDone={onDone} onSkip={vi.fn()} />)
+    await ready()
     expect(q('[data-panel="confirm-contact"][data-state="enter-phone"]')).toBeTruthy()
     await user.type(q('#phone')!, '+1 555 000 4471')
     await user.click(q('[data-action="send-code"]')!)
@@ -663,8 +668,9 @@ describe('ConfirmContactFlow (frame 03, phone)', () => {
 
   it('FAIL-CLOSED: wrong / expired code → inline error, stays put', async () => {
     const user = userEvent.setup()
-    const client = makeClient({ confirmPhoneVerification: vi.fn(async () => { throw err(401) }) })
+    const client = smsOn({ confirmPhoneVerification: vi.fn(async () => { throw err(401) }) })
     render(<ConfirmContactFlow client={asClient(client)} />)
+    await ready()
     await user.type(q('#phone')!, '+15550004471')
     await user.click(q('[data-action="send-code"]')!)
     await waitFor(() => expect(q('[data-component="otp-input"]')).toBeTruthy())
@@ -677,8 +683,9 @@ describe('ConfirmContactFlow (frame 03, phone)', () => {
 
   it('a 5xx on confirm is a retryable service error, not "wrong code"', async () => {
     const user = userEvent.setup()
-    const client = makeClient({ confirmPhoneVerification: vi.fn(async () => { throw err(503) }) })
+    const client = smsOn({ confirmPhoneVerification: vi.fn(async () => { throw err(503) }) })
     render(<ConfirmContactFlow client={asClient(client)} />)
+    await ready()
     await user.type(q('#phone')!, '+15550004471')
     await user.click(q('[data-action="send-code"]')!)
     await waitFor(() => expect(q('[data-component="otp-input"]')).toBeTruthy())
@@ -692,8 +699,9 @@ describe('ConfirmContactFlow (frame 03, phone)', () => {
   it('generic send failure offers retry or skip — never a silent hang', async () => {
     const user = userEvent.setup()
     const onSkip = vi.fn()
-    const client = makeClient({ startPhoneVerification: vi.fn(async () => { throw err(500) }) })
+    const client = smsOn({ startPhoneVerification: vi.fn(async () => { throw err(500) }) })
     render(<ConfirmContactFlow client={asClient(client)} onSkip={onSkip} />)
+    await ready()
     await user.type(q('#phone')!, '+15550004471')
     await user.click(q('[data-action="send-code"]')!)
     await waitFor(() => expect(q('[data-panel="confirm-contact"][data-state="error-send"]')).toBeTruthy())
@@ -704,7 +712,8 @@ describe('ConfirmContactFlow (frame 03, phone)', () => {
 
   it('a non-E.164 number keeps Send disabled with a format hint', async () => {
     const user = userEvent.setup()
-    render(<ConfirmContactFlow client={asClient(makeClient())} />)
+    render(<ConfirmContactFlow client={asClient(smsOn())} />)
+    await ready()
     await user.type(q('#phone')!, '555 000 4471')
     expect(q('[data-action="send-code"]')).toBeDisabled()
     expect(q('[data-hint="phone-format"]')).toBeTruthy()
@@ -713,7 +722,8 @@ describe('ConfirmContactFlow (frame 03, phone)', () => {
   it('after a send failure "Change number" returns to the editable phone entry and a corrected number is sent', async () => {
     const user = userEvent.setup()
     const startPhoneVerification = vi.fn().mockRejectedValueOnce(err(400)).mockResolvedValueOnce(undefined)
-    render(<ConfirmContactFlow client={asClient(makeClient({ startPhoneVerification }))} />)
+    render(<ConfirmContactFlow client={asClient(smsOn({ startPhoneVerification }))} />)
+    await ready()
     await user.type(q('#phone')!, '+1 555 000 4471')
     await user.click(q('[data-action="send-code"]')!)
     await waitFor(() => expect(q('[data-panel="confirm-contact"][data-state="error-send"]')).toBeTruthy())
@@ -728,8 +738,63 @@ describe('ConfirmContactFlow (frame 03, phone)', () => {
     expect(startPhoneVerification).toHaveBeenLastCalledWith('+15550009999')
   })
 
-  it('skip is available on the first step', () => {
-    render(<ConfirmContactFlow client={asClient(makeClient())} onSkip={vi.fn()} />)
+  it('skip is available on the first step', async () => {
+    render(<ConfirmContactFlow client={asClient(smsOn())} onSkip={vi.fn()} />)
+    await ready()
     expect(q('[data-action="skip"]')).toBeTruthy()
+  })
+})
+
+describe('ConfirmContactFlow capability gate (mobile-only flow, frame 03)', () => {
+  const sendBtn = () => q('[data-action="send-code"]')
+  it('SMS unavailable: shows the channel-unavailable state and sends NOTHING (no phone update, no code)', async () => {
+    const client = makeClient({ getMethods: vi.fn(async () => methods(['totp'])) })
+    const onSkip = vi.fn()
+    const user = userEvent.setup()
+    render(<ConfirmContactFlow client={asClient(client)} onSkip={onSkip} />)
+    await waitFor(() => expect(q('[data-component="channel-unavailable"][data-available="false"]')).toBeTruthy())
+    expect(q('[data-panel="confirm-contact"][data-state="channel-unavailable"]')).toBeTruthy()
+    expect(q('#phone')).toBeNull()
+    expect(sendBtn()).toBeNull()
+    expect(q('input[type="tel"]')).toBeDisabled()
+    await user.click(q('[data-action="back"]')!)
+    expect(onSkip).toHaveBeenCalled()
+    expect(client.startPhoneVerification).not.toHaveBeenCalled()
+    expect(client.confirmPhoneVerification).not.toHaveBeenCalled()
+  })
+
+  it('loading: fails closed (no phone field, no send) until the capability resolves', async () => {
+    let release!: (v: unknown) => void
+    const client = makeClient({ getMethods: vi.fn(() => new Promise((r) => { release = r })) })
+    render(<ConfirmContactFlow client={asClient(client)} />)
+    expect(q('[data-panel="confirm-contact"][data-state="checking"]')!.getAttribute('aria-busy')).toBe('true')
+    expect(q('#phone')).toBeNull()
+    expect(sendBtn()).toBeNull()
+    await act(async () => release(methods(['totp', 'sms'])))
+    await waitFor(() => expect(q('[data-panel="confirm-contact"][data-state="enter-phone"]')).toBeTruthy())
+    expect(client.startPhoneVerification).not.toHaveBeenCalled()
+  })
+
+  it('capability read error: fails closed with a retry; retry to available enables the flow', async () => {
+    const user = userEvent.setup()
+    const getMethods = vi.fn().mockRejectedValueOnce(err(500)).mockResolvedValueOnce(methods(['totp', 'sms']))
+    const client = makeClient({ getMethods })
+    render(<ConfirmContactFlow client={asClient(client)} />)
+    await waitFor(() => expect(q('[data-panel="confirm-contact"][data-state="capability-error"]')).toBeTruthy())
+    expect(q('#phone')).toBeNull()
+    expect(sendBtn()).toBeNull()
+    expect(client.startPhoneVerification).not.toHaveBeenCalled()
+    await user.click(q('[data-action="retry"]')!)
+    await waitFor(() => expect(q('[data-panel="confirm-contact"][data-state="enter-phone"]')).toBeTruthy())
+  })
+
+  it('available: unchanged behaviour (the number is normalised and sent)', async () => {
+    const user = userEvent.setup()
+    const client = smsOn()
+    render(<ConfirmContactFlow client={asClient(client)} />)
+    await ready()
+    await user.type(q('#phone')!, '+1 555 000 4471')
+    await user.click(sendBtn()!)
+    await waitFor(() => expect(client.startPhoneVerification).toHaveBeenCalledWith('+15550004471'))
   })
 })

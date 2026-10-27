@@ -26,7 +26,7 @@ import type { EnrollFlowProps } from './TotpEnroll'
  * flow renders this notice with a DISABLED phone field and routes to the
  * authenticator app — a code is never sent that cannot be delivered.
  */
-export function ChannelUnavailableNotice({ onUseAuthenticator, onBack }: { onUseAuthenticator: () => void; onBack: () => void }) {
+export function ChannelUnavailableNotice({ onUseAuthenticator, onBack }: { onUseAuthenticator?: () => void; onBack: () => void }) {
   const { messages: m } = useAccountSecurityI18n()
   return (
     <SeamCard data-component="channel-unavailable" data-state="channel-unavailable" data-channel="sms" data-available="false">
@@ -36,9 +36,11 @@ export function ChannelUnavailableNotice({ onUseAuthenticator, onBack }: { onUse
           <CardHeading>{m.mfa.sms.unavailableTitle}</CardHeading>
           <Hint>{m.mfa.sms.unavailableText}</Hint>
           <Actions style={{ marginBlockStart: 0 }}>
-            <Button variant="primary" data-action="use-authenticator" onClick={onUseAuthenticator}>
-              {m.mfa.sms.useAuthenticator}
-            </Button>
+            {onUseAuthenticator && (
+              <Button variant="primary" data-action="use-authenticator" onClick={onUseAuthenticator}>
+                {m.mfa.sms.useAuthenticator}
+              </Button>
+            )}
             <Button variant="ghost" data-action="back" onClick={onBack}>
               {m.mfa.sms.back}
             </Button>
