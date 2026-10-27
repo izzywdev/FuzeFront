@@ -75,7 +75,7 @@ export const PressPage: React.FC = () => {
                   <Calendar size={13} /> {release.date}
                 </div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">{release.title}</h3>
-                <p className="text-gray-600 text-sm leading-relaxed">{release.excerpt}</p>
+                <Text as="p" tone="secondary" size="sm" leading="relaxed">{release.excerpt}</Text>
               </div>
             ))}
           </div>

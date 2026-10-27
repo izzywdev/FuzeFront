@@ -268,6 +268,12 @@ connectors:
 # values-local (Phases 1-3) and values-prod (Phase 3) once the images are built.
 securityService:
   enabled: false
+  # Trusted reverse-proxy hops in front of the security pod (-> TRUST_PROXY_HOPS).
+  # Express derives req.ip, which the MFA step-up rate limiter keys on, by
+  # skipping this many hops from the RIGHT of X-Forwarded-For. Too high lets a
+  # client pick its own limiter key; too low collapses every user into the proxy's
+  # address. Default 1 = a single direct ingress hop (local/kind). Prod overrides.
+  trustProxyHops: 1
   # Kubernetes workload identity — see templates/workload-identity.yaml for the
   # full rationale and the 2026-09-28 sync-freeze incident it encodes.
   workloadIdentity:
@@ -1030,6 +1036,28 @@ selectionListService:
     appName: "selection-list-service"
     tokenSecretKey: "UNLEASH_CLIENT_TOKEN"
     tokenSecretName: ""
+  # SL9 rollout data jobs (docs/runbooks/selection-lists-rollout.md section 10): a one-off Job running the
+  # service image's `node dist/rollout/cli.js <job> --<mode>`. DEFAULT-DISABLED and every key declared here, never
+  # defaulted or coerced in the template (it validates job/mode and fails the render on anything else). Enabling it is
+  # a reviewed values change; set it back to false after the report has been read.
+  #   job   audit | reconcile-duplicates | visibility-org | retro-forks   (one job per run)
+  #   mode  dry-run (prints the report, writes NOTHING) | apply            (audit has no apply)
+  # Idempotent, flag-independent and safe while the service is serving.
+  rolloutJob:
+    enabled: false
+    job: "audit"
+    mode: "dry-run"
+    # A job that runs longer than this is killed (the audit/reconcile read every list once).
+    activeDeadlineSeconds: 3600
+    # The finished Job (and its logs, i.e. the report) is kept this long, then garbage-collected.
+    ttlSecondsAfterFinished: 86400
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
   image:
     repository: fuzefront/selection-list-service
     tag: local
