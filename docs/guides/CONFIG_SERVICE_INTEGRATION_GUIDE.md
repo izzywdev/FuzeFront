@@ -459,7 +459,7 @@ to guess.
 
 ---
 
-## 8. Caching: the ETag/version poll (what exists today)
+## 8. Caching: the ETag/version poll and `config.changed` events
 
 `GET /v1/config` returns an `ETag`. Send it back as `If-None-Match`; an
 unchanged resolved view answers `304` with no body.
@@ -494,14 +494,73 @@ of whichever chain the route actually resolved (see the
 queried). A version that tracked only the exact scope's own rows would let
 inherited changes go undetected.
 
-> **`config.changed` invalidation events are NOT shipped.** They're planned
-> as `FF-EPIC-18-S4` (`docs/planning/epics/EPIC-18-configuration-trust-and-operations.md`)
-> — status `Open`, no code anywhere in this repo publishes or consumes them
-> (`shared/src/kafka/types.ts`'s `TOPICS` constant has no config-domain
-> entry). **The ETag/version poll above is the only cache-invalidation
-> mechanism that exists today.** Don't build a consumer that assumes an
-> event will arrive to tell it something changed — poll, or accept that a
-> cached value is only as fresh as your last poll.
+### `config.changed` events (shipped — FF-EPIC-18-S4)
+
+After a write **commits**, config-service publishes one `config.changed` event on
+the Kafka topic `config.changed` (`TOPICS.CONFIG_CHANGED` in
+`@fuzefront/shared/kafka`; schema `configChangedSchemaV1`). It is an
+**invalidation signal, not a change feed**:
+
+```jsonc
+{
+  "version": "1.0",
+  "topic": "config.changed",
+  "correlationId": "…",          // the write's x-request-id, or a fresh uuid
+  "occurredAt": "2026-10-04T…Z",
+  "payload": {
+    "namespace": "fuzefront.chat",
+    "scope": { "scopeType": "org", "scopeId": "…" },   // scopeId null for platform
+    "changedKeys": ["ui.theme.density", "api.token"]   // key NAMES only
+  }
+}
+```
+
+- **No values, ever** — only key names and scope. Secret (`isSecret`) values can
+  therefore never travel over the bus; re-read through `GET /v1/config` to get
+  the (redacted/authorized) new state.
+- **One event per `(namespace, scope)` per write.** A 20-key `ConfigWriteRequest`
+  produces a single event listing all changed keys, not 20.
+- **Only real changes.** A no-op write (re-setting the identical value, unsetting
+  a key with no override) and a rolled-back write publish nothing.
+  `set`/`unset`/`lock`/`unlock` all publish. (There is no revert endpoint yet.)
+- **A change at an ancestor scope affects descendants.** The event names the scope
+  that was written; a consumer caching a descendant scope (an org beneath a
+  portal) must invalidate on an ancestor-scope event too. The clients'
+  `ConfigCache` invalidates the whole namespace for exactly this reason.
+- **Best-effort delivery.** If `KAFKA_BROKERS` is unset, or the broker is down,
+  the write still succeeds (publishing is non-fatal and never delays the
+  response) and the event is simply not sent.
+
+**Handle BOTH the event AND the ETag/version poll.** Events can be missed (broker
+outage, consumer lag, a restart before the offset committed). The version poll
+above is the correctness backstop; the event only makes the common case fast.
+Never build a consumer that trusts events alone.
+
+Both clients ship a ready-made cache that does this:
+
+```ts
+import { ConfigCache, CONFIG_CHANGED_TOPIC } from '@fuzefront/config-client'
+
+const cache = new ConfigCache(config, { maxAgeMs: 60_000 }) // maxAge = poll backstop
+// Subscribe with whatever you already use (e.g. TypedConsumer from @fuzefront/shared/kafka):
+await consumer.subscribe(CONFIG_CHANGED_TOPIC)
+consumer.run((event) => cache.handleEvent(event)) // envelope or bare payload; malformed is ignored
+const cfg = await cache.get('fuzefront.chat', { scopeType: 'org', scopeId: orgId })
+```
+
+```python
+from fuzefront_config_client import ConfigCache, CONFIG_CHANGED_TOPIC
+
+cache = ConfigCache(client, max_age_seconds=60)
+# in your consumer loop, for messages on CONFIG_CHANGED_TOPIC:
+cache.handle_event(json.loads(message.value()))
+cfg = cache.get("fuzefront.chat", org_scope)
+```
+
+An event marks the namespace's cached scopes stale, so the next read does a full
+re-resolve; an entry that merely ages past `maxAge` is revalidated with
+`If-None-Match` (a cheap `304` when nothing changed). The clients do not bundle a
+Kafka consumer — they stay dependency-free and you bring your own transport.
 
 ---
 
@@ -594,7 +653,7 @@ prefix and carry no access implication by themselves.
 - Identifier standard: [`governance/identifier-standard.md`](../../governance/identifier-standard.md)
 - Feature-flags skill: `.claude/skills/feature-flags/SKILL.md`
 - The epic this closes: [`docs/planning/epics/EPIC-17-configuration-service-core.md`](../planning/epics/EPIC-17-configuration-service-core.md)
-- Cache-invalidation roadmap: [`docs/planning/epics/EPIC-18-configuration-trust-and-operations.md`](../planning/epics/EPIC-18-configuration-trust-and-operations.md)
+- Cache-invalidation (FF-EPIC-18-S4, shipped): [`docs/planning/epics/EPIC-18-configuration-trust-and-operations.md`](../planning/epics/EPIC-18-configuration-trust-and-operations.md)
 - Platform-wide consumer conventions: [`docs/guides/BUILDING_ON_FUZEFRONT.md`](BUILDING_ON_FUZEFRONT.md)
 
 ---

@@ -3,7 +3,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import ConnectorsPage from '../pages/ConnectorsPage'
 
-vi.mock('../lib/accounts', () => ({ getActiveAuthToken: () => 'synthetic' }))
+vi.mock('../lib/accounts', () => ({ getActiveAuthToken: () => 'synthetic', getActiveValue: () => null }))
 
 beforeEach(() => {
   window.history.replaceState({}, '', '/connectors')

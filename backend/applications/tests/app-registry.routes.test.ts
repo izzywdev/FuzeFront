@@ -943,6 +943,62 @@ describe('creator ownership', () => {
     expect(res.body.creator).toEqual({ userId: fromUuid('user', creatorUuid), isCurrentMember: false })
   })
 
+  describe('creator.contactEmail visibility (owning-org members + platform admins only)', () => {
+    const EMAIL = 'casey@example.com'
+    const get = (u: any) => request(app).get('/api/v1/app-registry/apps/mine').set(asUser(u))
+    const list = (u: any) => request(app).get('/api/v1/app-registry/apps').set(asUser(u))
+
+    beforeEach(async () => {
+      creatorFlag = true
+      creatorInfo = { isCurrentMember: true, displayName: 'Casey Creator', contactEmail: EMAIL } as any
+      // A PUBLIC app owned by orgA, so outside-org users can read it.
+      const reg = await register(human, { manifest: manifest('mine', { visibility: 'public' }) })
+      expect(reg.status).toBe(201)
+      // The in-memory store's list() filters on columns registration doesn't set.
+      Object.assign(store.rows[0], { visibility: 'public', nav_rank: 0, nav_order: 0 })
+    })
+
+    it('(1) same-org member caller sees contactEmail (GET /apps/:slug and GET /apps)', async () => {
+      const res = await get(userA)
+      expect(res.status).toBe(200)
+      expect(res.body.creator.contactEmail).toBe(EMAIL)
+      const l = await list(userA)
+      expect(l.body.apps.find((a: any) => a.slug === 'mine').creator.contactEmail).toBe(EMAIL)
+    })
+
+    it('(2) platform admin sees contactEmail', async () => {
+      expect((await get(admin)).body.creator.contactEmail).toBe(EMAIL)
+    })
+
+    it('(3) outside-org caller reading the public app: displayName stays, contactEmail is OMITTED', async () => {
+      const res = await get(userB)
+      expect(res.status).toBe(200)
+      expect(res.body.creator).toEqual({
+        userId: fromUuid('user', creatorUuid),
+        isCurrentMember: true,
+        displayName: 'Casey Creator',
+      })
+      expect(JSON.stringify(res.body)).not.toContain(EMAIL)
+      const l = await list(userB)
+      expect(JSON.stringify(l.body)).not.toContain(EMAIL)
+      expect(l.body.apps.find((a: any) => a.slug === 'mine').creator.displayName).toBe('Casey Creator')
+    })
+
+    it('the synthetic consumer/registration identity (role admin) never gets the email', async () => {
+      const res = await get({ id: 'consumer-registration', roles: ['admin'] })
+      expect(res.status).toBe(200)
+      expect(JSON.stringify(res.body)).not.toContain(EMAIL)
+    })
+
+    it('unresolvable caller context fails closed (omitted)', async () => {
+      const { canSeeCreatorContact } = await import('../src/app-registry/app-dto')
+      expect(canSeeCreatorContact(null, orgA)).toBe(false)
+      expect(canSeeCreatorContact(undefined, orgA)).toBe(false)
+      expect(canSeeCreatorContact({ userId: 'u', organizationIds: [], isPlatformAdmin: false }, orgA)).toBe(false)
+      expect(canSeeCreatorContact({ userId: 'u', organizationIds: [orgA], isPlatformAdmin: false }, null)).toBe(false)
+    })
+  })
+
   it('flag OFF: nothing written, no role assigned, DTO byte-identical (no createdBy/creator keys)', async () => {
     creatorFlag = false
     const res = await register(human)

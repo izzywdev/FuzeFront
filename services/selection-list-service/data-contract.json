@@ -1,0 +1,130 @@
+{
+  "$schema": "https://github.com/izzywdev/FuzeSDLC/governance/data-contract.schema.json",
+  "service": "selection-list-service",
+  "owns": ["front_sl", "front_sli"],
+  "emits": [
+    "selection-lists.list.created",
+    "selection-lists.list.updated",
+    "selection-lists.list.archived",
+    "selection-lists.list.deleted",
+    "selection-lists.list.forked",
+    "selection-lists.visibility.changed",
+    "selection-lists.item.created",
+    "selection-lists.item.updated",
+    "selection-lists.item.archived",
+    "selection-lists.item.deleted",
+    "selection-lists.item.reordered",
+    "selection-lists.translation.upserted",
+    "selection-lists.translation.deleted",
+    "selection-lists.access.granted",
+    "selection-lists.access.revoked",
+    "selection-lists.seed.completed",
+    "selection-lists.seed.failed"
+  ],
+  "consumes": [
+    "identity.org.created",
+    "identity.org.updated",
+    "identity.org.deleted",
+    "identity.user.deleted",
+    "selection-lists.seed.requested"
+  ],
+  "eventSubscriptions": [
+    {
+      "topic": "identity.org.created",
+      "classifications": ["internal"],
+      "tenantScopes": ["global"],
+      "purpose": "Project the organization (type, owner, activity) into selection_list_ref_index and seed the platform default packs into the new organization."
+    },
+    {
+      "topic": "identity.org.updated",
+      "classifications": ["internal"],
+      "tenantScopes": ["global"],
+      "purpose": "Refresh the organization projection (type, activity, name) that seeding, the platform-organization check and the reconciler read."
+    },
+    {
+      "topic": "identity.org.deleted",
+      "classifications": ["internal"],
+      "tenantScopes": ["global"],
+      "purpose": "Tombstone the organization projection and cascade the organization's lists, items, translations and access mirror (soft: archive, hard: purge)."
+    },
+    {
+      "topic": "identity.user.deleted",
+      "classifications": ["restricted"],
+      "tenantScopes": ["global"],
+      "purpose": "Anonymize the deleted user's authorship references and revoke the user's own list-instance grants in the Security API."
+    }
+  ],
+  "references": [
+    {
+      "column": "selection_lists.organization_id",
+      "targetType": "org",
+      "validation": "L1",
+      "mode": "warn",
+      "onDelete": "cascade"
+    },
+    {
+      "column": "selection_lists.created_by",
+      "targetType": "usr",
+      "validation": "L1",
+      "mode": "warn",
+      "onDelete": "retain"
+    },
+    {
+      "column": "selection_list_items.created_by",
+      "targetType": "usr",
+      "validation": "L1",
+      "mode": "warn",
+      "onDelete": "retain"
+    },
+    {
+      "column": "selection_list_access.user_id",
+      "targetType": "usr",
+      "validation": "L1",
+      "mode": "warn",
+      "onDelete": "cascade"
+    },
+    {
+      "column": "selection_list_access.granted_by",
+      "targetType": "usr",
+      "validation": "L1",
+      "mode": "warn",
+      "onDelete": "retain"
+    },
+    {
+      "column": "selection_list_org_quota.organization_id",
+      "targetType": "org",
+      "validation": "L1",
+      "mode": "warn",
+      "onDelete": "cascade"
+    },
+    {
+      "column": "selection_list_rollout_marks.organization_id",
+      "targetType": "org",
+      "validation": "L1",
+      "mode": "warn",
+      "onDelete": "cascade"
+    },
+    {
+      "column": "selection_lists.forked_from_list_id",
+      "targetType": "front_sl",
+      "validation": "L1",
+      "mode": "warn",
+      "onDelete": "retain"
+    },
+    {
+      "column": "selection_lists.forked_from_org_id",
+      "targetType": "org",
+      "validation": "L1",
+      "mode": "warn",
+      "onDelete": "retain"
+    },
+    {
+      "column": "selection_list_items.origin_item_id",
+      "targetType": "front_sli",
+      "validation": "L1",
+      "mode": "warn",
+      "onDelete": "retain"
+    }
+  ],
+  "projections": []
+}

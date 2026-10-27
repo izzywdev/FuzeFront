@@ -41,7 +41,7 @@
 # drifting line number is an exemption nobody granted.
 
 # Outbox rows: infrastructure records of an event, not entities.
-src backend/core/src/events/outbox.ts:34                    # event_outbox row id
+src backend/core/src/events/outbox.ts:39                    # event_outbox row id
 src backend/src/services/organizationProvisioning.ts:378    # event_outbox row id
 src backend/src/services/portalProvisioning.ts:590          # event_outbox row id
 src backend/security/src/services/organizationProvisioning.ts:338  # event_outbox row id
@@ -54,10 +54,10 @@ src backend/src/services/portalProvisioning.ts:249          # portal_provisionin
 # One-shot credential artifacts. Same family as the token/nonce/verifier targets
 # NON_ENTITY_ID_RE already excludes: they are consumed once, expire, and are
 # never referenced across a service boundary.
-src backend/security/src/providers/authentik/AuthentikIdentityProvider.ts:697   # email_verifications row
-src backend/security/src/providers/authentik/AuthentikIdentityProvider.ts:1117  # email_verifications row
-src backend/security/src/providers/authentik/AuthentikIdentityProvider.ts:920   # mfa_recovery_codes row
-src backend/security/src/providers/authentik/AuthentikIdentityProvider.ts:1011   # password_resets row
+src backend/security/src/providers/authentik/AuthentikIdentityProvider.ts:839   # email_verifications row
+src backend/security/src/providers/authentik/AuthentikIdentityProvider.ts:1418  # email_verifications row
+src backend/security/src/providers/authentik/AuthentikIdentityProvider.ts:1101   # mfa_recovery_codes row
+src backend/security/src/providers/authentik/AuthentikIdentityProvider.ts:1298   # password_resets row
 
 # In-memory only: a Map key for a pending tool confirmation, never persisted and
 # never leaving the process.
@@ -67,10 +67,19 @@ src services/chat-service/src/agent/confirmation.ts:44      # in-process Map key
 # own and namespace under its own repo (identifier-standard.md §2), so they are
 # not this registry's to mint. Tracked against FuzeQuality's own adoption.
 src FuzeQuality/apps/api/src/test-implementation.ts:103     # FuzeQuality-owned entity
-src FuzeQuality/apps/api/src/index.ts:381                   # FuzeQuality-owned test-execution entity
-src FuzeQuality/packages/core/src/store.ts:264              # FuzeQuality-owned repository entity
-src FuzeQuality/packages/core/src/store.ts:341              # FuzeQuality-owned suggestion-decision entity
-src FuzeQuality/packages/core/src/store.ts:352              # FuzeQuality-owned suggestion-decision entity
-src FuzeQuality/packages/core/src/store.ts:438              # FuzeQuality-owned admin-context audit entity
-src FuzeQuality/packages/core/src/store.ts:488              # FuzeQuality-owned identity-event outbox entity
-src FuzeQuality/packages/core/src/store.ts:1165             # FuzeQuality-owned admin-context audit entity
+src FuzeQuality/apps/api/src/index.ts:511                   # FuzeQuality-owned test-execution entity
+src FuzeQuality/apps/api/src/index.ts:1096                  # FuzeQuality-owned controlled test-suite dispatch audit entity
+src FuzeQuality/apps/api/src/index.ts:1163                  # FuzeQuality-owned legacy performance dispatch audit entity
+src FuzeQuality/packages/core/src/store.ts:597              # FuzeQuality-owned repository-flow review audit entity
+src FuzeQuality/packages/core/src/store.ts:658              # FuzeQuality-owned policy-gate review audit entity
+src FuzeQuality/packages/core/src/store.ts:890              # FuzeQuality-owned repository entity
+src FuzeQuality/packages/core/src/store.ts:945              # FuzeQuality-owned analysis-completed outbox entity
+src FuzeQuality/packages/core/src/store.ts:959              # FuzeQuality-owned repository-inventory retry outbox entity
+src FuzeQuality/packages/core/src/store.ts:1014             # FuzeQuality-owned repository-scan revision entity
+src FuzeQuality/packages/core/src/store.ts:1015             # FuzeQuality-owned repository-inventory outbox entity
+src FuzeQuality/packages/core/src/store.ts:1032             # FuzeQuality-owned suggestion-decision entity
+src FuzeQuality/packages/core/src/store.ts:1043             # FuzeQuality-owned expected-test suggestion-decision entity
+src FuzeQuality/packages/core/src/store.ts:1129             # FuzeQuality-owned admin-context audit entity
+src FuzeQuality/packages/core/src/store.ts:1231             # FuzeQuality-owned identity-event outbox entity
+src FuzeQuality/packages/core/src/store.ts:1242             # FuzeQuality-owned design-test-link outbox entity
+src FuzeQuality/packages/core/src/store.ts:3275             # FuzeQuality-owned admin-context audit entity

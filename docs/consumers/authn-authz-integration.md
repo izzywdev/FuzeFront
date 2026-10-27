@@ -139,9 +139,19 @@ consent host. No FuzeFront-internal identity host is visible or named.
 
 ### 2.4 Signup — `POST /api/v1/security/signup`
 
-Body `{ email, password, firstName?, lastName?, tenantName? }`. The user sees
-only FuzeFront-branded UI — never a provider's raw enrollment page. On success a
-session is established (`201` → `LoginResponse`). `409` if the email exists.
+Body `{ email, password, name?, turnstileToken?, tenantName? }` (contract
+`@fuzefront/security-client` **1.1.0**; `bindToken?` is also accepted for
+invitation signup). The user sees only FuzeFront-branded UI — never a provider's
+raw enrollment page. On success a session is established (`201` →
+`LoginResponse`). Errors: `400 MALFORMED`, `400 CAPTCHA_FAILED` (bad/missing
+Turnstile token), `409` if the email exists, `422 PASSWORD_POLICY`, `503`.
+
+`firstName`/`lastName` were **removed** in 1.0.0 in favour of one optional `name`;
+`turnstileToken` is required only when `GET /methods` reports `captcha`. These
+stricter rules apply when the `fuzefront.auth.experience` flag is ON for the
+environment (default OFF; OFF keeps the legacy shim). Migration steps, the new
+`GET /signup/email-available`, and `AuthMethods.captcha`/`passwordPolicy`:
+[`docs/guides/AUTH_EXPERIENCE_SIGNUP.md`](../guides/AUTH_EXPERIENCE_SIGNUP.md).
 
 ### 2.5 Session lifecycle
 
@@ -260,6 +270,11 @@ Fail-closed: any provider/transport error returns `{ allow: false }`.
   role) to `POST`/`DELETE`; listing another subject needs tenant admin (own is
   always allowed). Denied → `403 FORBIDDEN`; provider unreachable → `502`
   (fail-closed). Machine callers need the `authz:admin` scope.
+  The one exception is the `service:selection-list-service` workload identity,
+  which holds `selection-list:owner-grant` (grant `list-owner` to an active member)
+  and `selection-list:grant-cleanup` (revoke a `SelectionList` instance role of a
+  principal that is gone: user missing/deactivated, or no active membership of the
+  tenant) instead of `authz:admin`.
 
 ### 4.4 Tenants, members, roles — `/api/v1/security/tenants/*`
 
@@ -276,6 +291,21 @@ Neutralized authorization primitives for multi-tenant org management:
 
 Authorization is **per-tenant**: a role in tenant A does not grant it in tenant
 B. Assign per tenant.
+
+The tenant **collection** is platform-level, not tenant-level:
+
+- `POST /tenants` (create a tenant) needs `Organization:manage` on the platform
+  root tenant (FuzeFront staff) or, for a machine caller, the `authz:admin`
+  scope. Being the admin of an ordinary tenant is **not** enough, and neither is
+  being authenticated. Everyone else gets `403 FORBIDDEN` (decided before the
+  body is read); provider unreachable → `502` (fail-closed). Customer
+  organizations are created through the organization APIs, which provision their
+  tenant themselves — do not create a tenant over this endpoint to onboard a
+  customer.
+- `GET /tenants` returns the tenants **visible to the caller**: the tenants in
+  which they hold a role. A platform administrator (or an `authz:admin` machine
+  caller) sees every tenant. It never reveals a tenant you do not belong to. A
+  malformed `cursor` is `400`; `limit` is clamped to 200 (default 50).
 
 ---
 

@@ -1,0 +1,68 @@
+name: gate-ds-artifact
+
+# The committed Design System artifact mirror (docs/design-system/artifact/**) must
+# equal what scripts/ds-artifact/build-artifact.mjs renders from the design-system/
+# source of truth (tokens/*.css + components/**).
+#
+# WHAT THIS CLOSES.
+# The published "FuzeFront Fuse Seam" design system is a derived view of the code: its
+# tokens.json is parsed from tokens/*.css, and every component's guideline doc comes from
+# that component's own .prompt.md / .d.ts. Checked into docs/ as a reviewable, diffable
+# mirror, it is only trustworthy if it cannot drift from the code. Without this gate a
+# token change (a hex, a spacing step) or a new/renamed/removed component silently leaves
+# the published design reference describing a system that no longer exists — exactly the
+# "a check is green so it must be working" failure class CLAUDE.md calls out. The producer
+# is a pure function of the source, so "regenerate and diff" is a complete check.
+#
+# WHERE IT RUNS IN THE SDLC.
+#   - On every PR, and on push to master. frontend-engineer (the sole editor of
+#     design-system/) changes a token or component, runs `npm run ds:artifact`, and
+#     commits the regenerated mirror in the SAME PR; this gate fails the PR if they did
+#     not. Because drift cannot merge, master's mirror is correct by construction.
+#   - The complementary post-merge hook already exists: ds-propagate.yml fires on push to
+#     master touching design-system/**. This gate is the pre-merge half of that loop.
+#
+# NO `paths:` FILTER, deliberately — the same load-bearing rule as gate-deployable-paths.yml
+# and gate-sealed-keys.yml. A path-filtered workflow never runs on a PR that misses the
+# filter, so if this context is ever added to the required-check ruleset (see
+# docs/design-system/README.md and docs/runbooks/widen-required-checks.md), a
+# required-but-never-reported context would leave the PR permanently blocked. The producer
+# is dependency-free (bare `node`, no `npm ci`) and finishes in well under a second, so
+# running it unconditionally costs nothing.
+#
+# `merge_group:` IS PRESENT so this context is safe to require. A merge queue emits
+# `merge_group`, never `pull_request`; a required context with no merge_group trigger is
+# never created for a queue entry and strands it (FuzeFront#286 in the queue). This check
+# is a pure regenerate-and-diff of the committed mirror against source — it reads no PR
+# context — so it behaves identically under merge_group, pull_request and push. The guard
+# scripts/check-required-check-triggers.mjs will require merge_group here once this
+# context's requiredInRuleset flips to true.
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gate-ds-artifact-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ds-artifact:
+    # Job display name == the required-check context. Keep it equal to the
+    # workflow name (`gate-ds-artifact`) so requiring that context actually
+    # matches this check instead of leaving the PR waiting forever.
+    name: gate-ds-artifact
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.x'
+
+      - name: Regenerate the artifact mirror and fail on drift
+        run: npm run check:ds-artifact

@@ -3,7 +3,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import ConnectorDetailPage from '../pages/ConnectorDetailPage'
 
-vi.mock('../lib/accounts', () => ({ getActiveAuthToken: () => 'synthetic' }))
+vi.mock('../lib/accounts', () => ({ getActiveAuthToken: () => 'synthetic', getActiveValue: () => 'selected-org' }))
 
 const connector = { id: 'openai', name: 'OpenAI', authentication: 'api-key', configured: true }
 const ok = (data: unknown) => ({ ok: true, json: async () => data })
@@ -45,4 +45,20 @@ test('re-enables connection controls after saving an API key', async () => {
 
   const disconnect = await screen.findByRole('button', { name: 'Disconnect' })
   await waitFor(() => expect((disconnect as HTMLButtonElement).disabled).toBe(false))
+})
+
+test('a staged key response clears the secret input and never shows connected', async () => {
+  vi.stubGlobal('fetch', vi.fn()
+    .mockResolvedValueOnce(ok({ connectors: [connector] }))
+    .mockResolvedValueOnce(ok({ status: 'disconnected' }))
+    .mockResolvedValueOnce(ok({ status: 'authorization_pending' })))
+  render(<MemoryRouter initialEntries={['/connectors/openai']}><Routes><Route path="/connectors/:connectorId" element={<ConnectorDetailPage />} /></Routes></MemoryRouter>)
+
+  const input = await screen.findByLabelText('OpenAI API key')
+  fireEvent.change(input, { target: { value: 'test-key' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save key' }))
+
+  await waitFor(() => expect((input as HTMLInputElement).value).toBe(''))
+  expect(await screen.findByText('Awaiting approval')).toBeTruthy()
+  expect(screen.queryByText(/^Connected/)).toBeNull()
 })

@@ -7,7 +7,9 @@
 // Both middlewares:
 //   1. Check the fuzefront.selection-lists.service feature flag (404 if OFF).
 //   2. Require req.orgId (populated by authMiddleware from the JWT).
-//   3. Run the relevant quota check (soft limit, not transactional).
+//   3. Run the relevant quota check (soft fast-path; the create handler re-checks
+//      under an advisory lock, which is the exact one). Lists: org_lists,
+//      user_lists and the storage ceiling; items: list_items + storage ceiling.
 //   4. On QuotaExceededError → 403 QUOTA_EXCEEDED (OpenAPI Forbidden response).
 //   5. On any other error → forward to the default Express error handler.
 //
@@ -15,9 +17,10 @@
 // caller without `add_value` never reaches the quota check path.
 
 import { Request, Response, NextFunction } from 'express';
-import { checkListQuota, checkItemQuota, QuotaExceededError } from '../services/quota.service';
+import { checkListQuota, checkListQuotaAcross, checkItemQuota, QuotaExceededError } from '../services/quota.service';
 import { isSelectionListsEnabled } from '../flags';
 import { getLog } from '../lib/logger';
+import { writeOrgs } from '../lib/sharedLists';
 
 /** Wire-format 403 QUOTA_EXCEEDED body (shared with the create handlers' locked re-check). */
 export function sendQuotaExceeded(res: Response, err: QuotaExceededError): void {
@@ -61,7 +64,11 @@ export const enforceListQuota = async (
   }
 
   try {
-    await checkListQuota(req.orgId);
+    // Shared lists ON: the fast-path refusal sees the same org-wide scope as the exact in-transaction check
+    // (a per-rendering count/override could refuse - or admit - differently). OFF: the 4.0.0 exact id.
+    const orgs = await writeOrgs(req);
+    if (orgs) await checkListQuotaAcross(orgs, undefined, req.userId);
+    else await checkListQuota(req.orgId, undefined, req.userId);
     next();
   } catch (err) {
     if (err instanceof QuotaExceededError) {
@@ -122,7 +129,7 @@ export const enforceItemQuota = async (
   }
 
   try {
-    await checkItemQuota(listId, req.orgId);
+    await checkItemQuota(listId, (await writeOrgs(req)) ?? req.orgId);
     next();
   } catch (err) {
     if (err instanceof QuotaExceededError) {

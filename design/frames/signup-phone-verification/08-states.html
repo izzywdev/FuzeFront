@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Loading & edge states — signup phone verification frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="phone-verify.css" />
+</head>
+<body>
+<main class="pv-page" data-frame="08-states" data-flow="signup-phone">
+  <div class="pv-crumb"><a href="index.html">← All frames</a> · Frame 08 · States</div>
+  <h1 class="pv-h1">Loading, resume, session and generic errors</h1>
+  <p class="pv-lead">The step loads <code>GET /v1/security/methods</code> and <code>GET /v1/security/verify/status</code> in parallel before rendering anything interactive. Neither response is cached across the step, because status can change in another tab.</p>
+  <div class="pv-pair">
+  <div data-viewport="desktop">
+    <p class="pv-viewport-label">Desktop · AuthCard 420px · /signup/phone</p>
+    <div class="pv-stage">
+      <div class="pv-card"><div class="pv-card__seam"></div><div class="pv-card__body">
+    <div class="pv-brand"><span class="pv-brand__mark" aria-hidden="true">F</span><span class="pv-brand__word">FuzeFront</span></div>
+    <ol class="pv-progress" data-component="signup-progress" data-email-step="shown" aria-label="Sign-up progress">
+      <li class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Account<span class="pv-sr" data-step-sr> (completed)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="phone" data-step-state="current" aria-current="step"><span class="pv-progress__dot" aria-hidden="true"></span>Phone<span class="pv-sr" data-step-sr> (current step)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot" aria-hidden="true"></span>Email<span class="pv-sr" data-step-sr> (not started)</span></li>
+    </ol>
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="loading">
+<div class="pv-center" aria-busy="true">
+      <div class="pv-skel" style="width:56px;height:56px;border-radius:var(--radius-pill)"></div>
+      <div class="pv-skel" style="width:70%"></div>
+      <div class="pv-skel" style="width:90%"></div>
+      <div class="pv-skel" style="width:60%;margin-bottom:var(--space-6)"></div>
+      <div class="pv-skel pv-skel--input"></div>
+      <div class="pv-skel pv-skel--input"></div>
+    </div>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite"></p>
+  </section>
+      </div></div>
+    </div>
+  </div>
+  <div data-viewport="375">
+    <p class="pv-viewport-label">Mobile · 375px · loading</p>
+    <div class="pv-device">
+      <header class="pv-device__bar">
+        <span class="pv-device__title">Verify your phone</span>
+
+      </header>
+      <div class="pv-device__body">
+    <ol class="pv-progress" data-component="signup-progress" data-email-step="shown" aria-label="Sign-up progress">
+      <li class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Account<span class="pv-sr" data-step-sr> (completed)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="phone" data-step-state="current" aria-current="step"><span class="pv-progress__dot" aria-hidden="true"></span>Phone<span class="pv-sr" data-step-sr> (current step)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot" aria-hidden="true"></span>Email<span class="pv-sr" data-step-sr> (not started)</span></li>
+    </ol>
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="loading">
+<div class="pv-center" aria-busy="true">
+      <div class="pv-skel" style="width:56px;height:56px;border-radius:var(--radius-pill)"></div>
+      <div class="pv-skel" style="width:70%"></div>
+      <div class="pv-skel" style="width:90%"></div>
+      <div class="pv-skel" style="width:60%;margin-bottom:var(--space-6)"></div>
+      <div class="pv-skel pv-skel--input"></div>
+      <div class="pv-skel pv-skel--input"></div>
+    </div>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite"></p>
+  </section>
+      </div>
+    </div>
+  </div>
+  </div>
+  <div class="pv-states">
+    <div class="pv-state">
+      <p class="pv-state__label"><b>loading</b> · methods + status in flight</p>
+      <p class="pv-state__note">Skeleton in the same layout as enter-phone, so nothing shifts. No Skip until policy is known: under <code>required</code>, Skip mustn't flash in and then disappear.</p>
+      <div data-viewport="375">
+    <p class="pv-viewport-label">Mobile · 375px (Android TWA)</p>
+    <div class="pv-device">
+      <header class="pv-device__bar">
+        <span class="pv-device__title">Verify your phone</span>
+
+      </header>
+      <div class="pv-device__body">
+    <ol class="pv-progress" data-component="signup-progress" data-email-step="shown" aria-label="Sign-up progress">
+      <li class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Account<span class="pv-sr" data-step-sr> (completed)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="phone" data-step-state="current" aria-current="step"><span class="pv-progress__dot" aria-hidden="true"></span>Phone<span class="pv-sr" data-step-sr> (current step)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot" aria-hidden="true"></span>Email<span class="pv-sr" data-step-sr> (not started)</span></li>
+    </ol>
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="loading">
+<div class="pv-center" aria-busy="true">
+      <div class="pv-skel" style="width:56px;height:56px;border-radius:var(--radius-pill)"></div>
+      <div class="pv-skel" style="width:70%"></div>
+      <div class="pv-skel" style="width:90%"></div>
+      <div class="pv-skel" style="width:60%;margin-bottom:var(--space-6)"></div>
+      <div class="pv-skel pv-skel--input"></div>
+      <div class="pv-skel pv-skel--input"></div>
+    </div>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite"></p>
+  </section>
+      </div>
+    </div>
+  </div>
+    </div>
+    <div class="pv-state">
+      <p class="pv-state__label"><b>already-verified</b> · status.phoneVerified</p>
+      <p class="pv-state__note">For example, the user verified in another tab. Short notice, then an automatic redirect via <code>nextAfterPhone()</code> (check-inbox, or the app if email is off or already confirmed). It never asks again.</p>
+      <div data-viewport="375">
+    <p class="pv-viewport-label">Mobile · 375px (Android TWA)</p>
+    <div class="pv-device">
+      <header class="pv-device__bar">
+        <span class="pv-device__title">Verify your phone</span>
+
+      </header>
+      <div class="pv-device__body">
+    <ol class="pv-progress" data-component="signup-progress" data-email-step="shown" aria-label="Sign-up progress">
+      <li class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Account<span class="pv-sr" data-step-sr> (completed)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="phone" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Phone<span class="pv-sr" data-step-sr> (completed)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="email" data-step-state="current" aria-current="step"><span class="pv-progress__dot" aria-hidden="true"></span>Email<span class="pv-sr" data-step-sr> (current step)</span></li>
+    </ol>
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="already-verified">
+<div class="pv-center">
+      <div class="pv-spinner pv-spinner--lg" aria-hidden="true"></div>
+      <p class="pv-sub"><b>Your phone is already verified.</b> Taking you to the next step…</p>
+    </div>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite"></p>
+  </section>
+      </div>
+    </div>
+  </div>
+    </div>
+    <div class="pv-state">
+      <p class="pv-state__label"><b>resumed</b> · status.phonePending (Δ)</p>
+      <p class="pv-state__note">After a reload, the step resumes at enter-code with the cooldown and expiry restored from the server. The client has only <code>phonePending.maskedPhone</code>, never the full number. That's enough: confirm sends <code>{ code }</code>, and Resend calls <code>POST /verify/phone/resend</code> with an empty body (Δ), which targets the server-held pending number. Change number goes back to an empty enter-phone.</p>
+      <div data-viewport="375">
+    <p class="pv-viewport-label">Mobile · 375px (Android TWA)</p>
+    <div class="pv-device">
+      <header class="pv-device__bar">
+        <span class="pv-device__title">Verify your phone</span>
+        <span class="pv-device__right"><button type="button" class="pv-btn pv-btn--link" data-action="skip" style="width:auto">Skip for now</button></span>
+      </header>
+      <div class="pv-device__body">
+    <ol class="pv-progress" data-component="signup-progress" data-email-step="shown" aria-label="Sign-up progress">
+      <li class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Account<span class="pv-sr" data-step-sr> (completed)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="phone" data-step-state="current" aria-current="step"><span class="pv-progress__dot" aria-hidden="true"></span>Phone<span class="pv-sr" data-step-sr> (current step)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot" aria-hidden="true"></span>Email<span class="pv-sr" data-step-sr> (not started)</span></li>
+    </ol>
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="enter-code" data-resumed="true">
+<div class="pv-alert pv-alert--info" role="note"><span class="pv-alert__icon" aria-hidden="true">↺</span>
+      <span>Welcome back — we already sent a code to this number.</span></div>
+    <div class="pv-center">
+      <h2 class="pv-title">Enter your code</h2>
+      <p class="pv-sub">Enter the 6-digit code we sent to</p>
+      <p><span class="pv-chip" data-value="masked-phone">+44 •••• •• 0123</span>
+        <button type="button" class="pv-change" data-action="change-number">Change number</button></p>
+    </div>
+    <form class="pv-form" data-form="code" novalidate>
+      <div class="pv-otp" data-component="otp-input" data-otp-state="idle" role="group" aria-label="6-digit code">
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 1 of 6" autocomplete="one-time-code" data-focus="true" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 2 of 6" autocomplete="off" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 3 of 6" autocomplete="off" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 4 of 6" autocomplete="off" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 5 of 6" autocomplete="off" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 6 of 6" autocomplete="off" />
+      </div>
+      <p class="pv-help pv-center">Paste the whole code into any box — it fills all six. On Android the code can fill in automatically.</p>
+      <div class="pv-actions">
+        <button type="submit" class="pv-btn pv-btn--primary" data-action="verify-contact" disabled>Confirm</button>
+        <button type="button" class="pv-btn pv-btn--link" data-action="skip">Skip for now</button>
+      </div>
+      <div class="pv-resend-row">
+        <button type="button" class="pv-resend" data-action="resend" data-resend-via="session" data-resend-state="cooldown" disabled>↻ Resend code in <span class="pv-count" data-countdown="resend">0:27</span></button>
+        <span class="pv-help" style="margin:0" data-expiry>Code expires in <span class="pv-count" data-countdown="expiry">9:41</span></span>
+      </div>
+    </form>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite"></p>
+  </section>
+      </div>
+    </div>
+  </div>
+    </div>
+    <div class="pv-state">
+      <p class="pv-state__label"><b>sms-off-preflight</b> · methods.verification.sms = false</p>
+      <p class="pv-state__note">The transport isn't configured (no <code>SMS_SERVICE_URL</code>), so the step is skipped via <code>nextAfterPhone()</code> before anything is shown. This frame documents the transient redirect. In practice the router skips the route.</p>
+      <div data-viewport="375">
+    <p class="pv-viewport-label">Mobile · 375px (Android TWA)</p>
+    <div class="pv-device">
+      <header class="pv-device__bar">
+        <span class="pv-device__title">Verify your phone</span>
+
+      </header>
+      <div class="pv-device__body">
+    <ol class="pv-progress" data-component="signup-progress" data-email-step="shown" aria-label="Sign-up progress">
+      <li class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Account<span class="pv-sr" data-step-sr> (completed)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="phone" data-step-state="pending"><span class="pv-progress__dot" aria-hidden="true"></span>Phone · later<span class="pv-sr" data-step-sr> (skipped, you can add it later)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="email" data-step-state="current" aria-current="step"><span class="pv-progress__dot" aria-hidden="true"></span>Email<span class="pv-sr" data-step-sr> (current step)</span></li>
+    </ol>
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="sms-off-preflight">
+<div class="pv-center">
+      <div class="pv-spinner pv-spinner--lg" aria-hidden="true"></div>
+      <p class="pv-sub">Text verification isn't set up in this environment, so this step isn't shown. Continuing…</p>
+    </div>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite"></p>
+  </section>
+      </div>
+    </div>
+  </div>
+    </div>
+    <div class="pv-state">
+      <p class="pv-state__label"><b>error-session</b> · 401 NO_TOKEN / session expired</p>
+      <p class="pv-state__note">Only for a real session failure (once Δ separates it from code errors). Sign-in returns to the <b>whole current location</b>, nested and encoded, so the original target survives: <code>/login?next=%2Fsignup%2Fphone%3Fnext%3D%252Fapps%252Fplan</code> → <code>/signup/phone?next=/apps/plan</code> → <code>/apps/plan</code>. Because the sign-in target already points at this flow, the required-policy re-prompt doesn't wrap it again (see 01, no loop).</p>
+      <div data-viewport="375">
+    <p class="pv-viewport-label">Mobile · 375px (Android TWA)</p>
+    <div class="pv-device">
+      <header class="pv-device__bar">
+        <span class="pv-device__title">Verify your phone</span>
+
+      </header>
+      <div class="pv-device__body">
+    <ol class="pv-progress" data-component="signup-progress" data-email-step="shown" aria-label="Sign-up progress">
+      <li class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Account<span class="pv-sr" data-step-sr> (completed)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="phone" data-step-state="current" aria-current="step"><span class="pv-progress__dot" aria-hidden="true"></span>Phone<span class="pv-sr" data-step-sr> (current step)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot" aria-hidden="true"></span>Email<span class="pv-sr" data-step-sr> (not started)</span></li>
+    </ol>
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="error-session" data-http-status="401">
+<div class="pv-center">
+      <div class="pv-hero pv-hero--warning" aria-hidden="true">⌛</div>
+      <h2 class="pv-title">Please sign in again</h2>
+      <p class="pv-sub">Your session ended before we could finish. Your account is already created — sign in and we'll bring you back here.</p>
+    </div>
+    <div class="pv-actions">
+      <a class="pv-btn pv-btn--primary" href="../auth-experience/02-signin.html?next=%2Fsignup%2Fphone%3Fnext%3D%252Fapps%252Fplan" data-action="sign-in-again" data-return-to="/signup/phone?next=%2Fapps%2Fplan">Sign in</a>
+    </div>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite"></p>
+  </section>
+      </div>
+    </div>
+  </div>
+    </div>
+    <div class="pv-state">
+      <p class="pv-state__label"><b>error-generic</b> · network / 5xx (optional)</p>
+      <p class="pv-state__note">Unknown failure: Try again, or Skip. Raw server messages are never shown.</p>
+      <div data-viewport="375">
+    <p class="pv-viewport-label">Mobile · 375px (Android TWA)</p>
+    <div class="pv-device">
+      <header class="pv-device__bar">
+        <span class="pv-device__title">Verify your phone</span>
+
+      </header>
+      <div class="pv-device__body">
+    <ol class="pv-progress" data-component="signup-progress" data-email-step="shown" aria-label="Sign-up progress">
+      <li class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Account<span class="pv-sr" data-step-sr> (completed)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="phone" data-step-state="current" aria-current="step"><span class="pv-progress__dot" aria-hidden="true"></span>Phone<span class="pv-sr" data-step-sr> (current step)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot" aria-hidden="true"></span>Email<span class="pv-sr" data-step-sr> (not started)</span></li>
+    </ol>
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="error-generic" data-policy="optional">
+<div class="pv-center">
+      <div class="pv-hero pv-hero--error" aria-hidden="true">⚠</div>
+      <h2 class="pv-title">Something went wrong</h2>
+      <p class="pv-sub">We couldn't reach the server. Check your connection and try again.</p>
+    </div>
+    <div class="pv-actions">
+      <button type="button" class="pv-btn pv-btn--primary" data-action="retry">Try again</button>
+      <button type="button" class="pv-btn pv-btn--link" data-action="skip">Skip for now</button>
+    </div>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite"></p>
+  </section>
+      </div>
+    </div>
+  </div>
+    </div>
+    <div class="pv-state">
+      <p class="pv-state__label"><b>error-generic</b> · network / 5xx (required)</p>
+      <p class="pv-state__note">Under <code>required</code>, a network error or unclassified 5xx is <b>not</b> retry-only: <b>Continue for now</b> (<code>continue-without-phone</code>) defers exactly like 503 and lockout, and the sign-in redirect re-prompts later.</p>
+      <div data-viewport="375">
+    <p class="pv-viewport-label">Mobile · 375px (Android TWA)</p>
+    <div class="pv-device">
+      <header class="pv-device__bar">
+        <span class="pv-device__title">Verify your phone</span>
+
+      </header>
+      <div class="pv-device__body">
+    <ol class="pv-progress" data-component="signup-progress" data-email-step="shown" aria-label="Sign-up progress">
+      <li class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Account<span class="pv-sr" data-step-sr> (completed)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="phone" data-step-state="current" aria-current="step"><span class="pv-progress__dot" aria-hidden="true"></span>Phone<span class="pv-sr" data-step-sr> (current step)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot" aria-hidden="true"></span>Email<span class="pv-sr" data-step-sr> (not started)</span></li>
+    </ol>
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="error-generic" data-policy="required">
+<div class="pv-center">
+      <div class="pv-hero pv-hero--error" aria-hidden="true">⚠</div>
+      <h2 class="pv-title">Something went wrong</h2>
+      <p class="pv-sub">We couldn't reach the server. Check your connection and try again. Or continue now, and we'll ask you to verify your phone next time you sign in.</p>
+    </div>
+    <div class="pv-actions">
+      <button type="button" class="pv-btn pv-btn--primary" data-action="retry">Try again</button>
+      <button type="button" class="pv-btn pv-btn--link" data-action="continue-without-phone">Continue for now</button>
+    </div>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite"></p>
+  </section>
+      </div>
+    </div>
+  </div>
+    </div>
+  </div>
+
+<nav class="pv-nav" aria-label="Frame navigation">
+  <span class="pv-nav__caption"><b>08 / 08 · Loading & edge states</b> — GET /methods + GET /verify/status · loading / resume / 401 / generic</span>
+  <span class="pv-nav__links">
+    <a class="pv-btn pv-btn--secondary" href="index.html" data-nav="index">Index</a>
+    <a class="pv-btn pv-btn--secondary" href="07-skip-policy.html" data-nav="07-skip-policy">← Skip policy</a>
+    <a class="pv-btn pv-btn--primary" href="index.html" data-nav="index-end">Back to index →</a>
+  </span>
+</nav>
+</body>
+</html>

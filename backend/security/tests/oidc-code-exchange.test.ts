@@ -25,7 +25,7 @@ jest.mock('../src/services/oidc', () => {
 
 jest.mock('../src/config/database', () => ({
   db: Object.assign(
-    jest.fn().mockReturnValue({ insert: jest.fn().mockResolvedValue([]) }),
+    jest.fn().mockReturnValue({ insert: jest.fn().mockResolvedValue([]), where: () => ({ first: async () => undefined }) }),
     { transaction: jest.fn(), insert: jest.fn().mockResolvedValue([]) }
   )
 }))
@@ -71,6 +71,24 @@ describe('OIDC code-exchange endpoint', () => {
     expect(exRes.status).toBe(200)
     expect(exRes.body).toHaveProperty('token')
     expect(exRes.body).toHaveProperty('sessionId')
+  })
+
+  it('MFA user: legacy callback mints NO session and token-exchange refuses (409 mfa_required)', async () => {
+    const { db } = require('../src/config/database')
+    const insert = jest.fn().mockResolvedValue([])
+    db.mockReturnValueOnce({ where: () => ({ first: async () => ({ id: 'f1', status: 'active' }) }), insert })
+    const STATE = 'test-state'
+    const cbRes = await request(app)
+      .get(`/api/auth/oidc/callback?code=authcode&state=${STATE}`)
+      .set('Cookie', `oidc_state=${STATE}; oidc_cv=mock-code-verifier`)
+    expect(cbRes.status).toBe(302)
+    const code = new URL(cbRes.headers.location).searchParams.get('code')
+    expect(code).toBeTruthy()
+    expect(insert).not.toHaveBeenCalled() // no sessions row
+    const ex = await request(app).post('/api/auth/token-exchange').send({ code })
+    expect(ex.status).toBe(409)
+    expect(ex.body.code).toBe('MFA_REQUIRED')
+    expect(ex.body).not.toHaveProperty('token')
   })
 
   it('second token-exchange with same code returns 401', async () => {

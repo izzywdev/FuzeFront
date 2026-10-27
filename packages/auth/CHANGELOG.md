@@ -1,8 +1,50 @@
-# Changelog — @fuzefront/auth
+# Changelog — @izzywdev/fuzefront-auth
 
 All notable changes to this contract are documented here. This package is
 versioned independently; bump on every interface change (SemVer — the major is
 the contract-stability guarantee consumers may assert on).
+
+## 0.4.0 — legacy-hs256 rejects unvalidated session tokens by default
+
+### Changed (BREAKING for `legacy-hs256` consumers)
+
+- A `legacy-hs256` token that names a `sessionId` is now **refused** with
+  `AuthError` `VERIFIER_UNAVAILABLE` (500, a deployment misconfiguration) unless a
+  `sessionValidator` is configured. Previously such tokens authenticated until
+  `exp` even after a logout or device revoke. The resolver is never called for a
+  refused token.
+- **Migrating:** supply `sessionValidator(userId, sessionId, claims)` (resolve
+  `true` while the session is active), or, if the service genuinely cannot reach
+  the session store, set `allowUnvalidatedSessions: true` to keep the old
+  behaviour deliberately. Tokens that name no session are unaffected;
+  `federated-jwks` is unaffected.
+
+### Added
+
+- `LegacyHs256Config.sessionValidator`, `LegacyHs256Config.allowUnvalidatedSessions`,
+  and the `SessionValidator` type. Only `true` keeps a session alive (anything else
+  is 401 `EXPIRED`); a throwing/rejecting validator is a retryable 503
+  `VERIFIER_UNAVAILABLE` with a fixed message. It runs before the resolver.
+- `Identity.sessionId` (optional) carries the validated session id. The validator runs
+  only for a token that names a session. `allowUnvalidatedSessions` opts out only for
+  a literal `true`.
+- `requireAuth({ optional: true })` now degrades only client credential failures (4xx)
+  to anonymous. A 5xx (session-validator / resolver outage, misconfigured verifier)
+  is surfaced instead of silently becoming an anonymous request.
+- A present-but-malformed `sessionId` claim is `MALFORMED` rather than being
+  treated as "no session".
+- `AUTH_CONTRACT_VERSION` 0.2.0 → 0.3.0. The Python peer `fuzefront-auth` 0.2.0
+  ships the same rule (`allow_unvalidated_sessions`, `session_validator`).
+
+## 0.3.1 — legacy-hs256 refuses narrowed `kind` tokens
+
+### Fixed
+
+- `legacy-hs256` verifier accepted `fuze-org-session` / `fuze-workload` /
+  `fuze-delegation` tokens (they share `JWT_SECRET`) and, with a resolver wired,
+  hydrated the holder with a user's full roles and tenant. It now throws
+  `AuthError` `INVALID_AUDIENCE` (401) when the `kind` claim is present, before
+  the resolver runs. Matches `backend/src/middleware/auth.ts` (resolves #1518).
 
 ## 0.3.0 — Subject ABAC attribute write (`setAttributes`)
 

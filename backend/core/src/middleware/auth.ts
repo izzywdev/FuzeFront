@@ -35,9 +35,27 @@ export const authenticateToken = async (
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as {
+    // Algorithm PINNED to HS256 (every platform mint site signs HS256): the
+    // verifier must not be steerable by the token's own header.
+    const decoded = jwt.verify(token, process.env.JWT_SECRET!, { algorithms: ['HS256'] }) as {
       userId: string
       sessionId?: string
+      kind?: unknown
+    }
+
+    // Only a PLAIN platform session authenticates here. A token carrying a
+    // `kind` is a narrowed or machine credential minted for a different
+    // audience — `fuze-org-session` (backend/security services/orgSessionToken.ts,
+    // handed to org-scoped services such as selection-list-service),
+    // `fuze-workload`, `fuze-delegation` — and shares JWT_SECRET only because
+    // the family has one HS256 key. Accepting it here would make a 15-minute
+    // org token a full account credential on every core-authenticated route:
+    // mint a long-lived `ff_live_` API token (POST /api/tokens), manage orgs,
+    // log the session out. Refuse it outright (fail closed, allow-list of one
+    // shape: no `kind`).
+    if (decoded.kind !== undefined) {
+      console.log('❌ [%s] Non-session token kind refused', oneLine(requestId))
+      return res.status(401).json({ error: 'Invalid token.' })
     }
 
     // Revocation is enforced HERE, on the request path, or it does not exist.

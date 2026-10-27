@@ -1,4 +1,4 @@
-import { getActiveAuthToken } from './accounts'
+import { getActiveAuthToken, getActiveValue } from './accounts'
 
 export type ConnectorStatus = 'connected' | 'disconnected' | 'error' | 'authorization_pending' | 'loading'
 export type ConnectorEntry = {
@@ -33,7 +33,7 @@ export async function connectorRequest<T>(path: string, init?: RequestInit): Pro
     const response = await fetch(`/api/v1/connectors${path}`, {
       ...init,
       signal: controller.signal,
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getActiveAuthToken() || ''}`, ...(init?.headers || {}) },
+      headers: { 'Content-Type': 'application/json', 'X-Active-Organization': getActiveValue('activeOrganizationId') || '', Authorization: `Bearer ${getActiveAuthToken() || ''}`, ...(init?.headers || {}) },
     })
     if (!response.ok) {
       const payload = await response.json().catch(() => ({})) as { error?: string; detail?: string }

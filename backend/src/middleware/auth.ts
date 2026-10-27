@@ -62,12 +62,24 @@ export const authenticateToken = async (
 
   try {
     console.log('🔍 [%s] Verifying JWT token...', oneLine(requestId))
-    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET!, { algorithms: ['HS256'] }) as {
       userId: string
+      sessionId?: string
       // FF-EPIC-10-S3 — the portal this token was minted for (routes/auth.ts
       // jwt.sign call sites). Absent on tokens issued before this epic, or
       // whenever the multi-tenant-portals flag was OFF at mint time.
       portalId?: string
+      kind?: unknown
+    }
+
+    // Only a PLAIN platform session authenticates here — same rule as
+    // @fuzefront/core's authenticateToken. A token carrying a `kind`
+    // (`fuze-org-session` from the Security API's org exchange, `fuze-workload`,
+    // `fuze-delegation`) is a narrowed/machine credential for a different
+    // audience that merely shares JWT_SECRET; it is never a user session here.
+    if (decoded.kind !== undefined) {
+      console.log('❌ [%s] Non-session token kind refused', oneLine(requestId))
+      return res.status(401).json({ error: 'Invalid token.' })
     }
 
     console.log(
@@ -111,6 +123,7 @@ export const authenticateToken = async (
 
     const user: User = {
       id: userRow.id,
+      sessionId: decoded.sessionId,
       email: userRow.email,
       firstName: userRow.first_name,
       lastName: userRow.last_name,
@@ -119,6 +132,23 @@ export const authenticateToken = async (
         ? userRow.roles
         : JSON.parse(userRow.roles || '["user"]'),
       homePortalId: userRow.home_portal_id ?? null,
+    }
+
+    // The selected organization header is only a context selector; downstream
+    // delegation independently verifies active membership before signing it.
+    // Without a selector, use the session's server-side organization context.
+    if (decoded.sessionId) {
+      const session = await db('sessions')
+        .select('active_organization_id')
+        .where({ id: decoded.sessionId, user_id: decoded.userId })
+        .where('expires_at', '>', new Date())
+        .first()
+      const selectedOrganization = req.get('X-Active-Organization')
+      user.activeOrganizationId = selectedOrganization !== undefined
+        ? selectedOrganization || null
+        : session?.active_organization_id ?? null
+    } else {
+      user.activeOrganizationId = req.get('X-Active-Organization') || null
     }
 
     // FF-EPIC-10-S3 — token-derived portal binding, NEVER a client-supplied

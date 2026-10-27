@@ -48,6 +48,13 @@ export async function handleSubscriptionUpdated(
     seatQuantity,
   });
 
+  // Sync per-org Unleash plan-tier permission flags (FFRNT-364).
+  // Only runs when UNLEASH_ADMIN_TOKEN is configured AND
+  // fuzefront.billing.plan-flag-sync-enabled is ON. Failures are swallowed
+  // (same contract as syncPlanToPermit) — a flag-sync outage must not fail
+  // the webhook and cause Stripe retries.
+  void ctx.unleashFlagSync?.syncPlanFlags(entity.entityId, planTier);
+
   // NOTE: the public.users/organizations plan-tier/status cache is projected
   // by the backend's billingProjection consumer off the event below —
   // billing-service must never write those tables directly (per-service-DB

@@ -77,7 +77,9 @@ Success looks like:
 - Improve multi-tenant and team-oriented platform capabilities.
 - Strengthen runtime observability and integration diagnostics.
 - Expand standardized product templates.
-- Create measurable platform/adoption benchmarks.
+- Create measurable platform/adoption benchmarks — see
+  [`docs/benchmarks/`](docs/benchmarks/) for the app-onboarding benchmark
+  specification; publishing real runs against it is still outstanding.
 - Publish real workload case studies.
 - Make cross-repository Software Factory governance more visible without exposing proprietary internals.
 

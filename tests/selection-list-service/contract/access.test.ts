@@ -16,15 +16,17 @@ import { makeClient, rawFetch } from '../helpers/client';
 import { mintTestToken } from '../helpers/auth';
 import { createTestList, purgeList } from '../helpers/factories';
 import type { SelectionListId } from '../helpers/factories';
+import { testOrg, testUser } from '../helpers/ids';
+import { declareNonMember } from '../helpers/shared-lists';
 
 // ---------------------------------------------------------------------------
 // Test actors — two users in the same org
 // ---------------------------------------------------------------------------
 
-const ORG_ID = 'org_01test00000000access000000';
-const USER_OWNER = 'usr_01test00000000accessowner0';
-const USER_EDITOR = 'usr_01test00000000accessedit00';
-const USER_OUTSIDER = 'usr_01test00000000accessout000'; // NOT in ORG_ID
+const ORG_ID = testOrg('access');
+const USER_OWNER = testUser('accessowner');
+const USER_EDITOR = testUser('accessedit');
+const USER_OUTSIDER = testUser('accessout'); // NOT in ORG_ID
 
 function ownerToken(): string {
   return mintTestToken({ userId: USER_OWNER, organizationId: ORG_ID });
@@ -244,6 +246,12 @@ describe('GET /v1/selection-lists/{listId}/access — pagination', () => {
 // ---------------------------------------------------------------------------
 
 describe('PUT /v1/selection-lists/{listId}/access/{userId} — org membership', () => {
+  // The stand-in Security API holds no outsider by default: declare, by canonical UUID, the one user
+  // this suite names as "NOT in ORG_ID" (see the stand-in's /__fixture/non-member).
+  beforeAll(async () => {
+    await declareNonMember(ORG_ID, USER_OUTSIDER);
+  });
+
   it('granting access to a user outside the org returns 400 VALIDATION_ERROR', async () => {
     const client = makeClient(ownerToken);
     const list = await createTestList(client, {

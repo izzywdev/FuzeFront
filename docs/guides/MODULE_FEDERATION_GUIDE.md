@@ -1,10 +1,10 @@
-# FrontFuse Module Federation Implementation Guide
+# FuzeFront Module Federation Implementation Guide
 
-This guide demonstrates how to implement a complete module federation system with runtime app registration using FrontFuse.
+This guide demonstrates how to implement a complete module federation system with runtime app registration using FuzeFront.
 
 ## Architecture Overview
 
-FrontFuse implements a **runtime module federation** system where:
+FuzeFront implements a **runtime module federation** system where:
 
 1. **Hub Portal** (Frontend) - Acts as the container application that dynamically loads micro-frontends
 2. **Backend API** - Manages app registry and provides WebSocket notifications
@@ -23,18 +23,20 @@ FrontFuse implements a **runtime module federation** system where:
 
 ## Quick Start
 
-### 1. Start the FrontFuse Platform
+### 1. Start the FuzeFront Platform
+
+`npm run install:all`, `npm run db:init` and `npm run dev` are no longer
+defined in `package.json` — this section predates the current Docker-based
+local stack. Use the real, current quickstart instead:
 
 ```bash
-# Install dependencies
-npm run install:all
-
-# Initialize database
-npm run db:init
-
-# Start backend and frontend
-npm run dev
+docker compose -f docker-compose.e2e.yml up -d --build
 ```
+
+This brings up Postgres, Redis, Authentik, the backend, the security service
+and the shell with no secrets or `.env` values required. See
+[`docs/ADOPTION_QUICKSTART.md`](../ADOPTION_QUICKSTART.md) for the full
+walkthrough (signing in, running the federated sample app, troubleshooting).
 
 ### 2. Create a New Micro-frontend
 
@@ -46,8 +48,8 @@ cd my-app
 # Install module federation plugin
 npm install @originjs/vite-plugin-federation --save-dev
 
-# Install FrontFuse SDK
-npm install @frontfuse/sdk-react
+# Install the FuzeFront SDK (published as @izzywdev/fuzefront-sdk-react)
+npm install @izzywdev/fuzefront-sdk-react
 ```
 
 ### 3. Configure Module Federation
@@ -123,7 +125,7 @@ export async function registerWithHub() {
 
     if (response.ok) {
       const app = await response.json()
-      console.log('✅ Registered with FrontFuse hub:', app)
+      console.log('✅ Registered with FuzeFront hub:', app)
 
       // Start heartbeat
       const heartbeat = createHeartbeat({
@@ -160,7 +162,7 @@ import App from './App.tsx'
 import './index.css'
 import { autoRegister } from './registration'
 
-// Auto-register with FrontFuse hub
+// Auto-register with FuzeFront hub
 autoRegister().catch(console.error)
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
@@ -242,7 +244,7 @@ docker run -p 3003:3003 my-app
 
 ## Integration Types
 
-FrontFuse supports three integration types:
+FuzeFront supports three integration types:
 
 ### 1. Module Federation (Recommended)
 
@@ -279,6 +281,8 @@ FrontFuse supports three integration types:
 - **Good Isolation** - Shadow DOM encapsulation
 
 ```typescript
+// Legacy POST /api/apps/register body (backend/src/routes/apps.ts) — the
+// field here is `remoteUrl` for every integrationType, including this one.
 {
   integrationType: 'web-component',
   remoteUrl: 'http://localhost:3003/my-component.js',
@@ -286,9 +290,18 @@ FrontFuse supports three integration types:
 }
 ```
 
+The manifest-based registration path (`registration/manifest.json` +
+`@fuzefront/onboarding-kit` — see
+[`docs/mfe-self-registration.md`](../mfe-self-registration.md), the current
+production path) uses `url` instead of `remoteUrl` for this integration
+type. For the full custom-element/bundle contract the shell expects, a
+runnable example, and how this trades off against `iframe` and Module
+Federation, see
+[`WEB_COMPONENT_INTEGRATION.md`](WEB_COMPONENT_INTEGRATION.md).
+
 ## SDK Features
 
-The FrontFuse SDK provides:
+The FuzeFront SDK provides:
 
 ### Module Federation Utilities
 

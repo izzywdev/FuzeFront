@@ -35,18 +35,35 @@ export interface FuzeFlagsContext {
 
 export interface FuzeFlagsOptions {
   /**
+   * Which provider to install. Defaults to `'unleash'` (the only production
+   * provider). `'offline'` installs an in-memory provider from a static ON list
+   * and is the single, explicit replacement for the old per-service
+   * `FLAGS_FORCE_ON` escape hatches — selected ONLY by env
+   * (`FUZE_FLAGS_PROVIDER=offline`), refused in production, and ignored whenever
+   * Unleash is configured (Unleash always wins). See {@link init}.
+   */
+  provider?: 'unleash' | 'offline';
+  /**
+   * Offline-provider configuration. `on` lists the flag keys resolved `true`;
+   * every other key is absent, so the caller's in-code default applies. Used
+   * only when `provider === 'offline'`.
+   */
+  offline?: { on: string[] };
+  /**
    * Unleash server API base URL, ending in `/api`, e.g.
    * `http://fuzefront-unleash.fuzefront.svc.cluster.local:4242/api`.
    *
    * For the web entry this should point at the Unleash front-end/proxy endpoint
-   * (`/api/frontend` or an edge/proxy URL).
+   * (`/api/frontend` or an edge/proxy URL). Optional because the offline
+   * provider needs no Unleash endpoint; required for the Unleash provider.
    */
-  url: string;
+  url?: string;
   /**
    * Client API token (server) or front-end token (web). Sourced from the
-   * `UNLEASH_CLIENT_TOKEN` env var by the consuming service.
+   * `UNLEASH_CLIENT_TOKEN` env var by the consuming service. Optional for the
+   * offline provider; required for the Unleash provider.
    */
-  clientToken: string;
+  clientToken?: string;
   /** Application name reported to Unleash. Defaults to "fuzefront". */
   appName?: string;
   /** Poll interval (seconds) for refreshing toggles. Defaults to 15. */

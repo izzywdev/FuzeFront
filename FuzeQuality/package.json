@@ -1,6 +1,6 @@
 {
   "name": "@fuzefront/fuzequality",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "engines": {
     "node": ">=24.0.0",
     "npm": ">=10.0.0"
@@ -30,6 +30,7 @@
     "@apidevtools/swagger-parser": "^10.1.1",
     "@fuzefront/design-system": "file:../design-system",
     "@fuzefront/security-client": "file:../packages/security",
+    "@izzywdev/fuzefront-identity": "file:../packages/identity",
     "express": "^5.1.0",
     "fast-glob": "^3.3.3",
     "jose": "^6.1.0",

@@ -3,7 +3,10 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import ConnectorsPage from '../pages/ConnectorsPage'
 
-vi.mock('../lib/accounts', () => ({ getActiveAuthToken: () => 'synthetic' }))
+vi.mock('../lib/accounts', () => ({
+  getActiveAuthToken: () => 'synthetic',
+  getActiveValue: () => 'selected-org',
+}))
 
 const catalog = [
   { id: 'google-drive', name: 'Google Drive', description: 'Read files', authentication: 'oauth', configured: true },
@@ -56,4 +59,18 @@ test('does not start a competing catalog load while connection statuses are reso
   expect((retry as HTMLButtonElement).disabled).toBe(true)
   await act(async () => resolveStatus(ok({ status: 'disconnected' })))
   await waitFor(() => expect((screen.getByRole('button', { name: 'Retry' }) as HTMLButtonElement).disabled).toBe(false))
+})
+
+test('connector requests include the active organization selector', async () => {
+  const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
+    if (url.endsWith('/catalog')) return ok({ connectors: [] })
+    return ok({ provider: 'google-gmail', status: 'disconnected' })
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  renderPage()
+  await screen.findByRole('heading', { name: 'Connectors' })
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+  expect(fetchMock.mock.calls.some(([, init]) =>
+    (init?.headers as Record<string, string>)?.['X-Active-Organization'] === 'selected-org',
+  )).toBe(true)
 })
