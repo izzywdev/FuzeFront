@@ -92,21 +92,29 @@ export function behindStateOf(
  *  - `source-active`      - behind / up-to-date / unknown: the read returned an
  *                           ACTIVE common list, so archiving the fork sends forms
  *                           back to it -> "Revert to common list...".
- *  - `source-unavailable` - archived / gone: the effective-key lookup falls
- *                           through only to an ACTIVE common list, so the word
- *                           "revert" never appears -> "Archive fork...".
+ *  - `source-unavailable` - archived / gone, or the source's key no longer
+ *                           matches the fork's: the effective-key lookup falls
+ *                           through only to an ACTIVE common list WITH THE SAME
+ *                           KEY, so the word "revert" never appears ->
+ *                           "Archive fork...".
  *  - `source-unknown`     - checking / check failed: no action until the read
  *                           answers (Retry re-runs it).
  */
 export type RevertGate =
   'source-active' | 'source-unavailable' | 'source-unknown'
 
-export function revertGateOf(state: BehindState): RevertGate {
+export function revertGateOf(
+  state: BehindState,
+  sourceKeyChanged = false
+): RevertGate {
   switch (state) {
     case 'behind':
     case 'up-to-date':
     case 'unknown':
-      return 'source-active'
+      // The effective-list lookup resolves by KEY, not by `forked_from.list_id`:
+      // if either list was renamed, archiving the fork does not return forms to
+      // that source, so the revert promise is not made.
+      return sourceKeyChanged ? 'source-unavailable' : 'source-active'
     case 'source-archived':
     case 'source-gone':
       return 'source-unavailable'
@@ -149,4 +157,16 @@ export function originLabelOf(
   if (originItemId === null) return { kind: 'added' }
   const label = sourceLabels?.get(originItemId)
   return label === undefined ? { kind: 'copied' } : { kind: 'common', label }
+}
+
+/**
+ * The source (an active, readable list) no longer carries the fork's key - one of
+ * them was renamed. Only true when the source answered; an unread source is not
+ * "changed".
+ */
+export function sourceKeyChangedOf(
+  forkKey: string,
+  read: SourceRead
+): boolean {
+  return read.phase === 'ready' && read.list.key !== forkKey
 }

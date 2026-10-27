@@ -11,6 +11,9 @@
  *  - `source-gone`     - the read was a 404 (purged OR unreadable by this caller,
  *                        deliberately indistinguishable): the consequence is
  *                        CONDITIONAL and never claims every form becomes unavailable.
+ *  - `source-key-changed` - the source is readable and active but one of the two
+ *                        lists was renamed: forms resolve by KEY, so the
+ *                        consequence is likewise CONDITIONAL.
  *
  * The word "revert" appears only in the first case. Cancel is the safe action and
  * holds initial focus. Renders no network of its own: the caller owns the command.
@@ -20,7 +23,7 @@ import type { CSSProperties } from 'react'
 import { ConfirmSurface } from './ConfirmSurface'
 
 export type ArchiveConfirmCase =
-  'revert' | 'source-archived' | 'source-gone'
+  'revert' | 'source-archived' | 'source-gone' | 'source-key-changed'
 
 export interface RevertToCommonConfirmProps {
   confirmCase: ArchiveConfirmCase
@@ -96,6 +99,7 @@ export function RevertToCommonConfirm({
   }
 
   const archivedSource = confirmCase === 'source-archived'
+  const keyChanged = confirmCase === 'source-key-changed'
   const title = organizationName
     ? `Archive ${organizationName}'s ${listName} list?`
     : `Archive your ${listName} list?`
@@ -115,7 +119,11 @@ export function RevertToCommonConfirm({
           ? 'archive-fork-no-common'
           : 'archive-fork-source-unknown',
         'data-case': 'revert-unavailable',
-        'data-source-state': archivedSource ? 'archived' : 'gone',
+        'data-source-state': archivedSource
+          ? 'archived'
+          : keyChanged
+            ? 'key-changed'
+            : 'gone',
       }}
     >
       {archivedSource ? (
@@ -127,8 +135,9 @@ export function RevertToCommonConfirm({
         </li>
       ) : (
         <li data-consequence="conditional-no-effective-list">
-          We couldn't read the common list this was copied from — it may have
-          been removed, or it may no longer be shared with you.{' '}
+          {keyChanged
+            ? 'The common list this was copied from no longer has the same key as this list, so archiving this list may not send forms back to it.'
+            : "We couldn't read the common list this was copied from — it may have been removed, or it may no longer be shared with you."}{' '}
           <b>
             If no active common {commonListName ?? listName} list is available
             to your organization

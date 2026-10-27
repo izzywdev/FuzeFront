@@ -240,8 +240,15 @@ function PanelView({
   const [confirming, setConfirming] = useState(false)
   const [archivedHere, setArchivedHere] = useState(false)
 
-  const { fork, recorded, behind, gate, sourceName, sourceRevision } =
-    provenance
+  const {
+    fork,
+    recorded,
+    behind,
+    gate,
+    sourceKeyChanged,
+    sourceName,
+    sourceRevision,
+  } = provenance
   const href = sourceHref(recorded.list_id)
   const onLinkClick = useSpaClick(href)
 
@@ -271,6 +278,9 @@ function PanelView({
   }
 
   const openConfirm = () => {
+    // Reopening must never reset an archive that is still in flight: that would
+    // re-enable Cancel / Escape on a destructive request already being applied.
+    if (busy) return
     archive.reset()
     setConfirming(true)
   }
@@ -383,6 +393,7 @@ function PanelView({
               style={touch(compact)}
               data-action="revert-to-common"
               data-revert-gate="source-active"
+              disabled={busy}
               onClick={openConfirm}
             >
               Revert to common list…
@@ -396,6 +407,7 @@ function PanelView({
               style={touch(compact)}
               data-action="archive-fork"
               data-revert-gate="source-unavailable"
+              disabled={busy}
               onClick={openConfirm}
             >
               Archive fork…
@@ -428,7 +440,9 @@ function PanelView({
               ? 'revert'
               : behind === 'source-archived'
                 ? 'source-archived'
-                : 'source-gone'
+                : sourceKeyChanged
+                  ? 'source-key-changed'
+                  : 'source-gone'
           }
           listKey={fork.key}
           listName={fork.name}

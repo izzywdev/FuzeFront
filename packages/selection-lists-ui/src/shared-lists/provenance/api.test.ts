@@ -19,18 +19,34 @@ import {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('getSourceItems', () => {
-  it('reads status=all and follows page.nextCursor until the last page', async () => {
+  it('never sends status=all (the service rejects it): reads active and archived separately and merges', async () => {
     const fetchMock = stubFetch()
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse(page([{ id: 'a' }], 'c1')))
-      .mockResolvedValueOnce(jsonResponse(page([{ id: 'b' }])))
+    fetchMock.mockImplementation(async (url: string) =>
+      jsonResponse(
+        queryOf(url).status === 'archived'
+          ? page([{ id: 'old' }])
+          : page([{ id: 'a' }])
+      )
+    )
     const items = await getSourceItems(COMMON_ID)
-    expect(items.map(i => i.id)).toEqual(['a', 'b'])
+    expect(items.map(i => i.id)).toEqual(['a', 'old'])
     const calls = callsOf(fetchMock)
     expect(calls).toHaveLength(2)
-    expect(calls[0][0]).toMatch(`/api/v1/selection-lists/${COMMON_ID}/items?`)
-    expect(queryOf(calls[0][0])).toEqual({ status: 'all' })
-    expect(queryOf(calls[1][0])).toEqual({ status: 'all', cursor: 'c1' })
+    expect(calls.map(c => queryOf(c[0]).status).sort()).toEqual(['active', 'archived'])
+    calls.forEach(c => expect(c[0]).toMatch(`/api/v1/selection-lists/${COMMON_ID}/items?`))
+  })
+
+  it('follows page.nextCursor until the last page, per status', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockImplementation(async (url: string) => {
+      const q = queryOf(url)
+      if (q.status === 'archived') return jsonResponse(page([]))
+      return jsonResponse(q.cursor ? page([{ id: 'b' }]) : page([{ id: 'a' }], 'c1'))
+    })
+    const items = await getSourceItems(COMMON_ID)
+    expect(items.map(i => i.id)).toEqual(['a', 'b'])
+    const active = callsOf(fetchMock).filter(c => queryOf(c[0]).status === 'active')
+    expect(active.map(c => queryOf(c[0]))).toEqual([{ status: 'active' }, { status: 'active', cursor: 'c1' }])
   })
 
   it('stops when hasMore is false even if a cursor is present', async () => {
@@ -38,15 +54,15 @@ describe('getSourceItems', () => {
     fetchMock.mockResolvedValue(
       jsonResponse({ items: [{ id: 'a' }], page: { nextCursor: 'c1', hasMore: false } })
     )
-    expect(await getSourceItems(COMMON_ID)).toHaveLength(1)
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(await getSourceItems(COMMON_ID)).toHaveLength(2)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
   it('bounds a runaway cursor', async () => {
     const fetchMock = stubFetch()
     fetchMock.mockImplementation(async () => jsonResponse(page([{ id: 'a' }], 'again')))
     await getSourceItems(COMMON_ID)
-    expect(fetchMock).toHaveBeenCalledTimes(MAX_SOURCE_ITEM_PAGES)
+    expect(fetchMock).toHaveBeenCalledTimes(2 * MAX_SOURCE_ITEM_PAGES)
   })
 
   it('a failed page rejects', async () => {

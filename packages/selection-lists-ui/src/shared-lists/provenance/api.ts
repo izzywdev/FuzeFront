@@ -31,20 +31,18 @@ function listPath(listId: SelectionListId): string {
   return `${SELECTION_LISTS_API_BASE}/${encodeURIComponent(listId)}`
 }
 
-/**
- * `GET /v1/selection-lists/{listId}/items?status=all` - every item of the
- * source, ARCHIVED ones included (an archived source item still names where a
- * fork item came from). Follows `page.nextCursor` until `hasMore` is false.
- * A failed page rejects; an aborted signal stops the walk.
- */
-export async function getSourceItems(
+/** The item statuses the items endpoint ACCEPTS (it rejects `status=all` with a 400). */
+const ITEM_STATUSES = ['active', 'archived'] as const
+
+async function getSourceItemsWithStatus(
   listId: SelectionListId,
+  status: (typeof ITEM_STATUSES)[number],
   signal?: AbortSignal
 ): Promise<WireItem[]> {
   const items: WireItem[] = []
   let cursor: string | null = null
   for (let walked = 0; walked < MAX_SOURCE_ITEM_PAGES; walked++) {
-    const query = new URLSearchParams({ status: 'all' })
+    const query = new URLSearchParams({ status })
     if (cursor) query.set('cursor', cursor)
     const { data } = await request<PagedResponse<WireItem>>(
       `${listPath(listId)}/items?${query}`,
@@ -55,6 +53,24 @@ export async function getSourceItems(
     if (cursor === null || data.page?.hasMore === false) return items
   }
   return items
+}
+
+/**
+ * Every item of the source, ARCHIVED ones included (an archived source item
+ * still names where a fork item came from). The service's items endpoint
+ * accepts only `status=active` or `status=archived` (the contract's `all` is
+ * rejected with a 400), so the two are read and paginated separately; each
+ * follows `page.nextCursor` until `hasMore` is false. A failed page rejects; an
+ * aborted signal stops the walk.
+ */
+export async function getSourceItems(
+  listId: SelectionListId,
+  signal?: AbortSignal
+): Promise<WireItem[]> {
+  const [active, archived] = await Promise.all(
+    ITEM_STATUSES.map(status => getSourceItemsWithStatus(listId, status, signal))
+  )
+  return [...active, ...archived]
 }
 
 // ── Archive (revert to common / archive fork) ─────────────────────────────────

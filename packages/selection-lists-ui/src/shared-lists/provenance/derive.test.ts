@@ -4,6 +4,7 @@ import {
   originItemIdOf,
   originLabelOf,
   revertGateOf,
+  sourceKeyChangedOf,
   sourceRevisionOf,
   type BehindState,
 } from './derive'
@@ -70,6 +71,26 @@ describe('revertGateOf (frame 07, "Header action by provenance state")', () => {
   ]
   it.each(cases)('%s -> %s', (state, gate) => {
     expect(revertGateOf(state)).toBe(gate)
+  })
+})
+
+describe('source key changed (forms resolve by KEY, not by forked_from.list_id)', () => {
+  it('an active source whose key differs no longer promises a revert', () => {
+    expect(revertGateOf('unknown', true)).toBe('source-unavailable')
+    expect(revertGateOf('behind', true)).toBe('source-unavailable')
+    expect(revertGateOf('up-to-date', true)).toBe('source-unavailable')
+  })
+  it('the key flag changes nothing else', () => {
+    expect(revertGateOf('unknown', false)).toBe('source-active')
+    expect(revertGateOf('checking', true)).toBe('source-unknown')
+    expect(revertGateOf('source-gone', true)).toBe('source-unavailable')
+  })
+  it('sourceKeyChangedOf is true only when the source answered with another key', () => {
+    const list = makeCommonList({ key: 'priority' })
+    expect(sourceKeyChangedOf('priority', { phase: 'ready', list })).toBe(false)
+    expect(sourceKeyChangedOf('urgency', { phase: 'ready', list })).toBe(true)
+    expect(sourceKeyChangedOf('urgency', { phase: 'not_found' })).toBe(false)
+    expect(sourceKeyChangedOf('urgency', { phase: 'loading' })).toBe(false)
   })
 })
 

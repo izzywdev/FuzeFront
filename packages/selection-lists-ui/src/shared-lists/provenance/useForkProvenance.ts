@@ -26,6 +26,7 @@ import {
   behindStateOf,
   originLabelOf,
   revertGateOf,
+  sourceKeyChangedOf,
   sourceRevisionOf,
   type BehindState,
   type OriginLabel,
@@ -42,6 +43,8 @@ export interface ForkProvenance {
   behind: BehindState
   /** Which header action the provenance read allows. */
   gate: RevertGate
+  /** The source answered but no longer has the fork's key (a rename on either side). */
+  sourceKeyChanged: boolean
   /** The source's current revision, when the source answered with one. */
   sourceRevision: number | null
   /** The source's display name once read; `null` until then / when unavailable. */
@@ -102,11 +105,13 @@ export function useForkProvenance(
   return useMemo<ForkProvenance | null>(() => {
     if (!fork || !recorded) return null
     const behind = behindStateOf(recorded, read)
+    const sourceKeyChanged = sourceKeyChangedOf(fork.key, read)
     return {
       fork,
       recorded,
       behind,
-      gate: revertGateOf(behind),
+      gate: revertGateOf(behind, sourceKeyChanged),
+      sourceKeyChanged,
       sourceRevision:
         read.phase === 'ready' ? sourceRevisionOf(read.list) : null,
       sourceName: read.phase === 'ready' ? read.list.name : null,

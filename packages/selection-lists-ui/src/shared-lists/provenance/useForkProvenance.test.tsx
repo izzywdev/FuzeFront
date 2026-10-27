@@ -75,9 +75,12 @@ describe('useForkProvenance', () => {
       })
     )
     expect(result.current?.originLabel(null)).toEqual({ kind: 'added' })
-    expect(callsOf(fetchMock).map(c => c[0].split('?')[0])).toEqual([
-      expect.stringMatching(/\/front_sl_[^/]+$/),
-      expect.stringMatching(/\/items$/),
+    const calls = callsOf(fetchMock).map(c => c[0])
+    expect(calls[0]).toMatch(/\/front_sl_[^/?]+$/)
+    // Items are read per status: the service rejects status=all.
+    expect(calls.slice(1).sort()).toEqual([
+      expect.stringContaining('/items?status=active'),
+      expect.stringContaining('/items?status=archived'),
     ])
   })
 
@@ -135,5 +138,25 @@ describe('useForkProvenance', () => {
     await waitFor(() => expect(result.current?.behind).toBe('unknown'))
     await new Promise(r => setTimeout(r, 20))
     expect(result.current?.originLabel(COMMON_ITEM.low)).toEqual({ kind: 'copied' })
+  })
+
+  it('a source with another key -> sourceKeyChanged, and no revert is promised', async () => {
+    routeFetch({
+      [sourcePath]: () => jsonResponse(priorityCommon({ key: 'urgency' })),
+      [sourceItemsPath]: () => jsonResponse(page([])),
+    })
+    const { result } = renderHook(() => useForkProvenance(fork, true))
+    await waitFor(() => expect(result.current?.behind).toBe('unknown'))
+    expect(result.current).toMatchObject({ sourceKeyChanged: true, gate: 'source-unavailable' })
+  })
+
+  it('a source with the same key keeps the revert gate', async () => {
+    routeFetch({
+      [sourcePath]: () => jsonResponse(priorityCommon()),
+      [sourceItemsPath]: () => jsonResponse(page([])),
+    })
+    const { result } = renderHook(() => useForkProvenance(fork, true))
+    await waitFor(() => expect(result.current?.behind).toBe('unknown'))
+    expect(result.current).toMatchObject({ sourceKeyChanged: false, gate: 'source-active' })
   })
 })

@@ -307,6 +307,46 @@ describe('ForkProvenancePanel - revert / archive (frames 07, 13)', () => {
     await waitFor(() => expect(callsOf(fetchMock).filter(c => c[1]?.method === 'POST')).toHaveLength(1))
   })
 
+  it('a renamed source: "Archive fork…" with the conditional key-changed confirm, never the revert promise', async () => {
+    routeFetch({
+      [sourcePath]: () => jsonResponse(priorityCommon({ key: 'urgency' })),
+      [sourceItemsPath]: () => jsonResponse(page(commonItems())),
+      [archivePath]: () => jsonResponse(makeForkList({ status: 'archived' })),
+    })
+    mount()
+    expect(await screen.findByRole('button', { name: 'Archive fork…' })).toHaveAttribute('data-revert-gate', 'source-unavailable')
+    expect(screen.queryByRole('button', { name: /revert/i })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Archive fork…' }))
+    const dialog = screen.getByRole('alertdialog')
+    expect(dialog).toHaveAttribute('data-source-state', 'key-changed')
+    expect(dialog).not.toHaveTextContent(/revert/i)
+  })
+
+  it('while an archive is in flight the opener is disabled and cannot reset it (Cancel/Esc stay disabled)', async () => {
+    let release!: () => void
+    const gate = new Promise<void>(r => (release = r))
+    const fetchMock = mockApi('active', {
+      [archivePath]: async () => {
+        await gate
+        return jsonResponse(makeForkList({ status: 'archived' }))
+      },
+    })
+    mount()
+    const opener = await screen.findByRole('button', { name: 'Revert to common list…' })
+    await userEvent.click(opener)
+    await userEvent.click(screen.getByRole('button', { name: 'Archive and revert' }))
+    expect(opener).toBeDisabled()
+    // Even a forced activation (assistive tech, synthetic click) does not reset the command.
+    fireEvent.click(opener)
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled()
+    expect(screen.getByRole('alertdialog')).toHaveAttribute('aria-busy', 'true')
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument()
+    await act(async () => release())
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+    expect(callsOf(fetchMock).filter(c => c[1]?.method === 'POST')).toHaveLength(1)
+  })
+
   it('source gone: the confirm is conditional and names the fork', async () => {
     mockApi('gone')
     mount()

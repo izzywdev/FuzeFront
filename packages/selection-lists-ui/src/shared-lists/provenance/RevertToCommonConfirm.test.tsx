@@ -74,6 +74,18 @@ describe('RevertToCommonConfirm - copy follows the provenance read (frame 07)', 
     expect(document.querySelector('[data-consequence]')).toHaveTextContent(/Every form that uses priority will show/)
   })
 
+  it('source key changed: CONDITIONAL, says why, never claims forms go back or all become unavailable', () => {
+    show({ confirmCase: 'source-key-changed' })
+    const dialog = screen.getByRole('alertdialog')
+    expect(dialog).toHaveAttribute('data-confirm', 'archive-fork-source-unknown')
+    expect(dialog).toHaveAttribute('data-source-state', 'key-changed')
+    const consequence = dialog.querySelector('[data-consequence="conditional-no-effective-list"]')
+    expect(consequence).toHaveTextContent(/no longer has the same key/)
+    expect(consequence).toHaveTextContent(/If no active common Priority list is available/)
+    expect(dialog.querySelector('[data-consequence="no-effective-list"]')).toBeNull()
+    expect(dialog).not.toHaveTextContent(/revert|couldn't read/i)
+  })
+
   it('source gone: CONDITIONAL consequence, never claims every form becomes unavailable', () => {
     show({ confirmCase: 'source-gone', commonListName: null })
     const dialog = screen.getByRole('alertdialog')
