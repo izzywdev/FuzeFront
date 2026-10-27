@@ -9,18 +9,16 @@
  *                                       revert-to-common / archive-fork gating + confirmations, 403
  *   13-rtl-mobile-provenance.html  (3b) 375 px, en / he (RTL), bottom-sheet confirmations
  *
- * and the frozen contract (4.1.0): `SelectionList.forked_from`, `SelectionListItem.origin_item_id`,
+ * and the frozen contract (4.2.0): `SelectionList.forked_from` / `.revision`, `SelectionListItem.origin_item_id`,
  * `POST /v1/selection-lists/{listId}/archive`.
  * Implementation target: packages/selection-lists-ui/src/shared-lists/{core,provenance}/**
  * (ForkProvenancePanel, BehindSourceIndicator, RevertToCommonConfirm).
  *
  * ── CONTRACT DEPENDENCY (manifest.build.flows[fork-provenance].contractDependency) ────────
- * "behind" / "up-to-date" need `SelectionList.revision`, which is NOT in contract 4.1.0 (owner:
- * contract-designer, additive MINOR 4.2.0). Under 4.1.0 only the "comparison unavailable" state
- * is reachable. The two specs that need the field are tagged `@needs-contract-revision` and mock
- * the source response WITH an additive `revision`. They are RED today (no UI) and become
- * satisfiable as soon as the UI reads an optional `revision`; they are NOT skipped. Every other
- * spec is independent of the dependency.
+ * "behind" / "up-to-date" need `SelectionList.revision` — read-only, additive, in contract 4.2.0 (optional until the
+ * implementation ships). The service does not emit it yet, so against the real service only "comparison unavailable"
+ * (PROV-003) is reachable today; PROV-004 / PROV-005 mock the source response WITH `revision` (what 4.2.0 documents), and
+ * stay valid when the service starts to emit it. Every other spec is independent of the dependency.
  *
  * RED today / canary / flag-OFF semantics and how this file lands: see
  * selection-lists-shared-read.red.spec.ts and docs/planning/selection-lists-shared-ui-red-specs.md.
@@ -147,7 +145,7 @@ test.describe('SL9 provenance — frame 07-fork-detail', () => {
     await expect(behind(page, 'unknown')).toBeVisible()
   })
 
-  test('SL9-PROV-003 comparison unavailable (the ONLY state reachable under 4.1.0): source returns no revision; never inferred from updated_at', async ({ page }) => {
+  test('SL9-PROV-003 comparison unavailable (what the service answers until it emits `revision`): source returns no revision; never inferred from updated_at', async ({ page }) => {
     await setup(page)
     await openRoute(page, detail(FORK_PRIORITY_ID))
     const p = behind(page, 'unknown')
@@ -157,7 +155,7 @@ test.describe('SL9 provenance — frame 07-fork-detail', () => {
     await expect(page.locator("[data-behind-state='behind'], [data-behind-state='up-to-date']")).toHaveCount(0)
   })
 
-  test('SL9-PROV-004 @needs-contract-revision behind: source revision 9 > copied 7 — informational only, no merge/sync action', async ({ page }) => {
+  test('SL9-PROV-004 behind: source revision 9 > copied 7 — informational only, no merge/sync action', async ({ page }) => {
     await setup(page, { source: { revision: 9 } })
     await openRoute(page, detail(FORK_PRIORITY_ID))
     const p = behind(page, 'behind')
@@ -168,7 +166,7 @@ test.describe('SL9 provenance — frame 07-fork-detail', () => {
     await expect(p.getByRole('button', { name: /merge|sync|update|pull/i })).toHaveCount(0)
   })
 
-  test('SL9-PROV-005 @needs-contract-revision up to date: source revision = copied revision', async ({ page }) => {
+  test('SL9-PROV-005 up to date: source revision = copied revision', async ({ page }) => {
     await setup(page, { source: { revision: 7 } })
     await openRoute(page, detail(FORK_PRIORITY_ID))
     const p = behind(page, 'up-to-date')
@@ -371,7 +369,13 @@ for (const loc of [{ tag: 'en-US', dir: 'ltr' }, { tag: 'he-IL', dir: 'rtl' }] a
       expect(card.sw, 'the card never scrolls sideways').toBeLessThanOrEqual(card.cw + 1)
       const view = panel(page).locator("a[data-action='view-source'], button[data-action='view-source']").last()
       await expectTouchTarget(view, 'View common list')
-      expect((await view.boundingBox())!.width, 'View common list is full-width').toBeGreaterThanOrEqual(300)
+      // Full-width = it spans the card's CONTENT box (frame 13 at 375: the card is inset, so the link is 273 px of a 307 px card,
+      // not 300 px of the viewport). Measured from the rendered card instead of a viewport constant.
+      const cardInner = await panel(page).evaluate(n => {
+        const s = getComputedStyle(n)
+        return n.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight)
+      })
+      expect((await view.boundingBox())!.width, 'View common list spans the card content box').toBeGreaterThanOrEqual(cardInner - 1)
       await expectTouchTarget(revert(page), 'Revert to common list')
       expect((await revert(page).boundingBox())!.width, 'header action is full-width').toBeGreaterThanOrEqual(300)
       const bidi = await panel(page).locator('[data-forked-revision]').evaluate(n => getComputedStyle(n).unicodeBidi)
@@ -422,7 +426,7 @@ for (const loc of [{ tag: 'en-US', dir: 'ltr' }, { tag: 'he-IL', dir: 'rtl' }] a
     test(`SL9-PROV-023a-${loc.tag} source gone at 375px: the full-width "Archive fork…" is >=44px and no link is offered`, async ({ page }) => {
       await setup(page, { source: 'gone' })
       await openRoute(page, detail(FORK_PRIORITY_ID))
-      await expect(page.locator("[data-behind-state='source-gone']")).toBeVisible()
+      await expect(behind(page, 'source-gone')).toBeVisible()
       await expectTouchTarget(archiveFork(page), 'Archive fork…')
       await expect(panel(page).locator('a')).toHaveCount(0)
     })

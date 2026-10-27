@@ -388,10 +388,9 @@ test.describe('SL9 shared-read — frame 01-shared-index', () => {
     expectRuntimeClean(rt)
   })
 
-  test('SL9-READ-018 @4.0.0-defect the index survives the REAL GET /quota envelope ({ organization_id, quotas }) — the shipped client/flow read `quota.scopes` and the page unmounts with a TypeError', async ({ page }) => {
-    // Pins a defect in the SHIPPED 4.0.0 UI (packages/selection-lists-ui: `quota?.scopes.some(...)`), found while making
-    // the harness contract-faithful. The shared index lives on this page, so it cannot ship against the real service
-    // until the client normalizes (or reads) the wire envelope. Red today for THAT reason; green when it is fixed.
+  test('SL9-READ-018 regression guard: the index survives the REAL GET /quota envelope ({ organization_id, quotas }) — the 4.0.0 client/flow once read `quota.scopes` and the page unmounted with a TypeError (fixed in #1719)', async ({ page }) => {
+    // The shared index lives on this page, so it must keep rendering against the real service's quota answer. The shipped
+    // 4.0.0 code used to throw on it (`quota?.scopes.some(...)`); the client now reads the wire envelope.
     const { world } = await setup(page, { build: acmeIndex })
     grantQuotaRead(world)
     const quotaAnswered = page.waitForResponse(r => r.url().endsWith('/v1/selection-lists/quota'))
@@ -442,7 +441,12 @@ test.describe('SL9 shared-read — frame 02-common-detail', () => {
     const archived = page.locator(`[data-item='${COMMON_ITEM_IDS.critical}'][data-archived='true']`)
     await expect(archived, 'archived values are listed and badged so stored values can be recognised').toBeVisible()
     await expect(archived).toContainText(/archived/i)
-    expect(api.callsTo('GET', `/v1/selection-lists/${COMMON_PRIORITY_ID}/items`).some(c => c.query.get('status') === 'all'), 'values are read with status=all').toBe(true)
+    // Frame 02 lists the archived value too. The implemented service answers 400 for `status=all` on this endpoint (it accepts
+    // `active` | `archived` only — routes/items.ts), so a client that shows both reads both statuses and never sends `all`.
+    const valueReads = api.callsTo('GET', `/v1/selection-lists/${COMMON_PRIORITY_ID}/items`)
+    expect(valueReads.some(c => c.query.get('status') === 'active'), 'active values are read').toBe(true)
+    expect(valueReads.some(c => c.query.get('status') === 'archived'), 'archived values are read (so stored values can be recognised)').toBe(true)
+    expect(valueReads.some(c => c.query.get('status') === 'all'), 'status=all is not accepted by the service: never sent').toBe(false)
     expectRuntimeClean(rt)
   })
 
@@ -653,7 +657,9 @@ test.describe('SL9 shared-read — frame 03-readonly-states', () => {
     await openRoute(page, detail(COMMON_PRIORITY_ID))
     const nf = panelState(page, 'value-table', 'not-found')
     await expect(nf).toBeVisible()
-    await expect(page.locator("[data-error='NOT_FOUND']")).toContainText(/list not found/i)
+    // Frame 03: the TITLE ("List not found") is the state's heading; `[data-error='NOT_FOUND']` is the BODY line under it.
+    await expect(nf).toContainText(/list not found/i)
+    await expect(page.locator("[data-error='NOT_FOUND']")).toContainText(/no list with that id, or you can.t read it/i)
     await expect(page.locator('body')).not.toContainText(/forbidden|403|permission/i)
   })
 

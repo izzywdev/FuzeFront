@@ -1,6 +1,6 @@
 /**
  * Selection Lists — SHARED LISTS (SL9) e2e support: a contract-faithful, network-layer
- * stand-in for selection-list-service 4.1.0 plus the shell/session wiring the five
+ * stand-in for selection-list-service (contract 4.2.0, as IMPLEMENTED) plus the shell/session wiring the five
  * `selection-lists-shared-*.red.spec.ts` files share.
  *
  * Everything here is deterministic and backend-less (the `selection-list-service-e2e`
@@ -8,7 +8,8 @@
  * session/flags/org endpoints are mocked by `selection-lists-e2e-session.ts` (reused,
  * not forked) and the service is mocked here at the network layer with
  * `page.route`. The mock follows the FROZEN contract
- * `services/selection-list-service/openapi.yaml` (4.1.0):
+ * `services/selection-list-service/openapi.yaml` (4.2.0) — and, where the service deliberately or accidentally differs from it
+ * (items `status=all` -> 400; no `GET …/translations/{locale}`), the IMPLEMENTED service:
  *
  *   - page envelope `{ items, page: { nextCursor, hasMore, total } }`
  *   - GET /v1/selection-lists: `include_shared`, `visibility`, `key`, `status`, `limit`,
@@ -137,7 +138,7 @@ export interface WireList {
   updated_at: string
   /** Not wire: per-locale names the mock substitutes when the request asks for that locale. */
   _names?: Record<string, string>
-  /** Not wire: SelectionList.revision (NOT in contract 4.1.0 — see the fork-provenance spec). */
+  /** SelectionList.revision (contract 4.2.0, read-only, optional: the service does not emit it yet). Sent only when a spec sets it. */
   revision?: number
 }
 
@@ -157,6 +158,8 @@ export interface WireItem {
   updated_at: string
   /** Not wire: per-locale labels the mock substitutes when the request asks for that locale. */
   _labels?: Record<string, string>
+  /** Not wire: the locales whose `_labels` text is machine-produced (the row's `is_machine` in that locale). */
+  _machine?: string[]
 }
 
 const T0 = '2026-08-28T10:00:00Z'
@@ -235,10 +238,12 @@ export function commonPriorityList(over: Partial<WireList> = {}): WireList {
 
 export function commonPriorityItems(): WireItem[] {
   const L = COMMON_PRIORITY_ID
+  // `fr` is a translated locale of the common list (see the `/translations` default below): Low is human text, Normal and
+  // High are machine text (the M badge), Urgent has no French text yet (the service falls back to the source locale).
   return [
-    makeItem({ id: COMMON_ITEM_IDS.low, list_id: L, code: 'LOW', label: 'Low', sort_order: 1, _labels: { he: 'נמוכה', ar: 'منخفضة' } }),
-    makeItem({ id: COMMON_ITEM_IDS.normal, list_id: L, code: 'NORMAL', label: 'Normal', sort_order: 2, _labels: { he: 'רגילה', ar: 'عادية' } }),
-    makeItem({ id: COMMON_ITEM_IDS.high, list_id: L, code: 'HIGH', label: 'High', sort_order: 3, _labels: { he: 'גבוהה', ar: 'عالية' } }),
+    makeItem({ id: COMMON_ITEM_IDS.low, list_id: L, code: 'LOW', label: 'Low', sort_order: 1, _labels: { he: 'נמוכה', ar: 'منخفضة', fr: 'Basse' } }),
+    makeItem({ id: COMMON_ITEM_IDS.normal, list_id: L, code: 'NORMAL', label: 'Normal', sort_order: 2, _labels: { he: 'רגילה', ar: 'عادية', fr: 'Normale' }, _machine: ['fr'] }),
+    makeItem({ id: COMMON_ITEM_IDS.high, list_id: L, code: 'HIGH', label: 'High', sort_order: 3, _labels: { he: 'גבוהה', ar: 'عالية', fr: 'Haute' }, _machine: ['fr'] }),
     makeItem({ id: COMMON_ITEM_IDS.urgent, list_id: L, code: 'URGENT', label: 'Urgent', sort_order: 4, _labels: { he: 'דחופה', ar: 'عاجلة' } }),
     makeItem({ id: COMMON_ITEM_IDS.critical, list_id: L, code: 'CRITICAL', label: 'Critical (legacy)', sort_order: 5, status: 'archived', _labels: { he: 'קריטית (ישן)', ar: 'حرجة (قديمة)' } }),
   ]
@@ -311,9 +316,9 @@ export interface World {
   /** Index page size (cursor = offset). Unset = one page. */
   pageSize?: number
   /**
-   * GET /v1/selection-lists/quota. DEFAULT = 403 (the caller lacks `read_quota`, a documented answer every
-   * non-admin gets; the 4.0.0 index fails open on it). A spec that needs the usage numbers opts in with
-   * `grantQuotaRead(world)`; see that function for why this is not 200 by default.
+   * GET /v1/selection-lists/quota. DEFAULT = 200 with the real `{ organization_id, quotas }` envelope (`defaultQuota`), as an
+   * org admin gets it. A spec that needs the documented refusal for a caller without `read_quota` sets `world.quota = err(403,
+   * 'FORBIDDEN')` (SL9-FORK-024b); `grantQuotaRead(world)` stays as the explicit way to say "this spec needs the numbers".
    */
   quota: ApiReply
   /** GET …/access per list. Unset = 403 (the caller holds no manage_access). */
@@ -328,7 +333,7 @@ export function createWorld(orgId: string = ORGS.acme.id): World {
     lists: new Map(),
     items: new Map(),
     roles: new Set(),
-    quota: err(403, 'FORBIDDEN'),
+    quota: json(200, defaultQuota(orgId)),
     access: new Map(),
     resolve: new Map(),
   }
@@ -353,13 +358,9 @@ export function defaultQuota(orgId: string = ORGS.acme.id) {
 }
 
 /**
- * Let the caller read quota: GET /quota answers 200 with the real wire envelope.
- *
- * Not the default because the shipped 4.0.0 management index does `quota?.scopes.some(...)` on the response
- * (packages/selection-lists-ui `SelectionListManagementFlow.tsx`), and the real service sends `quotas` — so on
- * a 200 the 4.0.0 index throws a TypeError and unmounts. That is a product defect pinned by SL9-READ-018, and
- * it must not turn every index-based spec (or the READ-001 canary) red for a reason that is not "the new UI is
- * missing". The fork dialog's quota preview (SL9-FORK-024a) reads the wire envelope and opts in.
+ * Let the caller read quota: GET /quota answers 200 with the real wire envelope. This is the world's default now (the shipped
+ * 4.0.0 index used to read `quota.scopes` and unmount on it — fixed in #1719, pinned by SL9-READ-018); the call is kept so a
+ * spec that depends on the numbers says so, and so a spec that earlier set a refusal can restore it.
  */
 export function grantQuotaRead(world: World): void {
   world.quota = json(200, defaultQuota(world.orgId))
@@ -484,17 +485,17 @@ function wireList(list: WireList, call: ApiCall): Record<string, unknown> {
   const loc = acceptLocale(call)
   const localized = _names?.[loc]
   const out: Record<string, unknown> = localized ? { ...wire, name: localized, resolved_locale: loc } : { ...wire }
-  // `revision` is not in contract 4.1.0. It is only sent when a spec opts in via the list's
-  // `revision` field (the contract-gated "behind source" specs); see fork-provenance spec.
+  // `revision` is optional in contract 4.2.0 and the service does not emit it yet: only sent when a spec opts in via the
+  // list's `revision` field (the "behind source" specs); see the fork-provenance spec.
   if (_revision !== undefined) out.revision = _revision
   return out
 }
 
 function wireItem(item: WireItem, call: ApiCall): Record<string, unknown> {
-  const { _labels, ...wire } = item
+  const { _labels, _machine, ...wire } = item
   const loc = acceptLocale(call)
   const localized = _labels?.[loc]
-  return localized ? { ...wire, label: localized, resolved_locale: loc } : { ...wire }
+  return localized ? { ...wire, label: localized, resolved_locale: loc, is_machine: _machine?.includes(loc) ?? false } : { ...wire }
 }
 
 function pageOf<T>(rows: T[], call: ApiCall, pageSize?: number) {
@@ -550,34 +551,27 @@ const DEFAULT_HANDLERS: ApiHandler[] = [
     const id = call.path.split('/')[3]
     if (!world.lists.has(id)) return NOT_FOUND
     const status = call.query.get('status') ?? 'active'
+    // The IMPLEMENTED service (routes/items.ts) accepts only `active` | `archived` here and answers 400 for anything else,
+    // `all` included — although openapi 4.2.0 lists `all` for this parameter (a service-vs-contract gap, reported in
+    // docs/planning/selection-lists-shared-ui-red-specs.md). The mock follows the service, because that is what a client meets.
+    if (status !== 'active' && status !== 'archived') return err(400, 'VALIDATION_ERROR', { details: [{ field: 'status', message: 'status must be active or archived.' }] })
     const rows = (world.items.get(id) ?? [])
-      .filter(i => status === 'all' || i.status === status)
+      .filter(i => i.status === status)
       .sort((a, b) => a.sort_order - b.sort_order)
     const page = pageOf(rows, call, undefined)
     return json(200, { items: page.items.map(i => wireItem(i, call)), page: page.page })
   }),
   on('GET', /^\/v1\/selection-lists\/[^/]+\/access$/, (call, world) => world.access.get(call.path.split('/')[3]) ?? err(403, 'FORBIDDEN')),
+  // `GET …/translations` answers a top-level ARRAY of `TranslationLocaleStatus` (openapi 4.2.0), one per translated locale;
+  // the SOURCE locale is never in it. There is NO `GET …/translations/{locale}` in the contract or the service: a
+  // locale's text is read with `GET …/items?locale=` (see `wireItem`), so nothing is mocked for that path (it 404s).
   on('GET', /^\/v1\/selection-lists\/[^/]+\/translations$/, (call, world) => {
     const id = call.path.split('/')[3]
     if (!world.lists.has(id)) return NOT_FOUND
-    return json(200, {
-      locales: [
-        { locale: 'en', is_source: true, translated: 5, total: 5, machine_count: 0, stale_count: 0 },
-        { locale: 'fr', is_source: false, translated: 5, total: 5, machine_count: 2, stale_count: 0 },
-        { locale: 'he', is_source: false, translated: 5, total: 5, machine_count: 0, stale_count: 0 },
-      ],
-    })
-  }),
-  on('GET', /^\/v1\/selection-lists\/[^/]+\/translations\/[a-z-]+$/, call => {
-    const locale = call.path.split('/')[5]
-    return json(200, {
-      locale,
-      translations: [
-        { item_id: COMMON_ITEM_IDS.low, locale, label: locale === 'he' ? 'נמוכה' : 'Basse', is_machine: false, source_hash: 'h1', source_hash_current: 'h1' },
-        { item_id: COMMON_ITEM_IDS.normal, locale, label: locale === 'he' ? 'רגילה' : 'Normale', is_machine: true, source_hash: 'h2', source_hash_current: 'h2' },
-        { item_id: COMMON_ITEM_IDS.high, locale, label: locale === 'he' ? 'גבוהה' : 'Haute', is_machine: true, source_hash: 'h3', source_hash_current: 'h3' },
-      ],
-    })
+    return json(200, [
+      { locale: 'fr', completeness_pct: 80, machine_translated: true, source_changed: false },
+      { locale: 'he', completeness_pct: 100, machine_translated: false, source_changed: false },
+    ])
   }),
   on('POST', '/v1/resolve', (call, world) => {
     const ids: string[] = call.body?.ids ?? []
@@ -589,6 +583,39 @@ const DEFAULT_HANDLERS: ApiHandler[] = [
       else missing.push(id)
     }
     return json(200, { results, missing })
+  }),
+]
+
+/**
+ * The 4.0.0 WRITABLE translation workbench's reads — NOT the service. Its client (`getLocaleIndex` / `getLocaleEditor`,
+ * packages/selection-lists-ui/src/api.ts) reads `GET …/translations` as `{ locales: [{ locale, is_source, … }] }` and
+ * `GET …/translations/{locale}` as `{ locale, translations: [...] }`. The service answers a top-level array for the first
+ * (openapi 4.2.0 `TranslationLocaleStatus`) and has no route for the second, so that workbench cannot load against it (a
+ * 4.0.0 client/service gap, reported in docs/planning/selection-lists-shared-ui-red-specs.md).
+ *
+ * The fork specs that drive the 4.0.0 workbench to its refused Save (frame 04) need the page up, so they opt in with
+ * `api.use(...LEGACY_WORKBENCH_READS)`. The shared-lists read-only views never do: they read the real shapes (the defaults).
+ */
+export const LEGACY_WORKBENCH_READS: ApiHandler[] = [
+  on('GET', /^\/v1\/selection-lists\/[^/]+\/translations$/, () =>
+    json(200, {
+      locales: [
+        { locale: 'en', is_source: true, translated: 5, total: 5, machine_count: 0, stale_count: 0 },
+        { locale: 'fr', is_source: false, translated: 5, total: 5, machine_count: 2, stale_count: 0 },
+        { locale: 'he', is_source: false, translated: 5, total: 5, machine_count: 0, stale_count: 0 },
+      ],
+    }),
+  ),
+  on('GET', /^\/v1\/selection-lists\/[^/]+\/translations\/[a-z-]+$/, call => {
+    const locale = call.path.split('/')[5]
+    return json(200, {
+      locale,
+      translations: [
+        { item_id: COMMON_ITEM_IDS.low, locale, label: locale === 'he' ? 'נמוכה' : 'Basse', is_machine: false, source_hash: 'h1', source_hash_current: 'h1' },
+        { item_id: COMMON_ITEM_IDS.normal, locale, label: locale === 'he' ? 'רגילה' : 'Normale', is_machine: true, source_hash: 'h2', source_hash_current: 'h2' },
+        { item_id: COMMON_ITEM_IDS.high, locale, label: locale === 'he' ? 'גבוהה' : 'Haute', is_machine: true, source_hash: 'h3', source_hash_current: 'h3' },
+      ],
+    })
   }),
 ]
 
@@ -712,14 +739,6 @@ export interface ExpectedRefusal {
  * Every `expectRuntimeClean` call tolerates exactly these (and nothing else) unless it passes its own `expected`.
  */
 export const EXPECTED_REFUSALS: readonly ExpectedRefusal[] = [
-  {
-    // The default world answers GET /quota with 403 (no `read_quota`) — see `World.quota` / `grantQuotaRead`. The 4.0.0
-    // management index requests it on mount and the fork dialog on open. TODO(SL9-READ-018): once the 4.0.0 client
-    // reads the real `{organization_id, quotas}` envelope, serve it by default, delete this entry and the 403 default.
-    name: 'quota read refused (default world)',
-    status: 403,
-    path: /\/v1\/selection-lists\/quota$/,
-  },
   {
     // The 4.0.0 value editor probes reorder permission with `HEAD …/items/reorder` (`probeReorderPermission`). HEAD is not an
     // operation of the contract (reorder is PUT), so the service — like the mock — answers 404, and Chromium logs it.

@@ -1,9 +1,12 @@
 # Selection Lists — shared lists (SL9): RED Playwright specs for the five approved UI flows
 
-> **Status:** specs landed RED (TDD), 2026-10-26. Implementation target:
-> `packages/selection-lists-ui/src/shared-lists/**` (design-record task 14). Source of truth:
+> **Status (2026-10-27):** the specs landed RED (TDD, 2026-10-26); all six UI stages have since merged behind the release flag
+> `fuzefront.selection-lists.shared-lists` (default OFF) and the specs were run against a production build of the host
+> (`vite preview`): **199 of 212 pass, 13 fail** — see [Verification against the built UI](#verification-against-the-built-ui-2026-10-27).
+> The files keep the `*.red.spec.ts` name until every spec of a flow passes (the rename + the `ci.yml` list change are a separate,
+> human-merged follow-up). Implementation: `packages/selection-lists-ui/src/shared-lists/**` (design-record task 14). Source of truth:
 > `design/frames/selection-lists-shared/` (approved per flow 2026-10-20) and
-> `services/selection-list-service/openapi.yaml` 4.1.0. Pipeline step 5 of
+> `services/selection-list-service/openapi.yaml` 4.2.0. Pipeline step 5 of
 > [`design-first-ui-pipeline.md`](./design-first-ui-pipeline.md): *merging approved frames triggers ALL-RED specs,
 > then frontend-engineers build until they go green.*
 
@@ -68,6 +71,8 @@ cd frontend && npm run build && npx vite preview --port 4173 &
 BASE_URL=http://localhost:4173 npx playwright test tests/selection-lists-shared-*.red.spec.ts --project=chromium
 ```
 
+Committed artifacts: `frontend/playwright-report/` and `frontend/test-results/` are **tracked** in this repo and a local run rewrites them — `git checkout -- frontend/playwright-report frontend/test-results` before committing.
+
 ## Specs that pass TODAY (and must keep passing)
 
 Two kinds, both deliberate and labelled in their titles:
@@ -80,7 +85,7 @@ Two kinds, both deliberate and labelled in their titles:
   is kept (`PICK-021` 403 on lookup = error state, `PICK-033-common-archived`, `PICK-034`). They exist so the implementation cannot leak shared-lists
   UI while the flag is OFF.
 
-## Verified RED baseline (2026-10-26, against `vite preview` of a production build of `master` 87e32a2 merged into the PR branch)
+## Historical: verified RED baseline before the UI existed (2026-10-26, against `vite preview` of a production build of `master` 87e32a2 merged into the PR branch)
 
 `npx playwright test tests/selection-lists-shared-*.red.spec.ts --project=chromium` → **212 tests: 21 pass, 191 fail, 0 setup errors / 0 timeouts.**
 
@@ -91,6 +96,68 @@ Two kinds, both deliberate and labelled in their titles:
   frame-specified state/copy the 4.0.0 UI renders differently (`SL9-READ-014` "no common lists are published", `SL9-PICK-023`/`062×3` "List unavailable").
   Every failure is "the new UI is missing" (or, for READ-018, the named 4.0.0 defect); none is a harness/route/mock error — the canaries render the same session and mocks.
 * Static checks on the changed files: `tsc --noEmit --strict --noUnusedLocals --noUnusedParameters` clean; `eslint --max-warnings 0` (the frontend config) clean.
+
+## Verification against the built UI (2026-10-27)
+
+Run: production build of the host at `master` 6eccf4a0 (+ this PR), `vite preview`, Node 24.21, Playwright 1.61 driving the
+environment's Chromium 141 (`PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`; CI installs Playwright's own Chromium, a run on that build is still to be seen in CI), `--project=chromium --workers=4`, no retries:
+`npx playwright test tests/selection-lists-shared-*.red.spec.ts` → **212 tests: first run 188 pass / 24 fail; after the triage below 199 pass / 13 fail.**
+
+| Flow | Tests | Pass before triage | Pass after | Still red |
+|---|---:|---:|---:|---|
+| `shared-read` | 42 | 35 | **42** | – |
+| `fork` | 57 | 57 | **57** | – |
+| `fork-provenance` | 32 | 27 | **31** | PROV-009 |
+| `visibility` | 37 | 37 | **37** | – |
+| `effective-picker` | 44 | 32 | **32** | PICK-001, 011, 020, 022, 030, 036, 060 ×3, 063 ×3 |
+| **total** | **212** | **188** | **199** | **13** |
+
+### Triage of every one of the 24 first-run failures
+
+Buckets: (a) spec/mock bug · (b) real UI defect · (c) frame/spec disagreement (frames-only PR; not edited here) · (d) design-system foundation gap.
+
+| Spec | Failure | Bucket | Cause and what was done |
+|---|---|:-:|---|
+| READ-021 | `status=all` expected on the values read | a | The **implemented** service answers `400` for `status=all` on `GET …/items` (`routes/items.ts:270` accepts `active`/`archived` only), although openapi 4.2.0 lists `all`. The UI correctly reads both statuses separately. Spec now asserts active + archived are read and `all` is never sent; the mock answers 400 for `all` like the service. (Service-vs-contract gap: see finding 9.) |
+| READ-032 | locale index shows an error | a | Mock answered `{locales:[…]}`; the service (and openapi) answer a top-level array of `TranslationLocaleStatus` `{locale, completeness_pct, machine_translated, source_changed}`, source locale excluded. Harness default is now the real shape. |
+| READ-033 | no `fr` link / no locale view | a | Same mock; and there is **no `GET …/translations/{locale}`** in the contract or service (only `PUT`/`DELETE`) — a locale's text is read with `GET …/items?locale=`. Default handler removed; the mock resolves per-locale labels (`_labels`, new `_machine`) on the items endpoint, with the service's fallback and `is_machine`. `fr` labels added to the common fixture. |
+| READ-037 | "List not found" not inside `[data-error='NOT_FOUND']` | a | Frame 03 puts the title in the state's `<h3>` and the *body line* in `[data-error='NOT_FOUND']`. Spec asserts the title on the state and the body text on the hook. |
+| READ-040 ×3 | Fork CTA 133 px wide at 375 px (frame 11: 307 px, full width) | **b** | The DS `Button` sets an inline `width: auto`, which the author rule `.fz-sl-cta > * { inline-size: 100% }` cannot beat. **Fixed** in `shared-lists/browse/SharedReadStyles.tsx` (`!important`, with the reason in a comment); `@fuzeone/selection-lists-ui` 0.14.0 → 0.14.1. |
+| PROV-020 ×2 | "View common list" 277 px, spec wanted ≥300 | a | Frame 13 insets the link in its card: 273 px of a 307 px card. A viewport constant was wrong; the spec now compares with the rendered card's content box (`clientWidth` − padding). The header action keeps its ≥300 px assertion (frame: 307). |
+| PROV-023a ×2 | strict-mode violation: `[data-behind-state='source-gone']` matched 2 elements | a | The UI (deliberately) renders the hook on the panel *and* on the inner status line so both placements the frames use (07 inner line, 13/gallery panel) match. The spec used the unscoped locator; it now uses the file's own `behind()` helper, which accepts either placement. |
+| PROV-009 | no `columnheader` "Copied from" | **b** | Frame 07 draws the fork's value editor as a `<table>` with a "Copied from" column; the shipped value editor (`SelectionListManagementFlow.tsx`, 4.0.0) renders drag-sortable `<div>` rows, so the UI shows the label under the value name (`CopiedFromLabel`, correct text and `data-origin-item` hooks) but there is no column or header. Same root cause as the 4.0.0 frame 03 table never having been built as a table. **Not fixed**: needs the 4.0.0 editor restructured (outside `shared-lists/**`, larger). Options for the owner: restructure the editor into a real table, or a frames-only PR that draws the 4.0.0-faithful row layout with a labelled "Copied from" text. Spec unchanged (no weakening). |
+| PICK-001, 011, 030, 060 ×3 | 2 lookups / 2 item reads / 2 resolves instead of 1 | **b** | The public `/embed/selection-list-picker` route mounts before `GET /api/flags` settles. `useFlag` is fail-closed (OFF until loaded), so the picker first runs the 4.0.0 data path (`GET ?key=`, unrestricted `GET …/items`, `POST /resolve`) and, when the flag turns ON, the shared path again (`include_shared=true&limit=1`, `items?status=active`, resolve). The frames say ONE lookup/ONE resolve; the extra requests are real (and the 4.0.0 path also issues a lookup **without** `include_shared`). |
+| PICK-020, 022, 036, 063 ×3 | no error state after `failTimes(1, …)` | **b** | Same root cause: the single injected 5xx is consumed by the *first* (4.0.0, flag-OFF) request, the shared path then succeeds. |
+
+Bucket totals over the 24 failing tests: **(a) 8** (READ-021, 032, 033, 037; PROV-020 ×2, 023a ×2) · **(b) 16** (READ-040 ×3 — fixed; PROV-009 — open; the 12 picker specs — open) · **(c) 0** · **(d) 0**.
+After the triage: 8 (a) fixed in the specs/harness, 3 (b) fixed in the UI, 13 (b) still red.
+
+**Picker — verified, not fixed:** applying the 7-line host gate below (render the harness only when `useFlagState(SHARED_LISTS_FLAG_KEY).ready`, which settles even with no token or on failure) makes all 12 picker specs pass (211/212 in that run). It lives in `frontend/src/App.tsx` (host wiring), outside the `shared-lists/**` boundary this PR was allowed to change, and a real host that embeds `SelectionListPicker` before its own flags settle has the same problem — the durable fix is a package-level "flag not ready yet" state in `SharedListsFeatureProvider` (picker defers its data path until ready). Owner: `frontend-engineer`.
+
+```diff
+--- a/frontend/src/App.tsx   (NOT applied — verified patch for frontend-engineer)
++function PickerHarnessRoute() {
++  const { ready } = useFlagState(SHARED_LISTS_FLAG_KEY, false)
++  if (!ready) return null
++  return <SelectionListPickerHarness />
++}
+@@ if (currentPath.startsWith('/embed/selection-list-picker')) {
+-    return <SelectionListPickerHarness />
++    return <PickerHarnessRoute />
+```
+
+### Harness fidelity changes made while triaging (no assertion was removed or loosened)
+
+* `GET …/items?status=` follows the implemented service (`active` | `archived`, else 400).
+* `GET …/translations` answers the contract array; `GET …/translations/{locale}` is no longer mocked (it is not an operation); item text per locale comes from `items?locale=` with `is_machine`.
+* `GET /quota` answers the real `{organization_id, quotas}` envelope **by default** (the 4.0.0 client reads it since #1719; `SL9-READ-018` is now a regression guard). The `quota read refused (default world)` entry of `EXPECTED_REFUSALS` and the 403 default were deleted, as the TODO asked; `SL9-FORK-024b` still sets the 403 explicitly.
+* The fork specs that drive the **writable 4.0.0 workbench** to its refused Save (FORK-000…011 via `saveRefused`, FORK-010) opt in to `LEGACY_WORKBENCH_READS`: the 4.0.0 client reads `{locales:[…]}` from `GET …/translations` and `GET …/translations/{locale}` — shapes/routes the service does not provide (finding 8).
+* PROV-004 / PROV-005 are no longer tagged `@needs-contract-revision`: contract 4.2.0 has `SelectionList.revision` and the UI reads it. Both pass against the mock; the service does not emit `revision` yet, so against the real service the UI shows "comparison unavailable" (PROV-003 pins that).
+
+### Console / network gate
+
+Every ready-state spec ends with `expectRuntimeClean` (0 uncaught exceptions, 0 console errors, same-origin API); all of those pass. A separate sweep (throw-away spec, not committed) of the index (toggle + filter), common detail, read-only translations + locale view, fork dialog, fork detail, visibility/Access tab and the picker, each at desktop and 375 px, logged every console message of any level and every ≥400 / failed request: after removing the backend-less preview's own noise (service-worker registration blocked by Playwright, `/socket.io` websocket, `/api/v1/notifications/stream` 404) the residue was exactly two items, both mock-answered refusals the UI is not at fault for:
+`HEAD …/items/reorder` → 404 on every editable list detail (the **4.0.0** value editor's `probeReorderPermission`; HEAD is not a contract operation — a console error in the real product, finding 10) and `GET …/access` → 403 on the Access tab (the default world's caller holds no `manage_access`). The picker was clean at both widths. The Chrome DevTools MCP was not available in this environment; the Playwright runtime tracker (console / pageerror / request origin) plus the sweep above stand in for it and should be repeated with the MCP when the flag is switched on in a real environment.
 
 ## Inventory — per flow: spec file → test ids → frame states
 
@@ -151,7 +218,7 @@ Test ids are the `SL9-<FLOW>-<nnn>` prefix in each test title (`playwright test 
 |---|---|---|
 | 07 | provenance facts immediate, source link, badges, no CTA on a fork | PROV-001 |
 | 07 | behind-source states: checking (editor never waits), unknown, source-archived, source-gone (no link/alert), error + retry | PROV-002, 003, 006, 007, 008 |
-| 07 | **behind / up-to-date — `@needs-contract-revision`** (see below) | PROV-004, PROV-005 |
+| 07 | behind / up-to-date (needs `SelectionList.revision`, contract 4.2.0; mock-driven until the service emits it) | PROV-004, PROV-005 |
 | 07 | "Copied from" via `origin_item_id` (null = added; unavailable source ⇒ "copied" w/o label) | PROV-009, PROV-010 |
 | 07 | header-action gate: revert / archive-fork / none | PROV-011 ×4 (+ checking/error in 002/008) |
 | 07 | revert confirm (alertdialog, 3 consequences, Cancel focus, native disabled in flight), 403 not-owner | PROV-012, 013 |
@@ -187,9 +254,8 @@ Test ids are the `SL9-<FLOW>-<nnn>` prefix in each test title (`playwright test 
 
 ## Findings and assumptions the implementer / designer must know
 
-1. **`SelectionList.revision` is not in contract 4.1.0** (manifest `contractGaps`, owner `contract-designer`). `PROV-004`/`PROV-005`
-   mock the *source* response with an additive `revision` and are tagged `@needs-contract-revision`. They are RED now, not skipped;
-   they become satisfiable as soon as the UI reads an optional `revision`. Under 4.1.0 only the "comparison unavailable" state is reachable (`PROV-003`).
+1. **`SelectionList.revision` is in contract 4.2.0 but the service does not emit it yet** (optional until the implementation ships).
+   `PROV-004`/`PROV-005` mock the *source* response with `revision` and pass; against the real service the UI degrades to "comparison unavailable" (`PROV-003`).
 2. **Inferred picker-harness switches** (the frames do not declare a hook): `?showSource=1` (opt-in caption) and `?migrate=1`
    (records `onEffectiveValue` calls as JSON on `[data-migration='host-opt-in']@data-effective-calls`). Isolated in `PICK-010…013/060` and `PICK-032/036`.
    If `frontend-engineer` spells them differently, change those specs, not the frames.
@@ -202,9 +268,9 @@ Test ids are the `SL9-<FLOW>-<nnn>` prefix in each test title (`playwright test 
    375 px viewport, panels never scroll sideways, ≥44 px targets, stacked actions) and `PICK-060…` — the picker harness has no shell chrome —
    additionally asserts no document-level horizontal scroll. The shell drawer / overflow belongs to `mobile-frontend-engineer` (and 4.0.0 frame 15).
    `isMobile` emulation is deliberately **not** used: it widens the layout viewport and would make "fits the viewport" assertions pass vacuously.
-5. **Mock fidelity: what follows the wire contract and the three 4.0.0 exceptions.** The harness answers `list`/`items` pages
+5. **Mock fidelity: what follows the wire contract and the three 4.0.0 exceptions.** *(Updated 2026-10-27: see "Harness fidelity changes" above — quota and translations now answer the real shapes by default; the 4.0.0 workbench shapes are an explicit opt-in, and the paragraphs below are the original rationale.)* The harness answers `list`/`items` pages
    (`{items, page:{nextCursor,hasMore,total}}`), single lists/items, `POST /resolve`, the error envelope (`ErrorCode` + `reason`/`source_list_id`/`fork_url`/`scope`/`limit`/`current`)
-   and `GET /quota` (`{organization_id, quotas:[{scope, applies_to, limit, current}]}`) exactly as `openapi.yaml` 4.1.0 defines them
+   and `GET /quota` (`{organization_id, quotas:[{scope, applies_to, limit, current}]}`) exactly as `openapi.yaml` (4.1.0 at the time, 4.2.0 now) defines them
    (verified by validating every reply of a full run against the OpenAPI schemas with Ajv — list/item/page/quota/resolve/error: 0 violations).
    Three routes deliberately stay in the shape the **shipped 4.0.0 UI** consumes, because the 4.0.0 canaries and the existing green
    `selection-list-service-e2e` specs render through them; the 4.0.0 client, not the network mock, owns any normalization:
@@ -235,10 +301,13 @@ Test ids are the `SL9-<FLOW>-<nnn>` prefix in each test title (`playwright test 
    States whose frame draws no controls (fork dialog *Submitting*, visibility *Saving*) are asserted as "nothing operable" (absent / `disabled` / `aria-disabled`), not by an invented hook.
 8. **Frame copy asserted verbatim** only where the frame makes it a contract (source-neutral shadow note, `fork_exists` owner-only wording,
    conditional archive copy, "List unavailable", "Unknown value"). Everything else is asserted by hook/role, not by copy.
+9. **Service vs contract: `GET …/items?status=all`.** openapi 4.2.0 lists `all` for this parameter; the implemented route (`services/selection-list-service/src/routes/items.ts`) answers `400 VALIDATION_ERROR` for it (the *list* route does accept `all`). Clients (`useListValues`) work around it by reading `active` and `archived` separately. Owner: `backend-engineer` / `contract-designer` — either implement `all` or remove it from the contract (breaking-change rules apply).
+10. **4.0.0 console error on every editable list detail:** the value editor probes reorder permission with `HEAD …/items/reorder` (`probeReorderPermission`), which is not a contract operation and answers 404, logged by the browser as a console error. Owner: `frontend-engineer` (use the list's `editable`/a real permission read instead of a probe). The console-clean gate tolerates it by name in `EXPECTED_REFUSALS` until then.
+11. **4.0.0 translation workbench vs the service:** `getLocaleIndex` reads `{locales:[…]}` (service: a top-level array) and `getLocaleEditor` calls `GET …/translations/{locale}` (not an operation). Against the real service the writable workbench shows "No locales to translate". The shared-lists read-only views already use the contract-defined reads. Owner: `frontend-engineer`.
 
 ## Not covered here (named so nobody assumes it is)
 
-* Post-production smoke against the live app and the Chrome-DevTools-MCP console/network pass over the **built** UI: impossible until the UI exists.
+* Post-production smoke against the live app (the flag is OFF everywhere) and a Chrome-DevTools-MCP console/network pass (not available in the verification environment; see "Console / network gate").
   The specs carry runtime gates (`expectRuntimeClean`: 0 uncaught exceptions, 0 console errors on success paths, same-origin API) that run with every spec.
 * Playwright against the static frames (`file://`) — a separate verification phase; the frames' own `gate-frames-*` checks are unchanged.
 * Real-device/webkit profiles (only Chromium is installed in CI for this job).
