@@ -1,0 +1,298 @@
+/* fuse-seam design-system tokens (subset), inlined so these approval frames are
+   self-contained / portable. Mirrors design-system/tokens/*.css. These frames are
+   contract-freeze UX artifacts — approve the frames = approve the model.
+
+   This set adds the MOBILE layout tokens (design-system/tokens/spacing.css:72-81)
+   the bottom-nav / drawer / sheet shell chrome is built on, so the frames reference
+   `var(--bottom-nav-height)`, `var(--safe-area-bottom)`, `var(--touch-target)` etc.
+   as tokens rather than hand-tuned px. */
+:root {
+  /* brand / accent */
+  --indigo-500: #6e5cff;
+  --cyan-400: #29d3e6;
+  --accent-color: var(--indigo-500);
+  --accent-hover: #5a48e6;
+  --accent-soft: rgba(110, 92, 255, 0.14);
+  --accent-2: var(--cyan-400);
+  --seam: linear-gradient(90deg, var(--accent-color) 0%, var(--accent-2) 100%);
+
+  /* graphite surfaces (dark default) */
+  --bg-primary: #0f131c;
+  --bg-secondary: #11161f;
+  --bg-tertiary: #141a26;
+  --bg-quaternary: #1b2230;
+  --border-color: #232b3a;
+  --border-strong: #313b4d;
+  --scrim: rgba(7, 10, 16, 0.62);
+
+  --text-primary: #e7ebf2;
+  --text-secondary: #aab3c2;
+  --text-tertiary: #6b7585;
+
+  --success-color: #34d399;
+  --warning-color: #f5b950;
+  --error-color: #f3697f;
+
+  /* type */
+  --font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+  --text-2xs: 11px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-2xl: 26px;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --tracking-wide: 0.04em;
+  --tracking-display: -0.01em;
+
+  /* spacing / radii / shadow */
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+  --space-5: 20px; --space-6: 24px; --space-7: 28px; --space-8: 32px;
+  --space-10: 40px; --space-12: 48px; --space-16: 64px;
+  --radius-sm: 6px; --radius-md: 10px; --radius-lg: 14px; --radius-xl: 20px;
+  --radius-pill: 999px;
+  --shadow-xs: 0 1px 2px rgba(0,0,0,0.3);
+  --shadow-md: 0 6px 20px rgba(0,0,0,0.4);
+  --shadow-lg: 0 16px 48px rgba(0,0,0,0.5);
+  --shadow-accent: 0 8px 24px rgba(110,92,255,0.35);
+
+  --top-bar-height: 60px;
+  --side-panel-width: 240px;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+
+  /* ---- mobile layout tokens (mirror design-system/tokens/spacing.css:72-81) ---- */
+  --top-bar-height-mobile: 52px;  /* collapsed top bar on xs/sm */
+  --bottom-nav-height: 56px;      /* bottom nav bar replaces side panel below md */
+  --drawer-width: 280px;          /* slide-in drawer on xs/sm */
+  --sheet-max-h: 80dvh;           /* bottom sheet max height */
+  --touch-target: 44px;           /* WCAG 2.5.5 minimum tap area */
+
+  --safe-area-top:    env(safe-area-inset-top,    0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-area-left:   env(safe-area-inset-left,   0px);
+  --safe-area-right:  env(safe-area-inset-right,  0px);
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+}
+.mono { font-family: var(--font-mono); }
+
+/* =====================================================================
+   Phone scaffold — the approval-page frame around a 375px mock. The
+   bezel width/radius are presentation scaffolding of THIS review page,
+   not product UI; everything INSIDE the phone is tokens-only.
+   ===================================================================== */
+.phone-stage { display: grid; place-items: start center; gap: var(--space-4); }
+.phone {
+  width: 375px; flex: none;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 28px;
+  overflow: hidden;
+  position: relative;
+  display: flex; flex-direction: column;
+  box-shadow: var(--shadow-lg);
+  /* a representative phone viewport height so the fixed bottom-nav sits correctly */
+  height: 760px;
+}
+.phone--notch::before {
+  /* a device notch, to demonstrate safe-area handling visually */
+  content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  width: 150px; height: 26px; background: #000; border-bottom-left-radius: 14px;
+  border-bottom-right-radius: 14px; z-index: 60;
+}
+.state-label {
+  font-family: var(--font-mono); font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-wide); text-transform: uppercase;
+  color: var(--text-tertiary); text-align: center; margin: 0;
+}
+
+/* =====================================================================
+   Mobile shell chrome (the contract these frames freeze)
+   ===================================================================== */
+/* Collapsed top bar on xs/sm */
+.m-topbar {
+  /* Reserve the notch inset ON TOP of the control height: with global border-box
+     sizing, folding --safe-area-top into `padding-top` alone would eat into the
+     52px bar and leave < the 44px touch-target below the notch. Adding the inset
+     to `height` keeps the full control area below the notch — mirrors how
+     .bottom-nav adds --safe-area-bottom to its height. */
+  height: calc(var(--top-bar-height-mobile) + var(--safe-area-top)); flex: none;
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: 0 var(--space-4);
+  padding-top: var(--safe-area-top);
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  position: relative; z-index: 10;
+}
+.m-topbar::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -1px;
+  height: 2px; background: var(--seam); opacity: 0.7;
+}
+.m-topbar .hamburger {
+  width: var(--touch-target); height: var(--touch-target);
+  display: grid; place-items: center; cursor: pointer;
+  color: var(--text-secondary); margin-left: calc(var(--space-2) * -1);
+  background: none; border: 0; font-size: var(--text-xl);
+}
+.m-topbar .wordmark {
+  font-family: var(--font-display); font-weight: var(--weight-semibold);
+  font-size: var(--text-md); letter-spacing: var(--tracking-display);
+}
+.m-topbar .wordmark .fuse { background: var(--seam); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.m-topbar .spacer { flex: 1; }
+.m-topbar .avatar {
+  width: 30px; height: 30px; border-radius: var(--radius-pill);
+  background: var(--seam); display: grid; place-items: center;
+  font-weight: var(--weight-semibold); font-size: var(--text-xs); color: #0b0e15;
+}
+
+/* Content area — scrolls between the top bar and the fixed bottom nav */
+.m-content {
+  flex: 1; overflow: auto; min-height: 0;
+  padding: var(--space-5) var(--space-4);
+  /* clear the fixed bottom nav + home indicator */
+  padding-bottom: calc(var(--bottom-nav-height) + var(--safe-area-bottom) + var(--space-5));
+}
+.m-h1 { font-family: var(--font-display); font-size: var(--text-xl);
+  letter-spacing: var(--tracking-display); margin: 0 0 var(--space-2); }
+.m-sub { color: var(--text-secondary); font-size: var(--text-sm); margin: 0 0 var(--space-5); line-height: 1.5; }
+
+/* placeholder content card so the page reads as a real screen, not a blank */
+.m-card { background: var(--bg-tertiary); border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg); padding: var(--space-4); margin-bottom: var(--space-3); position: relative; overflow: hidden; }
+.m-card__seam { position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--seam); }
+.m-card h3 { margin: 0 0 var(--space-1); font-size: var(--text-md); }
+.m-card p { margin: 0; color: var(--text-tertiary); font-size: var(--text-sm); }
+
+/* ---- BottomNav — the primary mobile navigation (contract) ---- */
+.bottom-nav {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 30;
+  display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
+  height: calc(var(--bottom-nav-height) + var(--safe-area-bottom));
+  padding-bottom: var(--safe-area-bottom);
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-color);
+}
+.bottom-nav::before {
+  content: ""; position: absolute; left: 0; right: 0; top: -1px;
+  height: 2px; background: var(--seam); opacity: 0.6;
+}
+.bn-item {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 3px;
+  min-height: var(--touch-target); /* WCAG 2.5.5 — each tab is >= 44px tall */
+  background: none; border: 0; cursor: pointer;
+  color: var(--text-tertiary); text-decoration: none;
+  font-family: var(--font-sans); font-size: var(--text-2xs);
+  -webkit-tap-highlight-color: transparent;
+}
+.bn-item .bn-ico { font-size: var(--text-xl); line-height: 1; }
+.bn-item .bn-label { font-size: var(--text-2xs); letter-spacing: 0.01em;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bn-item:hover { color: var(--text-secondary); }
+/* active tab — fuse-seam pill indicator + accent label/icon */
+.bn-item[aria-current="page"] { color: var(--text-primary); }
+.bn-item[aria-current="page"] .bn-ico { color: var(--accent-color); }
+.bn-item[aria-current="page"]::after {
+  content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  width: 26px; height: 3px; border-radius: var(--radius-pill); background: var(--seam);
+}
+/* notification badge on a tab */
+.bn-badge {
+  position: absolute; top: 6px; left: calc(50% + 8px);
+  min-width: 16px; height: 16px; padding: 0 4px;
+  display: grid; place-items: center;
+  background: var(--error-color); color: #0b0e15;
+  font-family: var(--font-mono); font-size: 10px; font-weight: var(--weight-semibold);
+  border-radius: var(--radius-pill); border: 2px solid var(--bg-secondary);
+}
+/* pressed "More" tab while the drawer is open */
+.bn-item[data-pressed="true"] { color: var(--text-primary); }
+.bn-item[data-pressed="true"] .bn-ico { color: var(--accent-color); }
+
+/* ---- Drawer (SidePanel on xs/sm) + scrim — what "More" opens ---- */
+.scrim {
+  position: absolute; inset: 0; z-index: 40;
+  background: var(--scrim);
+  animation: scrim-in var(--duration-base) var(--ease-standard) forwards;
+}
+@keyframes scrim-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .scrim { animation: none; } }
+.drawer {
+  position: absolute; top: 0; bottom: 0; left: 0; z-index: 50;
+  width: min(var(--drawer-width), 80%);
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border-color);
+  display: flex; flex-direction: column;
+  transform: translateX(0);
+  transition: transform 0.28s var(--ease-standard);
+  padding-bottom: var(--safe-area-bottom);
+  padding-top: var(--safe-area-top);
+  overflow-y: auto;
+  box-shadow: var(--shadow-lg);
+}
+@media (prefers-reduced-motion: reduce) { .drawer { transition: none; } }
+.drawer::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--seam); }
+.drawer__head { display: flex; align-items: center; justify-content: space-between;
+  padding: var(--space-4); border-bottom: 1px solid var(--border-color); }
+.drawer__head .wordmark { font-family: var(--font-display); font-weight: var(--weight-semibold); font-size: var(--text-md); }
+.drawer__head .wordmark .fuse { background: var(--seam); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.drawer__close { width: var(--touch-target); height: var(--touch-target);
+  display: grid; place-items: center; background: none; border: 0; color: var(--text-secondary); cursor: pointer; font-size: var(--text-lg); }
+.drawer__section { padding: var(--space-3) 0 var(--space-1); }
+.drawer__section-label { font-family: var(--font-mono); font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-wide); text-transform: uppercase; color: var(--text-tertiary);
+  padding: var(--space-2) var(--space-5); }
+.drawer-item {
+  display: flex; align-items: center; gap: var(--space-3);
+  min-height: var(--touch-target);
+  padding: var(--space-2) var(--space-3); margin: 0 var(--space-2);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary); font-size: var(--text-md);
+  text-decoration: none; cursor: pointer; background: none; border: 0; width: calc(100% - var(--space-4)); text-align: left;
+}
+.drawer-item:hover { background: var(--bg-quaternary); color: var(--text-primary); }
+.drawer-item[aria-current="page"] { background: var(--accent-soft); color: var(--text-primary); box-shadow: inset 2px 0 0 var(--accent-color); }
+.drawer-item .ico { width: 20px; text-align: center; flex: none; }
+
+/* ---- buttons reused across frames ---- */
+.btn { font-family: var(--font-sans); font-size: var(--text-md); font-weight: var(--weight-medium);
+  border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); min-height: var(--touch-target);
+  cursor: pointer; border: 1px solid transparent; }
+.btn-primary { background: var(--accent-color); color: #0b0e15; box-shadow: var(--shadow-accent); }
+.btn-ghost { background: transparent; color: var(--text-secondary); border-color: var(--border-color); }
+.btn-ghost:hover { color: var(--text-primary); border-color: var(--border-strong); }
+
+/* ---- notice (empty / error) ---- */
+.notice { text-align: center; padding: var(--space-6) var(--space-4);
+  border: 1px solid var(--border-color); border-radius: var(--radius-lg); background: var(--bg-tertiary); }
+.notice .ico { font-size: 28px; margin-bottom: var(--space-2); }
+.notice h3 { margin: 0 0 var(--space-1); font-size: var(--text-md); }
+.notice p { margin: 0 0 var(--space-4); color: var(--text-secondary); font-size: var(--text-sm); line-height: 1.5; }
+.notice.err .ico { color: var(--error-color); }
+
+/* ---- skeleton ---- */
+.sk { border-radius: var(--radius-pill);
+  background: linear-gradient(90deg, var(--bg-quaternary), var(--border-color), var(--bg-quaternary));
+  background-size: 200% 100%; animation: sksh 1.3s ease-in-out infinite; }
+@keyframes sksh { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+@media (prefers-reduced-motion: reduce){ .sk{ animation: none; } }
+
+.caption { text-align: center; font-size: var(--text-2xs); color: var(--text-tertiary); margin: var(--space-2) 0 0; }
+.caption b { color: var(--text-secondary); font-weight: var(--weight-semibold); }
+.caption code { font-family: var(--font-mono); }
