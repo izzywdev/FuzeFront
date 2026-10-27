@@ -41,6 +41,25 @@
       name: fuzefront-security
       port:
         number: {{ .Values.securityService.port }}
+# /api/tokens (personal API tokens / PATs) and /api/me are served ONLY by the
+# security service — the monolith mounts neither (backend/src/index.ts). Without
+# these rules they fall through to the /api catch-all below and reach the
+# monolith, which has no handler, so the browser gets 503/404. Same class of
+# omission as the /api/v1/security fix documented in frontend/nginx.conf.
+- path: /api/tokens
+  pathType: Prefix
+  backend:
+    service:
+      name: fuzefront-security
+      port:
+        number: {{ .Values.securityService.port }}
+- path: /api/me
+  pathType: Prefix
+  backend:
+    service:
+      name: fuzefront-security
+      port:
+        number: {{ .Values.securityService.port }}
 {{- end }}
 {{- if .Values.applicationsService.enabled }}
 # Applications-service direct paths (+ Socket.IO).

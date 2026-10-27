@@ -1,0 +1,481 @@
+// shared-lists.renderings-duplicates.db.test.ts - one organization, the SAME key under SEVERAL renderings of its id.
+//
+// `(organization_id, key)` is unique per stored string, so while shared lists were OFF (or from older data) the same
+// org can hold `key` under the bare UUID AND the `org_...` TypeID. With the flag ON the rendering-aware scope merges
+// them into one org, so every consumer that answers "the list for this key" must pick ONE row, the SAME one:
+//   1. an ACTIVE row over an archived one, 2. the row stored under the caller's claim exactly, 3. the oldest, then id.
+// Covered: the listing / effective-key lookup, the resolve fork redirect, the fork idempotency lookup, shadowing.
+// Flag OFF creates are untouched (not tested here: they are the 4.0.0 behaviour).
+
+import fs from 'fs';
+import path from 'path';
+import type { Knex } from 'knex';
+import { dbDescribe } from './helpers/testDb';
+import { fromUuid, toUuid } from '@izzywdev/fuzefront-identity';
+import { ADMIN_ACTIONS, createWorld, EDITOR_ACTIONS as EDITOR, P, PLATFORM, Principal, publishPriorityList, World } from './helpers/sharedWorld';
+import { flagClientWith } from './helpers/flagClient';
+
+const state: { db: Knex | undefined } = { db: undefined };
+jest.mock('../src/db', () => ({
+  get db() {
+    return state.db;
+  },
+}));
+
+dbDescribe('duplicate keys across renderings yield exactly one effective row (real Postgres)', () => {
+  let w: World;
+  let platform: { listId: string; low: string; mid: string; old: string };
+  let seq = 0;
+
+  beforeAll(async () => {
+    w = await createWorld(state);
+    platform = await publishPriorityList(w);
+  });
+  afterAll(() => w.teardown());
+
+  /** An org with a caller per rendering (both hold the catalog actions in their own tenant string). */
+  const orgWorld = () => {
+    const n = String(10 + ++seq).padStart(2, '0');
+    const typeId = fromUuid('organization', `0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7b${n}`);
+    const uuid = toUuid(typeId as never);
+    const byType: Principal = { userId: fromUuid('user', `0195a8f2-aaaa-7a11-8b2d-3f4e5a6b7b${n}`), orgId: typeId };
+    const byUuid: Principal = { userId: toUuid(byType.userId as never), orgId: uuid };
+    for (const p of [byType, byUuid]) w.authz.allowCatalog(p.orgId, p.userId, EDITOR);
+    return { typeId, uuid, byType, byUuid };
+  };
+
+  let rowSeq = 0;
+  /** Insert a list row directly (the flag-OFF world could create both); `ageMin` = how old it is. */
+  const insertList = async (org: string, key: string, over: Record<string, unknown> = {}, ageMin = 0) => {
+    const id = `front_sl_dup${String(++rowSeq).padStart(4, '0')}`;
+    await w.db('selection_lists').insert({
+      id,
+      organization_id: org,
+      key,
+      created_by: 'usr_x',
+      visibility: 'org',
+      created_at: new Date(Date.now() - ageMin * 60_000),
+      ...over,
+    });
+    await w.db('selection_list_translations').insert({ list_id: id, locale: 'en', name: `${key} (${org.slice(0, 8)})`, source_hash: 'h', is_machine: false });
+    return id;
+  };
+
+  const keys = (res: any) => res.body.items.map((i: any) => i.key);
+  const list = (p: Principal, qs: string) => w.api(p).get(`/v1/selection-lists${qs}`);
+
+  describe('the listing / effective-key lookup', () => {
+    it('returns exactly ONE row for the key; the caller\'s exact rendering wins; the answer is stable', async () => {
+      const x = orgWorld();
+      const typeRow = await insertList(x.typeId, 'dup-pick', {}, 10);
+      const uuidRow = await insertList(x.uuid, 'dup-pick', {}, 20); // OLDER, but not the caller's rendering for byType
+      for (let i = 0; i < 3; i++) {
+        const t = await list(x.byType, '?include_shared=true&key=dup-pick');
+        expect(t.status).toBe(200);
+        expect(t.body.items.map((r: any) => r.id)).toEqual([typeRow]);
+        const u = await list(x.byUuid, '?include_shared=true&key=dup-pick');
+        expect(u.body.items.map((r: any) => r.id)).toEqual([uuidRow]);
+      }
+      // the default listing (instance roles only) is the same effective list, even when the caller holds a role on both
+      w.authz.give(x.typeId, x.byType.userId, typeRow, 'list-owner');
+      w.authz.give(x.typeId, x.byType.userId, uuidRow, 'list-owner');
+      const d = await list(x.byType, '?key=dup-pick');
+      expect(d.body.items.map((r: any) => r.id)).toEqual([typeRow]);
+    });
+
+    it('an ACTIVE row beats an archived one, whatever the rendering or age', async () => {
+      const x = orgWorld();
+      await insertList(x.uuid, 'dup-active', { status: 'archived' }, 30); // the caller's exact rendering, oldest, but archived
+      const active = await insertList(x.typeId, 'dup-active', {}, 5);
+      const res = await list(x.byUuid, '?include_shared=true&key=dup-active&status=all');
+      expect(res.body.items.map((r: any) => r.id)).toEqual([active]);
+      const only = await list(x.byUuid, '?include_shared=true&key=dup-active');
+      expect(only.body.items.map((r: any) => r.id)).toEqual([active]);
+    });
+
+    it('equal rank (same age): the smallest id wins, for any caller', async () => {
+      const x = orgWorld();
+      const when = new Date('2026-01-01T00:00:00.000Z');
+      const platformUuid = toUuid(PLATFORM as never);
+      const lo = await insertList(PLATFORM, 'dup-tie', { visibility: 'platform', created_at: when });
+      const hi = await insertList(platformUuid, 'dup-tie', { visibility: 'platform', created_at: when });
+      expect(lo < hi).toBe(true);
+      for (const p of [x.byType, x.byUuid]) expect((await list(p, '?include_shared=true&key=dup-tie')).body.items.map((r: any) => r.id)).toEqual([lo]);
+    });
+
+    it('the whole listing shows each key once and pages through every effective list exactly once', async () => {
+      const x = orgWorld();
+      const a = await insertList(x.typeId, 'dup-a', {}, 10);
+      await insertList(x.uuid, 'dup-a', {}, 11);
+      const b = await insertList(x.uuid, 'dup-b', {}, 12);
+      await insertList(x.typeId, 'dup-b', {}, 13);
+      const only = await insertList(x.typeId, 'solo', {}, 14);
+      const seen: string[] = [];
+      let cursor: string | null = null;
+      let pages = 0;
+      do {
+        const res: any = await list(x.byType, `?include_shared=true&visibility=org&limit=1${cursor ? `&cursor=${cursor}` : ''}`);
+        expect(res.status).toBe(200);
+        seen.push(...res.body.items.map((r: any) => r.id));
+        cursor = res.body.page.nextCursor;
+        pages += 1;
+      } while (cursor && pages < 10);
+      // byType: dup-a -> its TypeID row; dup-b -> the TypeID row too (exact claim); solo
+      const winners = new Set(seen);
+      expect(winners.size).toBe(seen.length); // no row twice
+      const ids = await w.db('selection_lists').whereIn('id', seen).select('id', 'key', 'organization_id');
+      expect(ids.map((r: any) => r.key).sort()).toEqual(['dup-a', 'dup-b', 'solo']);
+      expect(seen).toContain(a);
+      expect(seen).toContain(only);
+      expect(seen).not.toContain(b); // byType's exact rendering wins dup-b as well
+    });
+
+    it('common lists: duplicates of a platform key across the platform org\'s renderings collapse to one (oldest) for any other tenant', async () => {
+      const x = orgWorld();
+      const platformUuid = toUuid(PLATFORM as never);
+      const first = await insertList(PLATFORM, 'dup-common', { visibility: 'platform' }, 40);
+      await insertList(platformUuid, 'dup-common', { visibility: 'platform' }, 10);
+      for (const p of [x.byType, x.byUuid]) {
+        const res = await list(p, '?include_shared=true&key=dup-common');
+        expect(res.status).toBe(200);
+        expect(res.body.items.map((r: any) => r.id)).toEqual([first]);
+      }
+    });
+
+    it('the PLATFORM OPERATOR (caller org == platform org): a key duplicated across the two renderings of the platform org is returned exactly ONCE, for either claim, with correct paging', async () => {
+      const platformUuid = toUuid(PLATFORM as never);
+      const opByUuid: Principal = { userId: toUuid(P.op.userId as never), orgId: platformUuid };
+      w.authz.allowCatalog(opByUuid.orgId, opByUuid.userId, ADMIN_ACTIONS);
+      const typeRow = await insertList(PLATFORM, 'dup-op', { visibility: 'platform' }, 10);
+      const uuidRow = await insertList(platformUuid, 'dup-op', { visibility: 'platform' }, 20); // older, but not the TypeID claim's
+      const soloUuid = await insertList(platformUuid, 'dup-op-solo', { visibility: 'platform' }, 5);
+      // the exact claim wins, each time (it used to return NEITHER: two predicates with two claims were ANDed)
+      for (let i = 0; i < 3; i++) {
+        const t = await list(P.op, '?include_shared=true&key=dup-op');
+        expect({ status: t.status, ids: t.body.items.map((r: any) => r.id) }).toEqual({ status: 200, ids: [typeRow] });
+        const u = await list(opByUuid, '?include_shared=true&key=dup-op');
+        expect({ status: u.status, ids: u.body.items.map((r: any) => r.id) }).toEqual({ status: 200, ids: [uuidRow] });
+      }
+      // the default listing (instance roles only) is the same single scope
+      w.authz.give(PLATFORM, P.op.userId, typeRow, 'list-owner');
+      w.authz.give(PLATFORM, P.op.userId, uuidRow, 'list-owner');
+      expect((await list(P.op, '?key=dup-op&visibility=platform')).body.items.map((r: any) => r.id)).toEqual([typeRow]);
+      // the whole platform set pages exactly once per key, whatever the page size and the claim
+      const distinctKeys = (await w.db('selection_lists').where({ visibility: 'platform', status: 'active' }).distinct('key')).map((r: any) => r.key).sort();
+      expect(distinctKeys).toContain('dup-op');
+      for (const [claim, who] of [['TypeID', P.op], ['bare UUID', opByUuid]] as Array<[string, Principal]>) {
+        for (const limit of [1, 2, 50]) {
+          const seen: any[] = [];
+          let cursor: string | null = null;
+          let pages = 0;
+          do {
+            const res: any = await list(who, `?include_shared=true&visibility=platform&limit=${limit}${cursor ? `&cursor=${cursor}` : ''}`);
+            expect(res.status).toBe(200);
+            seen.push(...res.body.items);
+            cursor = res.body.page.nextCursor;
+            pages += 1;
+          } while (cursor && pages < 100);
+          expect({ claim, limit, keys: seen.map((r) => r.key).sort() }).toEqual({ claim, limit, keys: distinctKeys });
+          expect(new Set(seen.map((r) => r.id)).size).toBe(seen.length);
+          const op = seen.find((r) => r.key === 'dup-op');
+          expect(op.id).toBe(claim === 'TypeID' ? typeRow : uuidRow);
+          expect(seen.find((r) => r.key === 'dup-op-solo').id).toBe(soloUuid);
+        }
+      }
+      // other tenants still see ONE row of the platform org's duplicated key (the platform group's own winner)
+      const x = orgWorld();
+      for (const p of [x.byType, x.byUuid]) expect((await list(p, '?include_shared=true&key=dup-op')).body.items.map((r: any) => r.id)).toEqual([typeRow]);
+    });
+
+    it('shadowing: the org\'s own (duplicated) list hides the common list of the same key, and appears once', async () => {
+      const x = orgWorld();
+      const t = await insertList(x.typeId, 'priority', {}, 10); // shadows the platform's `priority`
+      await insertList(x.uuid, 'priority', {}, 11);
+      const res = await list(x.byType, '?include_shared=true&key=priority');
+      expect(res.body.items.map((r: any) => r.id)).toEqual([t]);
+      expect(res.body.items.map((r: any) => r.organization_id)).toEqual([x.typeId]);
+    });
+
+    it('PERMIT-AWARE winner: an unreadable private winner (caller\'s exact rendering) does not hide a readable duplicate under the OTHER rendering; the readable one is the one effective row and shadows the common list', async () => {
+      const x = orgWorld();
+      const winner = await insertList(x.typeId, 'priority', { visibility: 'private' }, 10); // exact claim for byType, oldest - but unreadable
+      const loser = await insertList(x.uuid, 'priority', { visibility: 'org' }, 20); // readable through read_shared
+      for (const qs of ['?include_shared=true&key=priority', '?include_shared=true']) {
+        const res = await list(x.byType, qs);
+        expect(res.status).toBe(200);
+        const mine = res.body.items.filter((r: any) => r.key === 'priority');
+        expect(mine.map((r: any) => r.id)).toEqual([loser]); // the readable duplicate - not nothing, not the common list
+        expect(mine.map((r: any) => r.id)).not.toContain(winner);
+        expect(mine.map((r: any) => r.id)).not.toContain(platform.listId); // shadowed by the readable own row
+      }
+      // once the caller can read the private row too, the deterministic winner (exact claim) is back
+      w.authz.give(x.typeId, x.byType.userId, winner, 'list-owner');
+      const both = await list(x.byType, '?include_shared=true&key=priority');
+      expect(both.body.items.map((r: any) => r.id)).toEqual([winner]);
+    });
+
+    it('PERMIT-AWARE winner: NEITHER duplicate readable -> no own row, and the common list is NOT suppressed', async () => {
+      const x = orgWorld();
+      await insertList(x.typeId, 'priority', { visibility: 'private' }, 10);
+      await insertList(x.uuid, 'priority', { visibility: 'private' }, 20);
+      const res = await list(x.byType, '?include_shared=true&key=priority');
+      expect(res.body.items.map((r: any) => r.id)).toEqual([platform.listId]);
+    });
+
+    describe('the same rule across a paged walk and the total', () => {
+      /** pd-1: private winner + readable duplicate; pd-2: both readable; pd-3: neither readable; pd-4: only one rendering. */
+      const seedKeys = async (x: ReturnType<typeof orgWorld>, tag: string) => {
+        const t1 = await insertList(x.typeId, `${tag}-1`, { visibility: 'private' }, 10);
+        const u1 = await insertList(x.uuid, `${tag}-1`, { visibility: 'org' }, 11);
+        const t2 = await insertList(x.typeId, `${tag}-2`, { visibility: 'org' }, 12);
+        const u2 = await insertList(x.uuid, `${tag}-2`, { visibility: 'org' }, 13);
+        const t3 = await insertList(x.typeId, `${tag}-3`, { visibility: 'private' }, 14);
+        const u3 = await insertList(x.uuid, `${tag}-3`, { visibility: 'private' }, 15);
+        const u4 = await insertList(x.uuid, `${tag}-4`, { visibility: 'org' }, 16);
+        return { t1, u1, t2, u2, t3, u3, u4 };
+      };
+      const walk = async (p: Principal, tag: string, limit: number) => {
+        const seen: any[] = [];
+        let cursor: string | null = null;
+        let pages = 0;
+        do {
+          const res: any = await list(p, `?include_shared=true&limit=${limit}${cursor ? `&cursor=${cursor}` : ''}`);
+          expect(res.status).toBe(200);
+          seen.push(...res.body.items.filter((r: any) => r.key.startsWith(tag)));
+          cursor = res.body.page.nextCursor;
+          pages += 1;
+        } while (cursor && pages < 100);
+        return seen;
+      };
+
+      it('every page size shows each effective list exactly once: the readable winner per key, nothing for an unreadable key', async () => {
+        const x = orgWorld();
+        const ids = await seedKeys(x, 'pd');
+        for (const limit of [1, 2, 3, 50]) {
+          const seen = await walk(x.byType, 'pd', limit);
+          expect({ limit, rows: seen.map((r) => [r.key, r.id]).sort() }).toEqual({
+            limit,
+            rows: [['pd-1', ids.u1], ['pd-2', ids.t2], ['pd-4', ids.u4]].sort(), // pd-1: the readable duplicate; pd-2: exact claim; pd-3: none
+          });
+        }
+        // the other rendering's caller: pd-2 resolves to its own exact row
+        const seenUuid = await walk(x.byUuid, 'pd', 2);
+        expect(seenUuid.map((r) => [r.key, r.id]).sort()).toEqual([['pd-1', ids.u1], ['pd-2', ids.u2], ['pd-4', ids.u4]].sort());
+      });
+
+      it('with authz not enforced (the only mode that reports `total`) every row is readable: total = the effective rows walked, for any page size', async () => {
+        const x = orgWorld();
+        await seedKeys(x, 'pt');
+        const prior = process.env['FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED'];
+        process.env['FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED'] = 'false';
+        try {
+          for (const limit of [1, 2, 50]) {
+            const seen: any[] = [];
+            let cursor: string | null = null;
+            let total: number | undefined;
+            let pages = 0;
+            do {
+              const res: any = await list(x.byType, `?include_shared=true&limit=${limit}${cursor ? `&cursor=${cursor}` : ''}`);
+              expect(res.status).toBe(200);
+              seen.push(...res.body.items);
+              total = res.body.page.total;
+              cursor = res.body.page.nextCursor;
+              pages += 1;
+            } while (cursor && pages < 100);
+            expect({ limit, total }).toEqual({ limit, total: seen.length });
+            expect(new Set(seen.map((r) => r.id)).size).toBe(seen.length);
+            const mine = seen.filter((r) => r.key.startsWith('pt'));
+            expect(mine.map((r) => r.key).sort()).toEqual(['pt-1', 'pt-2', 'pt-3', 'pt-4']); // all readable: one row per key
+          }
+        } finally {
+          if (prior === undefined) delete process.env['FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED'];
+          else process.env['FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED'] = prior;
+        }
+      });
+
+      it('a Security API failure while checking readability FAILS CLOSED: nothing is listed (500)', async () => {
+        const x = orgWorld();
+        await seedKeys(x, 'pf');
+        const { _setAuthzClientForTesting } = await import('../src/middleware/authz');
+        const base = w.authz.asAuthzClient();
+        _setAuthzClientForTesting({ ...base, bulkCheck: async () => { throw new Error('security api down'); } } as never);
+        try {
+          const res = await list(x.byType, '?include_shared=true&key=pf-1');
+          expect(res.status).toBe(500);
+          expect(res.body.items).toBeUndefined();
+        } finally {
+          _setAuthzClientForTesting(base);
+        }
+      });
+    });
+
+    it('shadowing, readable winner: an org-visible winner hides the common list, the losing duplicate is not listed', async () => {
+      const x = orgWorld();
+      const winner = await insertList(x.typeId, 'priority', { visibility: 'org' }, 10);
+      await insertList(x.uuid, 'priority', { visibility: 'org' }, 20);
+      const res = await list(x.byType, '?include_shared=true&key=priority');
+      expect(res.body.items.map((r: any) => r.id)).toEqual([winner]);
+      // the same org through its other rendering: its OWN exact row wins there
+      const other = await list(x.byUuid, '?include_shared=true&key=priority');
+      expect(other.body.items).toHaveLength(1);
+      expect(other.body.items[0].organization_id).toBe(x.uuid);
+    });
+
+    it('flag OFF: the 4.0.0 exact scope (a caller sees only its own stored rendering)', async () => {
+      const x = orgWorld();
+      const t = await insertList(x.typeId, 'dup-off', { visibility: 'private' }, 10);
+      const u = await insertList(x.uuid, 'dup-off', { visibility: 'private' }, 11);
+      w.authz.give(x.typeId, x.byType.userId, t, 'list-owner');
+      w.authz.give(x.uuid, x.byUuid.userId, u, 'list-owner');
+      const { setFlagClient } = await import('../src/flags');
+      setFlagClient(flagClientWith(false));
+      try {
+        expect((await list(x.byType, '?key=dup-off')).body.items.map((r: any) => r.id)).toEqual([t]);
+        expect((await list(x.byUuid, '?key=dup-off')).body.items.map((r: any) => r.id)).toEqual([u]);
+      } finally {
+        setFlagClient(flagClientWith(true));
+      }
+    });
+  });
+
+  describe('resolve and fork', () => {
+    /** Forks of the common list under BOTH renderings of the org, each with an item that redirects from `platform.low`. */
+    const forksUnderBoth = async (x: ReturnType<typeof orgWorld>) => {
+      const mk = async (org: string, ageMin: number) => {
+        const id = await insertList(x.typeId === org ? org : org, 'priority', { forked_from_list_id: platform.listId, forked_from_org_id: PLATFORM, forked_from_revision: 1, forked_at: new Date() }, ageMin);
+        const itemId = `front_sli_dup${String(++rowSeq).padStart(4, '0')}`;
+        await w.db('selection_list_items').insert({ id: itemId, list_id: id, code: 'LOW', sort_order: 100, status: 'active', created_by: 'usr_x', origin_item_id: platform.low });
+        await w.db('selection_list_item_translations').insert({ item_id: itemId, locale: 'en', label: `Low (${org.slice(0, 8)})`, source_hash: 'h', is_machine: false });
+        return { id, itemId };
+      };
+      return { typeFork: await mk(x.typeId, 10), uuidFork: await mk(x.uuid, 20) };
+    };
+
+    it('resolve: a stored common id redirects to exactly ONE fork item, the caller\'s exact rendering first; stable', async () => {
+      const x = orgWorld();
+      const { typeFork, uuidFork } = await forksUnderBoth(x);
+      for (let i = 0; i < 3; i++) {
+        const t = await w.api(x.byType).post('/v1/resolve', { ids: [platform.low] });
+        expect(t.status).toBe(200);
+        expect(Object.keys(t.body.results)).toEqual([platform.low]);
+        expect(t.body.results[platform.low].effective_item_id).toBe(typeFork.itemId);
+        const u = await w.api(x.byUuid).post('/v1/resolve', { ids: [platform.low] });
+        expect(u.body.results[platform.low].effective_item_id).toBe(uuidFork.itemId);
+      }
+    });
+
+    /** The same org's two callers, WITHOUT `read_shared`: an org-visible fork is readable only through an instance role. */
+    const limitedWorld = () => {
+      const x = orgWorld();
+      for (const p of [x.byType, x.byUuid]) w.authz.allowCatalog(p.orgId, p.userId, ['list', 'create', 'resolve']);
+      return x;
+    };
+
+    it('resolve is Permit-aware: the fork the caller can READ is the redirect target, even if the other one is the exact claim; none readable -> no redirect', async () => {
+      const x = limitedWorld();
+      const { typeFork, uuidFork } = await forksUnderBoth(x);
+      // no role on either: nothing readable -> the stored common id resolves to the COMMON item (no redirect)
+      const none = await w.api(x.byType).post('/v1/resolve', { ids: [platform.low] });
+      expect(none.body.results[platform.low].effective_item_id).toBeUndefined();
+      // a role on the UUID fork only: it is the redirect, though the TypeID fork is the caller's exact rendering
+      w.authz.give(x.typeId, x.byType.userId, uuidFork.id, 'list-owner');
+      for (let i = 0; i < 2; i++) {
+        const r = await w.api(x.byType).post('/v1/resolve', { ids: [platform.low] });
+        expect(r.body.results[platform.low].effective_item_id).toBe(uuidFork.itemId);
+      }
+      // a role on both: the deterministic winner (exact claim) again
+      w.authz.give(x.typeId, x.byType.userId, typeFork.id, 'list-owner');
+      const both = await w.api(x.byType).post('/v1/resolve', { ids: [platform.low] });
+      expect(both.body.results[platform.low].effective_item_id).toBe(typeFork.itemId);
+    });
+
+    it('resolve and fork lookups FAIL CLOSED when the readability check cannot be made (Security API failure): no redirect to a guessed fork', async () => {
+      const x = limitedWorld();
+      await forksUnderBoth(x);
+      const { _setAuthzClientForTesting } = await import('../src/middleware/authz');
+      const base = w.authz.asAuthzClient();
+      _setAuthzClientForTesting({ ...base, bulkCheck: async () => { throw new Error('security api down'); } } as never);
+      try {
+        const r = await w.api(x.byType).post('/v1/resolve', { ids: [platform.low] });
+        expect(r.status).toBe(500);
+        expect(r.body.results).toBeUndefined();
+        const f = await w.api(x.byType).post(`/v1/selection-lists/${platform.listId}/fork`, {});
+        expect(f.status).toBe(500);
+      } finally {
+        _setAuthzClientForTesting(base);
+      }
+    });
+
+    it('fork lookups are Permit-aware: the idempotent repeat answers the READABLE fork; none readable -> 409 fork_exists', async () => {
+      const x = limitedWorld();
+      const { typeFork, uuidFork } = await forksUnderBoth(x);
+      const none = await w.api(x.byType).post(`/v1/selection-lists/${platform.listId}/fork`, {});
+      expect({ status: none.status, reason: none.body.reason }).toEqual({ status: 409, reason: 'fork_exists' });
+      w.authz.give(x.typeId, x.byType.userId, uuidFork.id, 'list-owner');
+      const readable = await w.api(x.byType).post(`/v1/selection-lists/${platform.listId}/fork`, {});
+      expect(readable.status).toBe(200);
+      expect(readable.body.id).toBe(uuidFork.id);
+      w.authz.give(x.typeId, x.byType.userId, typeFork.id, 'list-owner');
+      const both = await w.api(x.byType).post(`/v1/selection-lists/${platform.listId}/fork`, {});
+      expect(both.body.id).toBe(typeFork.id);
+    });
+
+    it('fork: the idempotent repeat answers the SAME fork (caller\'s exact rendering) however many exist', async () => {
+      const x = orgWorld();
+      const { typeFork, uuidFork } = await forksUnderBoth(x);
+      for (let i = 0; i < 2; i++) {
+        const t = await w.api(x.byType).post(`/v1/selection-lists/${platform.listId}/fork`, {});
+        expect(t.status).toBe(200);
+        expect(t.body.id).toBe(typeFork.id);
+        const u = await w.api(x.byUuid).post(`/v1/selection-lists/${platform.listId}/fork`, {});
+        expect(u.body.id).toBe(uuidFork.id);
+      }
+    });
+  });
+
+  describe('the rollout runbook SQL (docs/runbooks/selection-lists-rollout.md section 10) is real and correct', () => {
+    const runbook = fs.readFileSync(path.join(__dirname, '../../../docs/runbooks/selection-lists-rollout.md'), 'utf8');
+    const section = runbook.slice(runbook.indexOf('### 10.1'));
+    const sqlBlocks = [...section.matchAll(/```sql\n([\s\S]*?)```/g)].map((m) => m[1]);
+    const queryA = sqlBlocks[0].slice(sqlBlocks[0].indexOf('WITH rows AS'), sqlBlocks[0].indexOf('-- B.'));
+    const queryB = sqlBlocks[0].slice(sqlBlocks[0].indexOf('-- B.'), sqlBlocks[0].indexOf('-- C.'));
+    const queryC = sqlBlocks[0].slice(sqlBlocks[0].indexOf('-- C.'));
+    const fallback = sqlBlocks[1];
+    const queryD = sqlBlocks[2];
+
+    it('D (legacy usr_ access rows) is real SQL that finds a live usr_ row and ignores revoked and bare-UUID rows', async () => {
+      const x = orgWorld();
+      const id = await insertList(x.typeId, 'rb-access', {}, 5);
+      const usr = (n: string) => fromUuid('user', `0195a8f2-aaaa-7a11-8b2d-3f4e5a6b7c${n}`);
+      await w.db('selection_list_access').insert([
+        { list_id: id, user_id: usr('01'), role: 'list-viewer', granted_by: 'x', org_id: x.uuid },
+        { list_id: id, user_id: toUuid(usr('02') as never), role: 'list-viewer', granted_by: 'x', org_id: x.uuid },
+        { list_id: id, user_id: usr('03'), role: 'list-viewer', granted_by: 'x', org_id: x.uuid, revoked_at: new Date() },
+      ]);
+      const found = (await w.db.raw(queryD)).rows.filter((r: any) => r.list_id === id);
+      expect(found.map((r: any) => r.user_id)).toEqual([usr('01')]);
+    });
+
+    it('A finds the duplicate, the fallback UPDATE reconciles it (winner kept, loser renamed + archived, ids kept), A is then empty', async () => {
+      const x = orgWorld();
+      await w.db('selection_list_ref_index').insert({ entity_type: 'organization', entity_id: x.uuid, status: 'active', wire_id: x.typeId, org_type: 'organization', is_active: true });
+      const loser = await insertList(x.uuid, 'rb-dup', {}, 5);
+      const winner = await insertList(x.typeId, 'rb-dup', {}, 50); // older, both active: wins
+      const found = (await w.db.raw(queryA)).rows.filter((r: any) => r.org_uuid === x.uuid);
+      expect(found).toHaveLength(1);
+      expect(found[0].ids_winner_first).toEqual([winner, loser]);
+      expect(Number(found[0].rows)).toBe(2);
+      // B and C run (no forks here; C lists orgs the projection does not know: only OTHER tests' orgs, never this one)
+      await w.db.raw(queryB);
+      expect((await w.db.raw(queryC)).rows.map((r: any) => r.organization_id)).not.toContain(x.typeId);
+      // the fallback reconciliation, with this loser's id filled in
+      const stmt = fallback.replace("IN ('<loser id>', '<loser id>')", `IN ('${loser}')`);
+      await w.db.raw(stmt);
+      expect((await w.db.raw(queryA)).rows.filter((r: any) => r.org_uuid === x.uuid)).toHaveLength(0);
+      expect(await w.db('selection_lists').where({ id: winner }).first()).toMatchObject({ key: 'rb-dup', status: 'active' });
+      const l = await w.db('selection_lists').where({ id: loser }).first();
+      expect(l.status).toBe('archived');
+      expect(l.key).toMatch(/^rb-dup--dup-/);
+    });
+  });
+});

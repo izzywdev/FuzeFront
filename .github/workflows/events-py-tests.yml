@@ -1,0 +1,51 @@
+name: events-py tests
+
+# Runs the fuzefront-events suite on SQLite AND real Postgres (the SKIP LOCKED
+# relay-concurrency test only exercises its guarantee on Postgres, so it is
+# skipped everywhere else). Required to be green before events-py-publish.yml's
+# tag is meaningful, and on every PR touching the package or its contract.
+
+on:
+  pull_request:
+    paths:
+      - 'packages/events-py/**'
+      - 'packages/identity-py/**'
+      - 'contracts/events/**'
+      - 'packages/conformance-vectors/events/**'
+      - '.github/workflows/events-py-tests.yml'
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: events_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      FUZEFRONT_EVENTS_TEST_PG_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/events_test
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with: { python-version: '3.12' }
+
+      - name: Install
+        run: |
+          pip install -q -e packages/identity-py
+          pip install -q -e 'packages/events-py[dev]'
+
+      - name: Tests (SQLite + Postgres)
+        working-directory: packages/events-py
+        run: pytest -q -rs

@@ -203,8 +203,14 @@ export function Badge(props: BadgeProps): React.JSX.Element;
  * open-in-new-tab, keyboard link semantics) instead of a `<button>`.
  */
 type ButtonSharedProps = {
-  /** Visual style. `primary` = accent fill with the fuse glow; `danger` = error fill. */
-  variant?: "primary" | "secondary" | "ghost" | "danger";
+  /**
+   * Visual style. `primary` = accent fill; `secondary` = neutral raised +
+   * border; `outline` = accent border/text on a light surface; `ghost` =
+   * text-only; `ghost-inverse` = ghost for a dark/brand surface not driven
+   * by `data-theme` (white outline/text, filled-white on hover, legible in
+   * any theme); `danger` = error fill.
+   */
+  variant?: "primary" | "secondary" | "outline" | "ghost" | "ghost-inverse" | "danger";
   size?: "sm" | "md" | "lg";
   /** Append a trailing arrow glyph (used on "Launch app", "Continue"). */
   withArrow?: boolean;
@@ -325,7 +331,7 @@ export function IconTile(props: IconTileProps): React.JSX.Element;
  */
 export interface TextProps extends React.HTMLAttributes<HTMLElement> {
   /** Rendered element. @default "p" */
-  as?: "p" | "span" | "div" | "label";
+  as?: "p" | "span" | "div" | "label" | "h3" | "h4";
   /**
    * Semantic tone: `primary` = default reading text, `secondary` =
    * de-emphasized supporting copy, `muted` = lowest-emphasis placeholder /
@@ -342,10 +348,26 @@ export interface TextProps extends React.HTMLAttributes<HTMLElement> {
   /**
    * Step of the DS spacing scale applied as `margin-block-end` (a logical
    * property, so it mirrors under RTL). `none` (default) keeps the original
-   * zero-margin behavior.
+   * zero-margin behavior. `lg`/`xl` cover the wider `mb-6`/`mb-8` gap used
+   * under a centered CTA/section heading.
    * @default "none"
    */
-  spacing?: "none" | "sm" | "md";
+  spacing?: "none" | "sm" | "md" | "lg" | "xl";
+  /**
+   * Step of the DS line-height scale. `inherit` (default) reads the
+   * surrounding layout's line-height, unchanged from before `leading`
+   * existed. `relaxed` covers the recurring card/feature-description
+   * paragraph pattern (pairs with `tone="secondary"` `size="sm"`).
+   * @default "inherit"
+   */
+  leading?: "inherit" | "tight" | "snug" | "normal" | "relaxed";
+  /**
+   * Step of the DS font-weight scale. `inherit` (default) applies no inline
+   * override, unchanged from before `weight` existed (the surrounding
+   * stylesheet's weight, e.g. Tailwind preflight's heading reset, applies).
+   * @default "inherit"
+   */
+  weight?: "inherit" | "regular" | "medium" | "semibold" | "bold";
   children?: React.ReactNode;
 }
 
@@ -476,6 +498,8 @@ export declare function StatGroup(props: StatGroupProps): JSX.Element;
 export interface AlertProps {
   tone?: "error" | "warning" | "success" | "info";
   title?: string;
+  /** Decorative glyph on the logical start edge; inherits the tone colour. */
+  icon?: ReactNode;
   children?: ReactNode;
   onDismiss?: () => void;
   role?: string;
@@ -512,6 +536,11 @@ export interface ProgressMeterProps extends React.HTMLAttributes<HTMLDivElement>
   label?: React.ReactNode;
   valueLabel?: React.ReactNode;
   tone?: ProgressMeterTone;
+  /**
+   * ARIA role of the track. `progressbar` (default) for task progress; `meter`
+   * for a scalar gauge within a known range (quota used / limit).
+   */
+  role?: "progressbar" | "meter";
 }
 
 export function ProgressMeter(props: ProgressMeterProps): React.JSX.Element;
@@ -627,6 +656,28 @@ export interface StepperProps extends React.HTMLAttributes<HTMLOListElement> {
  */
 export function Stepper(props: StepperProps): React.JSX.Element;
 
+// ----- StrengthMeter (feedback) -----
+export type StrengthLevel = "empty" | "weak" | "fair" | "good" | "strong";
+
+/**
+ * Segmented strength meter — bars lit to a level, tone-tinted, with a caption
+ * row and an optional child slot (a requirements checklist).
+ */
+export interface StrengthMeterProps extends Omit<React.HTMLAttributes<HTMLDivElement>, "children"> {
+  /** Level to render; `empty` lights no bars. Default `empty`. */
+  strength?: StrengthLevel;
+  /** Caption on the logical start of the caption row (e.g. "Password strength"). */
+  label?: React.ReactNode;
+  /** The level word on the logical end, tinted with the tone (e.g. "Strong"). */
+  valueLabel?: React.ReactNode;
+  /** Number of bars (default 4). */
+  bars?: number;
+  /** Rendered below the bars + caption (e.g. a `PasswordChecklist`). */
+  children?: React.ReactNode;
+}
+
+export function StrengthMeter(props: StrengthMeterProps): React.JSX.Element;
+
 // ----- Toast (feedback) -----
 /**
  * A single toast notification — bg-tertiary card with a level-colored left bar.
@@ -725,6 +776,29 @@ export interface FileDropZoneProps extends React.HTMLAttributes<HTMLDivElement> 
 
 export function FileDropZone(props: FileDropZoneProps): React.JSX.Element;
 
+// ----- InlineValidatedInput (forms) -----
+export type InlineValidatedInputState = "idle" | "checking" | "valid" | "invalid";
+
+/**
+ * Text field with a live validation state — END-edge check adornment, success /
+ * error ring, a label row that carries an inline status `accessory`, and
+ * optional help / error lines. Composes `Input` + `FieldLabel`.
+ */
+export interface InlineValidatedInputProps
+  extends Omit<InputProps, "label" | "valid" | "invalid" | "adornment"> {
+  label?: React.ReactNode;
+  /** Inline status shown on the logical end of the label row (announced politely). */
+  accessory?: React.ReactNode;
+  /** Validation state; drives the ring, the adornment and `aria-busy`. Default `idle`. */
+  state?: InlineValidatedInputState;
+  /** Help line below the field; wired to the input via `aria-describedby`. */
+  help?: React.ReactNode;
+  /** Appends a required marker to the label. */
+  required?: boolean;
+}
+
+export function InlineValidatedInput(props: InlineValidatedInputProps): React.JSX.Element;
+
 // ----- Input (forms) -----
 /**
  * Labeled text field — accepts all native input attributes. Focus lights the
@@ -745,6 +819,19 @@ export interface InputProps
    * Defaults to `true`; set `false` to opt out. No effect on non-password inputs.
    */
   revealToggle?: boolean;
+  /** Accessible name of the reveal toggle while the value is hidden (localizable). Default "Show password". */
+  showPasswordLabel?: string;
+  /** Accessible name of the reveal toggle while the value is shown (localizable). Default "Hide password". */
+  hidePasswordLabel?: string;
+  /**
+   * Decorative node pinned to the logical END edge of the field (mirrors under
+   * RTL). Ignored on a revealable password field, which owns that slot.
+   */
+  adornment?: React.ReactNode;
+  /** Success ring (e.g. an availability check passed). */
+  valid?: boolean;
+  /** Error ring + `aria-invalid` without a message — the explanation is rendered elsewhere. */
+  invalid?: boolean;
 }
 
 export function Input(props: InputProps): React.JSX.Element;
@@ -780,6 +867,14 @@ export interface PasswordChecklistProps
   rules?: PasswordRule[];
   /** Heading shown above the list; pass "" to hide. */
   title?: string;
+  /** Lay the rules out in this many grid columns (default 1). */
+  columns?: number;
+  /** Tint still-unmet rules with the error colour (e.g. after a rejected submit). Default false. */
+  highlightUnmet?: boolean;
+  /** Visually-hidden suffix announced for a met rule (default " — met"). Localize it. */
+  metLabel?: string;
+  /** Visually-hidden suffix announced for an unmet rule (default " — not met"). Localize it. */
+  unmetLabel?: string;
 }
 
 export function PasswordChecklist(props: PasswordChecklistProps): React.JSX.Element;
@@ -792,6 +887,55 @@ export namespace PasswordChecklist {
   /** The default policy rules ({@link DEFAULT_PASSWORD_RULES}). */
   const rules: PasswordRule[];
 }
+
+// ----- RadioCardGroup (forms) -----
+export type RadioCardValue = string | number;
+
+export interface RadioCardOption extends Omit<React.HTMLAttributes<HTMLDivElement>, "children" | "title"> {
+  /** Unique, stable value of the option. */
+  value: RadioCardValue;
+  /** Card title — the option's accessible name. May contain inline badges/pills. */
+  label: React.ReactNode;
+  /** Supporting sentence shown under the title; exposed as the accessible description. */
+  description?: React.ReactNode;
+  /** Not selectable, skipped by arrow-key navigation, dimmed. */
+  disabled?: boolean;
+  /**
+   * The option has been chosen but not yet applied (e.g. awaiting a confirm
+   * step). Rendered with a dashed accent border; it is NOT `aria-checked`.
+   */
+  pending?: boolean;
+  /** Extra attributes (data-*, aria-describedby…) are forwarded to the card element. */
+  [dataAttribute: `data-${string}`]: string | number | boolean | undefined;
+}
+
+export interface RadioCardGroupProps
+  extends Omit<React.HTMLAttributes<HTMLDivElement>, "onChange" | "defaultValue" | "children"> {
+  options: RadioCardOption[];
+  /** Controlled selected value. */
+  value?: RadioCardValue;
+  /** Initial value when uncontrolled. */
+  defaultValue?: RadioCardValue;
+  /** Called with the new value on click, Space, or arrow-key navigation. Not called when re-selecting the current value. */
+  onChange?: (value: RadioCardValue) => void;
+  /** Disables every card (e.g. while a mutation is in flight). */
+  disabled?: boolean;
+  /** When set, a hidden input carries the selected value for native form posts. */
+  name?: string;
+  /** Accessible name for the group — provide this or `ariaLabelledBy`. */
+  ariaLabel?: string;
+  /** Id of the element that labels the group. */
+  ariaLabelledBy?: string;
+  /** Native ref to the `role="radiogroup"` element. */
+  ref?: React.Ref<HTMLDivElement>;
+}
+
+/**
+ * A radio group rendered as selectable cards with a title and a per-card
+ * description. WAI-ARIA radiogroup semantics, roving focus, arrow keys that
+ * skip disabled cards and flip under `dir="rtl"`, 44px touch targets.
+ */
+export function RadioCardGroup(props: RadioCardGroupProps): React.JSX.Element;
 
 // ----- SearchField (forms) -----
 /**
@@ -811,6 +955,47 @@ export interface SearchFieldProps
 }
 
 export function SearchField(props: SearchFieldProps): React.JSX.Element;
+
+// ----- SegmentedControl (forms) -----
+export type SegmentValue = string | number;
+
+export interface SegmentedControlOption
+  extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "value" | "children" | "type"> {
+  /** Unique, stable value of the segment. */
+  value: SegmentValue;
+  /** Segment content (usually a short text label). */
+  label: React.ReactNode;
+  /** Not selectable; rendered as a disabled native button. */
+  disabled?: boolean;
+  /** Extra attributes (data-*, aria-*…) are forwarded to the segment's button. */
+  [dataAttribute: `data-${string}`]: string | number | boolean | undefined;
+}
+
+export interface SegmentedControlProps
+  extends Omit<React.HTMLAttributes<HTMLDivElement>, "onChange" | "defaultValue" | "children"> {
+  options: SegmentedControlOption[];
+  /** Controlled pressed value. */
+  value?: SegmentValue;
+  /** Initial value when uncontrolled. */
+  defaultValue?: SegmentValue;
+  /** Called with the new value. Not called when the pressed segment is pressed again. */
+  onChange?: (value: SegmentValue) => void;
+  /** Disables every segment. */
+  disabled?: boolean;
+  /** Accessible name for the group — provide this or `ariaLabelledBy`. */
+  ariaLabel?: string;
+  /** Id of the element that labels the group. */
+  ariaLabelledBy?: string;
+  /** Native ref to the `role="group"` element. */
+  ref?: React.Ref<HTMLDivElement>;
+}
+
+/**
+ * A compact single-select button group (`aria-pressed` buttons in a
+ * `role="group"`). Keyboard accessible, RTL-safe, 44px tap targets on touch
+ * devices and below the xs breakpoint.
+ */
+export function SegmentedControl(props: SegmentedControlProps): React.JSX.Element;
 
 // ----- Select (forms) -----
 /** A single choice in a {@link SelectProps.options} list. */
@@ -879,6 +1064,36 @@ export interface ToggleProps {
 }
 
 export declare function Toggle(props: ToggleProps): JSX.Element;
+
+// ----- TurnstileContainer (forms) -----
+export type TurnstileContainerState = "loading" | "ready" | "verified" | "failed";
+
+export interface TurnstileContainerLabels {
+  loading: string;
+  ready: string;
+  verified: string;
+  failed: string;
+  /** Shown as an alert in the `failed` state. */
+  error: string;
+  /** The challenge vendor's name (approved exception to the vendor-name rule). */
+  brand: string;
+}
+
+/**
+ * Shell for a managed anti-abuse challenge widget: the chrome + the
+ * loading / ready / verified / failed states. The widget itself is `children`
+ * and stays mounted in every state.
+ */
+export interface TurnstileContainerProps extends Omit<React.HTMLAttributes<HTMLDivElement>, "children"> {
+  /** Default `loading`. Exposed as `data-state`. */
+  state?: TurnstileContainerState;
+  /** Localizable copy; any omitted key falls back to the English default. */
+  labels?: Partial<TurnstileContainerLabels>;
+  /** The vendor widget (mounted in a slot that persists across states). */
+  children?: React.ReactNode;
+}
+
+export function TurnstileContainer(props: TurnstileContainerProps): React.JSX.Element;
 
 // ----- AppCard (launcher) -----
 /**
@@ -1237,7 +1452,8 @@ export function BottomNav(props: BottomNavProps): React.JSX.Element;
  *
  * Use on xs/sm screens (<768px). Prefer Modal on md+.
  */
-export interface BottomSheetProps {
+export interface BottomSheetProps
+  extends Omit<React.HTMLAttributes<HTMLDivElement>, "title" | "children" | "style" | "role"> {
   /** When false the sheet is unmounted entirely. */
   open: boolean;
   /** Called when user taps the backdrop or presses Escape. */
@@ -1248,6 +1464,11 @@ export interface BottomSheetProps {
   children?: React.ReactNode;
   /** Extra inline styles applied to the sheet panel. */
   style?: React.CSSProperties;
+  /**
+   * Any other attribute (`data-*`, `aria-describedby`, `aria-busy`, `aria-label`,
+   * `id`…) is forwarded to the `role="dialog"` element.
+   */
+  [dataAttribute: `data-${string}`]: string | number | boolean | undefined;
 }
 
 export function BottomSheet(props: BottomSheetProps): React.JSX.Element | null;
@@ -1327,7 +1548,8 @@ export declare function Pagination(props: PaginationProps): JSX.Element;
  * Generic accessible modal shell — backdrop, centered dialog card with the
  * fuse-seam top bar, focus trap, Escape close, and backdrop close.
  */
-export interface ModalProps {
+export interface ModalProps
+  extends Omit<React.HTMLAttributes<HTMLDivElement>, "title" | "children" | "style" | "role"> {
   /** When false the modal is unmounted entirely (render null). */
   open: boolean;
   /** Called when the user presses Escape or clicks the backdrop. */
@@ -1343,6 +1565,11 @@ export interface ModalProps {
   size?: "md" | "lg";
   /** Extra inline styles applied to the dialog card. */
   style?: React.CSSProperties;
+  /**
+   * Any other attribute (`data-*`, `aria-describedby`, `aria-busy`, `aria-label`,
+   * `id`…) is forwarded to the `role="dialog"` element.
+   */
+  [dataAttribute: `data-${string}`]: string | number | boolean | undefined;
 }
 
 export function Modal(props: ModalProps): React.JSX.Element | null;

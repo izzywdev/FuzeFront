@@ -145,8 +145,7 @@
               },
               "organizationId": {
                 "type": ["string", "null"],
-                "format": "uuid",
-                "description": "Owning org for org-scoped apps; omit for platform-global."
+                "description": "Owning org as a TypeID (`org_…`) or bare UUID reference; omit (or send null) for platform-global apps."
               }
             }
           }
@@ -673,6 +672,33 @@
                 "description": "Reason for rejection, surfaced to the submitter."
               }
             }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "listPublicationRequests",
+      "description": "[READ-ONLY] List marketplace publication requests — admin review queue (GET /publication-requests). Platform admins/reviewers only (403 otherwise). Returns one row per app whose publication matches the requested status (default `pending`), oldest first (by the status-appropriate instant: submittedAt for pending, rejectedAt for rejected, approvedAt for approved). Each row carries the app's publication state plus minimal display context (name, icon, organizationId, creator). Feature flag: fuzefront.apps.marketplace-publishing (default OFF).",
+      "mutates": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["pending", "approved", "rejected"],
+            "default": "pending",
+            "description": "Which publication requests to list. Defaults to `pending` (the review queue). `none` is not a valid value."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 50
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque pagination cursor from page.nextCursor."
           }
         },
         "additionalProperties": false

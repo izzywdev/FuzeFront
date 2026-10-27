@@ -96,6 +96,19 @@ test('rejects a TWA below Android API 24', () => {
   assert.match(result.stderr, /minSdkVersion must be an integer of at least 24/)
 })
 
+test('supports a nested product using the Vite apps/web public directory', () => {
+  const files = {
+    '.fuze/manifest.json': null,
+    'frontend/public/manifest.webmanifest': null,
+    'frontend/public/.well-known/assetlinks.json': null,
+    'apps/web/public/manifest.webmanifest': {},
+    'apps/web/public/.well-known/assetlinks.json': baseFiles['frontend/public/.well-known/assetlinks.json'],
+  }
+  const result = runGate(files)
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /is consistent/)
+})
+
 test('rejects assetlinks without URL-handling delegation', () => {
   const assetlinks = structuredClone(baseFiles['frontend/public/.well-known/assetlinks.json'])
   assetlinks[0].relation = ['delegate_permission/common.get_login_creds']

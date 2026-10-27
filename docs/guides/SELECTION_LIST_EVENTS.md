@@ -3,10 +3,11 @@
 How another Fuze service (1) seeds selection lists for its app into an organization and
 (2) consumes the selection-list-service's change events.
 
-> **Status — what is real, and what is not live yet.** The service now **emits** every
+> **Status — what is real, and what is not live yet.** The service **emits** every
 > change event (transactional outbox in every mutating route) and **consumes**
-> `identity.org.created`, `selection-lists.seed.requested`, `identity.org.deleted` and
-> `identity.user.deleted`. That is **code on `master`**, not a switched-on feature:
+> `identity.org.created`, `identity.org.updated`, `selection-lists.seed.requested`,
+> `identity.org.deleted` and `identity.user.deleted`. That is **code on `master`**, not a
+> switched-on feature:
 >
 > - **Seeding is not live until the flag is on and your source is allowlisted.** It is gated
 >   by *two* release flags, both **default OFF** and both evaluated per message, per
@@ -17,13 +18,20 @@ How another Fuze service (1) seeds selection lists for its app into an organizat
 >   `seed.failed` / `SEEDING_DISABLED`; nothing is written. On top of that your app must be an
 >   enabled row in `services/selection-list-service/seed-sources.json` — the shipped file lists
 >   **only the internal `platform` source**, so every app request is currently refused with
->   `SOURCE_NOT_ALLOWED`.
-> - The service is **not deployed in production** yet (`selectionListService.enabled: false` in
->   `deploy/helm/fuzefront/values-prod.yaml`), so no topic traffic exists there. Enablement
+>   `SOURCE_NOT_ALLOWED`. (Publishing change events is not behind either flag.)
+> - **The workload is deployed in production** (`selectionListService.enabled: true` in
+>   `deploy/helm/fuzefront/values-prod.yaml`; the flags gate visibility); the live flag state, topic
+>   traffic and broker ACLs are **not verifiable from this repo**. Broker ACLs on the `identity.*`
+>   topics (FuzeInfra#1394) are a hard prerequisite for enabling the service in production — the
+>   service does not authenticate event producers in-process (accepted residual risk). Enablement
 >   order and safety checks: [`docs/runbooks/selection-lists-seeding-operations.md`](../runbooks/selection-lists-seeding-operations.md).
-> - **Not built:** the reconciler/backfill (no code path re-seeds an org whose
->   `identity.org.created` arrived while the flag was OFF) and an `identity.org.updated`
->   consumer. See "What you cannot rely on" below.
+> - **Built but off by default:** the reconciler/backfill (`src/seed/reconciler.ts`) runs only when
+>   `SEED_RECONCILER_ENABLED=true`, which the chart does not set; without it nothing re-seeds an org
+>   whose `identity.org.created` arrived while the flag was OFF. See "What you cannot rely on" below.
+> - **Shared lists / forks (contract 4.1.0, `@fuzefront/shared` 1.3.0):** `list.forked` and
+>   `visibility.changed` are emitted and the snapshot fields are always populated, but only a
+>   service with `fuzefront.selection-lists.shared-lists` ON ever has a fork, an `org` or a `platform`
+>   list to report; see the note under "Topics at a glance".
 >
 > Contract: schemas in `@fuzefront/shared` ≥ 1.1.0
 > (`shared/src/kafka/schemas/selection-lists.*.ts` are the source of truth). Design and
@@ -62,13 +70,17 @@ import {
 Example payloads for every topic:
 `shared/tests/fixtures/selection-lists/published-examples.json` (validated in CI).
 
-> **`@fuzefront/shared` 1.3.0 (HTTP contract 4.1.0) — contract only, not emitted yet.** The two
-> topics marked *(1.3.0)*, the additive snapshot fields `list.visibility` / `list.forkedFrom` /
-> `item.originItemId`, and the seed-list `visibility` field are frozen in the schemas but **the
-> service does not produce or honour them yet** (implementation wave:
-> [`selection-lists-shared-and-fork.md`](../planning/selection-lists-shared-and-fork.md)). Until
-> then a seed list's `visibility` is accepted by the schema and **ignored** (the list is seeded
-> `private`), so do not rely on it before the service release notes say otherwise.
+> **`@fuzefront/shared` 1.3.0 (HTTP contract 4.1.0) — emitted, dark behind the shared-lists flag.**
+> The two topics marked *(1.3.0)* are produced by the service
+> (`emitForkEvents` / `emitVisibilityChanged` in `src/events/emitters.ts`, listed in
+> `src/events/outbox.ts`, created by the chart's `kafkaTopics`). A fork can only be created and a
+> visibility other than `private` can only be set while `fuzefront.selection-lists.shared-lists` is
+> ON, so until then neither topic carries traffic and every snapshot reads `visibility: "private"`,
+> `forkedFrom: null`, `originItemId: null`. The additive snapshot fields `list.visibility` /
+> `list.forkedFrom` / `item.originItemId` are **always populated** by the service (the stored
+> value; events produced before 1.3.0 lack them, which means `private` / not a fork). A seed
+> list's `visibility` is honoured only while the shared-lists flag is ON for the org (otherwise the
+> list is seeded `private`); apps may use `private`/`org`, only a platform pack may use `platform`.
 
 ---
 
@@ -272,7 +284,8 @@ field, including an `id`, is a validation failure):
   someone with authority grants a role on a seeded list, members cannot see it through the HTTP
   API (see [`SELECTION_LIST_SERVICE.md`](SELECTION_LIST_SERVICE.md#seeded-lists-and-who-can-see-them)).
   Your app can still `resolve` item ids and can read the change events.
-  *(1.3.0, not honoured yet — see the status note above)* a seed list may declare
+  *(1.3.0, honoured only while `fuzefront.selection-lists.shared-lists` is ON for the org —
+  otherwise the list is seeded `private` exactly as before)* a seed list may declare
   `visibility: "org"`, which makes it pickable by every member of the org with no grant — the
   intended setting for app reference data. `"platform"` is refused for app requests (only the
   service's own platform pack may create a common list).
@@ -340,7 +353,7 @@ limits/quota `quotaScope`, `limit`, `current`, `requested`):
 | `KEY_CONFLICT` | yes, after the key is freed | a list with that key exists that this pack did not seed (a user list, another pack); rename/archive it, then re-send |
 | `PACK_CONTENT_MISMATCH` | no | same version already applied with different content — bump the version |
 | `ORG_UNKNOWN` | yes, with backoff | the org's `identity.org.created` has not reached the service |
-| `ORG_INACTIVE` | no | the org was deleted, or was inactive when created (the projection is not updated on later deactivation) |
+| `ORG_INACTIVE` | no | the org was deleted, or the projection marks it inactive (it follows `identity.org.updated`) |
 | `VALIDATION_ERROR` | no | fix the payload (the builders prevent this). Best-effort: only emitted if `requestId`, `organizationId`, `scope`, `source`, `pack` and `trigger` are individually valid; the message is also dead-lettered |
 | `INTERNAL_ERROR` | yes, with backoff | a fault persisted through the service's in-process retries (up to 5 attempts per message); re-send |
 
@@ -355,13 +368,18 @@ second case it is operational — see the runbook's monitoring section.
 
 ### What you cannot rely on
 
-- **No backfill.** If an org was created while a flag was OFF, the platform pack is **not**
-  seeded when the flag later turns ON, and nothing re-sends your request either. (The code and
-  flag description mention a "reconciler"; it is **not implemented** — there is no such job in
-  `services/selection-list-service/src`.)
-- **No deactivation tracking.** The service consumes `identity.org.created` and `.deleted` but
-  not `identity.org.updated`, so an org deactivated after creation still looks active to it.
-- **Seeded lists are invisible to ordinary members** — only the org owner gets `list-owner`, and only on platform-seeded lists (SL8); everyone else needs a grant (fix specified in contract 4.1.0: seed-list `visibility: org`).
+- **No backfill by default.** If an org was created while a flag was OFF, the platform pack is
+  **not** seeded when the flag later turns ON, and nothing re-sends your request either, unless the
+  reconciler (`src/seed/reconciler.ts`) is running: it is built but starts only with
+  `SEED_RECONCILER_ENABLED=true`, which the chart does not set.
+- **Deactivation tracking is partial.** The service consumes `identity.org.updated`, so the
+  projection's `is_active` / type / name follow the org, but an `ORG_INACTIVE` refusal reflects the
+  projection at the time of the request and a late or dropped event leaves it stale. Envelopes dated
+  more than `SELECTION_LIST_EVENT_FUTURE_SKEW_SECONDS` (default 300) in the future are ignored.
+- **Seeded lists are invisible to ordinary members unless they declare `visibility: org`** — only the
+  org owner gets `list-owner`, and only on platform-seeded lists (SL8); everyone else needs a grant.
+  Seed-list `visibility: org` (contract 4.1.0) fixes that but is honoured only while the
+  shared-lists flag is ON for the org, and no shipped pack declares it.
 - **User-scoped seeding does not exist.**
 - Other topics' retention/partitions in production depend on how the topics were created (the
   runbook explains why this matters for `seed.requested`).
@@ -420,8 +438,8 @@ Things that catch people out:
 - Seeded content produces the same events as human edits, with the system `actor` above.
 - *(1.3.0)* Snapshots carry `visibility` (`private` / `org` / `platform`) and `forkedFrom`
   (`{ listId, organizationId, listRevision, forkedAt }` or `null`); item snapshots carry
-  `originItemId`. All three are **optional** in the schema: events produced before 1.3.0 lack
-  them, which means `private` / not a fork.
+  `originItemId`. All three are **optional** in the schema (events produced before 1.3.0 lack
+  them, which means `private` / not a fork), but the service always populates them now.
 - *(1.3.0)* A **common (`platform`) list** belongs to the platform organization, so its events
   are keyed by the platform org's id — subscribe without an org filter if you mirror common lists.
 - *(1.3.0)* A **fork** emits, in one transaction, the ordinary `list.created`, `item.created`

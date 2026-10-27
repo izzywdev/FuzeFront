@@ -2,6 +2,7 @@
 // Permit. Runs the original 001-009 migration chain against the existing
 // `knex_migrations` table (002/006 are no-op tombstones; applications-service
 // owns apps DDL). Dual-serves alongside the old monolith until Phase 3 cutover.
+import { resolveTrustProxyHops } from './config/trustProxy'
 import dotenv from 'dotenv'
 import { createServer } from 'http'
 import {
@@ -30,6 +31,7 @@ import { tenantContext } from './middleware/tenant-context'
 import { startOutboxRelayIfConfigured } from './services/outboxRelay'
 import { initFeatureFlags } from './utils/feature-flags'
 import { configureIdentity } from '@izzywdev/fuzefront-identity'
+import type { EntityType } from '@izzywdev/fuzefront-identity'
 import type { OutboxRelayHandle } from '@fuzefront/core'
 import { startRefIndexProjection, stopRefIndexProjection } from './kafka/ref-index.consumer'
 import { KnexRefIndexRepository } from './repositories/ref-index.repository'
@@ -66,8 +68,9 @@ const PORT = process.env.PORT || 3002
 const app = createExpressApp({ serviceName: 'security-service', preMiddleware: [tracingMiddleware()] })
 // Behind the k8s ingress every request otherwise carries the ingress IP —
 // trust the first proxy hop so req.ip (rate limiting, auth logs) reflects
-// the real client from X-Forwarded-For.
-app.set('trust proxy', 1)
+// the real client from X-Forwarded-For. The hop count is explicit config
+// (src/config/trustProxy.ts); client-supplied left-hand XFF entries are ignored.
+app.set('trust proxy', resolveTrustProxyHops())
 const httpServer = createServer(app)
 const startTime = Date.now()
 
@@ -156,11 +159,22 @@ async function startServer() {
   try {
     console.log('🔄 Starting FuzeFront security-service...')
 
-    // Step 5 (FFRNT-185): dual-accept windows closed.
-    // All entity types now use mintId() for creation and store bare UUIDs;
-    // the prefixed-ids flag is ON in prod. No legacy bare-UUID references
-    // need to be accepted at the request boundary.
-    configureIdentity({ legacyUuidTypes: new Set() })
+    // Dual-accept window for the platform spine types (FFRNT-185 / §8).
+    // The input boundary must track the OUTPUT wire form, governed by the
+    // `fuzefront.identity.prefixed-ids` release flag. That flag defaults OFF
+    // and is NOT force-enabled in prod, so API responses still emit BARE UUIDs.
+    // Closing this window to prefixed-only while output is bare rejects every
+    // id the frontend round-trips. parseId still accepts prefixed ids too, so
+    // listing these is purely additive; EMPTY this set only once prefixed-id
+    // OUTPUT is confirmed GA (governance/identifier-standard.md §8).
+    configureIdentity({
+      legacyUuidTypes: new Set<EntityType>([
+        'organization',
+        'user',
+        'app',
+        'portal',
+      ]),
+    })
     // Original chain keeps the original knex_migrations table; dirs resolve to
     // THIS service's compiled output (dist/migrations) in prod, src in dev.
     await initializeDatabase({
