@@ -7,7 +7,7 @@
  */
 import React, { useState, useEffect, useCallback, useRef, useId } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ForkListFlow, useMutationRefusal } from './shared-lists/fork'
+import { ForkListFlow, ForkResultNotice, useMutationRefusal } from './shared-lists/fork'
 import type {
   SelectionList,
   SelectionListItem,
@@ -29,6 +29,11 @@ import {
   unwrapCursor,
   probeReorderPermission,
 } from './api'
+import { useSharedLists } from './shared-lists/core'
+import {
+  SharedListDetail,
+  SharedListIndexPanel,
+} from './shared-lists/browse'
 
 // ── Regex for the key validation: ^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$ ─────────
 const KEY_REGEX = /^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$/
@@ -769,14 +774,18 @@ function SortableItemList({
 }
 
 // ── SelectionListDetail (frames 03, 04, 05) ────────────────────────────────────
-function SelectionListDetail({
+// `headerExtra` is the shared-lists marker row (visibility / fork / your access),
+// passed only while the release flag is ON and the list is editable.
+function LegacyListDetail({
   listId,
   onNavigateToTranslations,
   onNavigateToAccess,
+  headerExtra,
 }: {
   listId: string
   onNavigateToTranslations: () => void
   onNavigateToAccess: () => void
+  headerExtra?: React.ReactNode
 }) {
   const [list, setList] = useState<SelectionList | null>(null)
   const [items, setItems] = useState<SelectionListItem[]>([])
@@ -867,6 +876,7 @@ function SelectionListDetail({
         <h2 style={{ fontSize: 'var(--text-xl)' }}>{list?.name ?? listId}</h2>
         {list?.is_machine && <span data-machine="true" style={s.badge}>M</span>}
         {list?.status === 'archived' && <span data-status="archived" style={{ ...s.badge, background: 'var(--bg-muted)' }}>Archived</span>}
+        {headerExtra}
       </div>
 
       {/* Tab strip */}
@@ -968,7 +978,7 @@ function SelectionListDetail({
 }
 
 // ── SelectionListIndex (frame 01) ─────────────────────────────────────────────
-function SelectionListIndex({
+function LegacySelectionListIndex({
   onSelectList,
   onNewList,
 }: {
@@ -1140,6 +1150,132 @@ function SelectionListIndex({
         newListDisabled={ctaDisabled}
       />
     </div>
+  )
+}
+
+// ── Shared-lists variants (flag `fuzefront.selection-lists.shared-lists` ON) ───
+// The approved 4.0.0 index / detail above are untouched; the orchestrator mounts
+// these instead ONLY while the release flag is ON (behaviour lives in
+// `./shared-lists/browse`).
+const INDEX_PATH = '/settings/selection-lists'
+const listPath = (list: { id: string }) => `${INDEX_PATH}/${list.id}`
+
+function SharedSelectionListIndex({
+  onSelectList,
+  onNewList,
+}: {
+  onSelectList: (list: { id: string }) => void
+  onNewList: () => void
+}) {
+  const [quota, setQuota] = useState<QuotaStatus | null>(null)
+  const [quotaLoading, setQuotaLoading] = useState(true)
+  const [quotaError, setQuotaError] = useState(false)
+
+  useEffect(() => {
+    let live = true
+    getQuota().then(
+      q => {
+        if (!live) return
+        setQuota(q)
+        setQuotaLoading(false)
+      },
+      () => {
+        if (!live) return
+        setQuotaError(true)
+        setQuotaLoading(false)
+      }
+    )
+    return () => {
+      live = false
+    }
+  }, [])
+
+  const atLimit = quota?.scopes.some(sc => sc.current !== null && sc.current >= sc.limit) ?? false
+  // Fail-open: if the quota read failed, never disable the CTA
+  const ctaDisabled = !quotaError && atLimit
+
+  return (
+    <div data-frame="01-list-index" style={s.frame}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)' }}>
+        <h2 style={{ fontSize: 'var(--text-xl)' }}>Selection Lists</h2>
+        <button
+          data-action="new-list"
+          disabled={ctaDisabled}
+          data-quota-state={ctaDisabled ? 'at-limit' : undefined}
+          data-tooltip={ctaDisabled ? 'quota' : undefined}
+          style={{ ...s.btn, opacity: ctaDisabled ? 0.6 : 1 }}
+          onClick={onNewList}
+        >
+          New list
+        </button>
+      </div>
+      <SharedListIndexPanel
+        hrefForList={listPath}
+        onOpenList={onSelectList}
+        onNewList={onNewList}
+        newListDisabled={ctaDisabled}
+      />
+      <QuotaPanel
+        quota={quota}
+        quotaLoading={quotaLoading}
+        quotaError={quotaError}
+        newListDisabled={ctaDisabled}
+      />
+    </div>
+  )
+}
+
+function SelectionListIndex(props: {
+  onSelectList: (list: { id: string }) => void
+  onNewList: () => void
+}) {
+  const { enabled } = useSharedLists()
+  return enabled ? <SharedSelectionListIndex {...props} /> : <LegacySelectionListIndex {...props} />
+}
+
+function SelectionListDetail(props: {
+  listId: string
+  onNavigateToTranslations: () => void
+  onNavigateToAccess: () => void
+}) {
+  const { enabled } = useSharedLists()
+  const navigate = useNavigate()
+  // Bumped to re-read the list after a stale fork answer or a restore.
+  const [revision, setRevision] = useState(0)
+  const reload = useCallback(() => setRevision(n => n + 1), [])
+  if (!enabled) return <LegacyListDetail {...props} />
+  return (
+    <SharedListDetail
+      key={revision}
+      listId={props.listId}
+      renderEditor={({ header, list }) => (
+        <LegacyListDetail
+          {...props}
+          headerExtra={
+            <>
+              {/* Arrival at a fork: "Forked." / "existing version" / "Restore your version". */}
+              <ForkResultNotice list={list} onRestored={reload} />
+              {header}
+            </>
+          }
+        />
+      )}
+      // A common list's read-only detail: the fork flow's "Fork to edit…". The slot is only
+      // invoked once the effective-list lookup said THIS list is the effective one, so the
+      // flow is handed that answer instead of asking again.
+      forkAction={list => (
+        <ForkListFlow
+          list={list}
+          effective={{ status: 'ready', list, source: { kind: 'common' } }}
+          onStale={reload}
+        />
+      )}
+      hrefForList={listPath}
+      onOpenList={list => navigate(listPath(list))}
+      onOpenTranslations={props.onNavigateToTranslations}
+      onBackToIndex={() => navigate(INDEX_PATH)}
+      indexHref={INDEX_PATH}
+    />
   )
 }
 

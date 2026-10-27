@@ -38,6 +38,7 @@ import {
   type SelectionListId,
   type SharedList,
 } from '../core'
+import { useListValues } from '../browse/useListValues'
 import type { ValueCounts } from './copy'
 import { ForkListDialog, type ForkSuccess } from './ForkListDialog'
 import { ForkRequiredBanner } from './ForkRequiredBanner'
@@ -148,7 +149,7 @@ function SourceDialog({
   onBackToLists: () => void
 }) {
   return known && known.id === sourceId ? (
-    <ForkListDialog
+    <CountedSourceDialog
       source={known}
       counts={counts}
       localeCount={localeCount}
@@ -167,6 +168,38 @@ function SourceDialog({
       onBackToLists={onBackToLists}
     />
   )
+}
+
+/**
+ * The dialog for a list the page already holds. The page's loaded values are not
+ * handed to a slot, so unless the caller gave `counts` the values are read once
+ * (active + archived) when the dialog opens, for "5 values (4 active, 1 archived)".
+ * A read that has not finished (or failed, or has more pages) just leaves the
+ * wording on the list's active `item_count` — it never blocks forking.
+ */
+function CountedSourceDialog({
+  source,
+  counts,
+  ...rest
+}: {
+  source: SharedList
+  counts?: ValueCounts
+  localeCount?: number
+  organizationName?: string
+  onForked: (outcome: ForkSuccess) => void
+  onClose: (outcome?: ForkOutcome) => void
+  onBackToLists: () => void
+}) {
+  const values = useListValues(counts ? null : source.id)
+  const loaded: ValueCounts | undefined =
+    counts ??
+    (values.phase === 'ready' && !values.hasMore
+      ? {
+          active: values.rows.filter(row => row.status !== 'archived').length,
+          archived: values.rows.filter(row => row.status === 'archived').length,
+        }
+      : undefined)
+  return <ForkListDialog source={source} counts={loaded} {...rest} />
 }
 
 /**

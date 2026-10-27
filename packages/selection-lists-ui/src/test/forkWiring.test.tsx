@@ -12,11 +12,13 @@ import { SelectionListManagementFlow } from '../SelectionListManagementFlow'
 import { TranslationWorkbenchFlow } from '../TranslationWorkbenchFlow'
 import { SelectionListAccessFlow } from '../SelectionListAccessFlow'
 import { SharedListsFeatureProvider } from '../shared-lists/core'
-import { resetForkSession } from '../shared-lists/fork'
+import { forkNoticeState, resetForkSession } from '../shared-lists/fork'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { render } from '@testing-library/react'
 import * as api from '../api'
 import { apiError, makeGrant, makeItem, makeList, makeLocale, makeQuota, makeTranslation, renderFlow } from './helpers'
 import { routeFetch, stubViewport } from './forkHarness'
-import { COMMON_ID, jsonResponse, makeCommonList } from './sharedListsFixtures'
+import { COMMON_ID, jsonResponse, makeCommonList, makeForkList, page } from './sharedListsFixtures'
 
 vi.mock('../api', async () => {
   const actual = await vi.importActual<typeof import('../api')>('../api')
@@ -58,8 +60,8 @@ beforeEach(() => {
   resetForkSession()
   stubViewport(true)
   routeFetch({
-    [`GET /api/v1/selection-lists/${COMMON_ID}`]: () => jsonResponse(makeCommonList({ name: 'Priority' })),
-    [`GET /api/v1/selection-lists/sl_01`]: () => jsonResponse(makeCommonList({ id: 'sl_01', name: 'Priority' })),
+    [`GET /api/v1/selection-lists/${COMMON_ID}`]: () => jsonResponse(makeCommonList({ name: 'Priority', editable: undefined })),
+    [`GET /api/v1/selection-lists/sl_01`]: () => jsonResponse(makeCommonList({ id: 'sl_01', name: 'Priority', editable: undefined })),
   })
   m.getQuota.mockResolvedValue(makeQuota())
   m.probeReorderPermission.mockResolvedValue(true)
@@ -135,7 +137,7 @@ describe('translation workbench', () => {
   it('403 FORBIDDEN on the org\'s own list keeps the 4.0.0 message', async () => {
     routeFetch({
       [`GET /api/v1/selection-lists/sl_01`]: () =>
-        jsonResponse(makeCommonList({ id: 'sl_01', organization_id: 'org_globex', visibility: 'org' })),
+        jsonResponse(makeCommonList({ id: 'sl_01', organization_id: 'org_globex', visibility: 'org', editable: undefined })),
     })
     m.saveTranslation.mockRejectedValue(apiError(403, 'FORBIDDEN', 'no'))
     open()
@@ -219,7 +221,9 @@ describe('management flow', () => {
     const forkId = 'front_sl_fork'
     m.updateItem.mockRejectedValue(forkRequired())
     routeFetch({
-      [`GET /api/v1/selection-lists/${COMMON_ID}`]: () => jsonResponse(makeCommonList({ name: 'Priority' })),
+      [`GET /api/v1/selection-lists/${COMMON_ID}`]: () => jsonResponse(makeCommonList({ name: 'Priority', editable: undefined })),
+      [`GET /api/v1/selection-lists/${forkId}`]: () =>
+        jsonResponse(makeCommonList({ id: forkId, organization_id: 'org_globex', visibility: 'org', editable: true, name: 'Priority' })),
       [`POST /api/v1/selection-lists/${COMMON_ID}/fork`]: () =>
         jsonResponse(makeCommonList({ id: forkId, organization_id: 'org_globex', visibility: 'org', editable: true, name: 'Priority' }), 201),
     })
@@ -235,7 +239,7 @@ describe('management flow', () => {
     await waitFor(() => expect(q('[data-modal="edit-value"]')).toBeNull())
     expect(q('[data-modal]')).toBeNull()
     expect(m.updateItem).toHaveBeenCalledTimes(1)
-    expect(m.getSelectionList).toHaveBeenLastCalledWith(forkId)
+    await waitFor(() => expect(m.getSelectionList).toHaveBeenLastCalledWith(forkId))
   })
 
   it('reorder refused with fork_required: the failed order is restored and the banner sits by the list', async () => {
@@ -262,6 +266,81 @@ describe('management flow', () => {
   })
 })
 
+// ── the common list's read-only detail: the fork slot ────────────────────────
+describe('read-only common detail (forkAction slot) and arrival at the fork', () => {
+  const DETAIL = '/settings/selection-lists/:listId'
+  const common = () => makeCommonList({ name: 'Priority' }) // editable: false
+  const wire = () =>
+    routeFetch({
+      [`GET /api/v1/selection-lists/${COMMON_ID}`]: () => jsonResponse(common()),
+      // the effective-list lookup by key
+      ['GET /api/v1/selection-lists']: () => jsonResponse(page([common()])),
+    })
+  beforeEach(() => {
+    m.listItems.mockImplementation((async (_id: string, opts?: { status?: string }) => ({
+      data:
+        opts?.status === 'archived'
+          ? [makeItem({ id: 'sli_9', code: 'OLD', status: 'archived' })]
+          : [makeItem({ id: 'sli_1', code: 'AT' }), makeItem({ id: 'sli_2', code: 'BE' })],
+    })) as never)
+  })
+  const open = (flag = true) =>
+    renderFlow(on(<SelectionListManagementFlow />, flag), `/settings/selection-lists/${COMMON_ID}`, [DETAIL])
+
+  it('flag ON: the read-only detail offers "Fork to edit…", and the dialog counts the values', async () => {
+    wire()
+    open()
+    const cta = await screen.findByRole('button', { name: 'Fork to edit…' })
+    expect(cta).toHaveAttribute('data-action', 'fork-to-edit')
+    await userEvent.click(cta)
+    await waitFor(() =>
+      expect(q('[data-dialog="fork"] [data-fork-copied]')).toHaveTextContent('3 values (2 active, 1 archived)')
+    )
+  })
+
+  it('flag OFF: no fork action anywhere (the 4.0.0 detail)', async () => {
+    wire()
+    open(false)
+    await screen.findByRole('heading', { name: 'Countries' })
+    expect(q('[data-action="fork-to-edit"]')).toBeNull()
+    expect(q('[data-dialog="fork"]')).toBeNull()
+  })
+
+  it('arrival at the fork shows the "Forked." notice above the editor; dismissing clears it', async () => {
+    routeFetch({
+      [`GET /api/v1/selection-lists/front_sl_fork`]: () =>
+        jsonResponse(makeForkList({ id: 'front_sl_fork', name: 'Priority', editable: true })),
+    })
+    function Where() {
+      const l = useLocation()
+      return <output data-testid="has-state">{String(l.state !== null)}</output>
+    }
+    render(
+      <MemoryRouter
+        initialEntries={[{ pathname: '/settings/selection-lists/front_sl_fork', state: forkNoticeState({ kind: 'created' }) }]}
+      >
+        {on(
+          <>
+            <Where />
+            <Routes>
+              <Route path={DETAIL} element={<SelectionListManagementFlow />} />
+            </Routes>
+          </>
+        )}
+      </MemoryRouter>
+    )
+    const toast = await waitFor(() => {
+      const el = q('[data-toast="forked"][data-result="created"]')
+      expect(el).not.toBeNull()
+      return el as HTMLElement
+    })
+    expect(toast).toHaveTextContent('Forked.')
+    await userEvent.click(within(toast).getByRole('button'))
+    expect(q('[data-toast]')).toBeNull()
+    expect(screen.getByTestId('has-state')).toHaveTextContent('false')
+  })
+})
+
 // ── access ────────────────────────────────────────────────────────────────────
 describe('access flow', () => {
   const ROUTE = '/settings/selection-lists/:listId/access'
@@ -278,7 +357,7 @@ describe('access flow', () => {
   it('a 403 on the org\'s own list, any other failure, and flag OFF keep the 4.0.0 error', async () => {
     routeFetch({
       [`GET /api/v1/selection-lists/sl_01`]: () =>
-        jsonResponse(makeCommonList({ id: 'sl_01', organization_id: 'org_globex', visibility: 'org' })),
+        jsonResponse(makeCommonList({ id: 'sl_01', organization_id: 'org_globex', visibility: 'org', editable: undefined })),
     })
     m.getAccessGrants.mockRejectedValue(apiError(403, 'FORBIDDEN', 'no'))
     const a = open()
