@@ -64,21 +64,30 @@ export function makeItem(over: Partial<SelectionListItem> = {}): SelectionListIt
   }
 }
 
+/** The contract envelope (`SelectionListQuotaStatus`): `quotas[]` with `applies_to`. */
 export function makeQuota(
   over: Partial<Record<'org_lists' | 'user_lists' | 'list_items' | 'list_locales', [number | null, number]>> = {},
 ): QuotaStatus {
-  const base: Record<string, [number | null, number]> = {
+  const base: Record<QuotaStatus['quotas'][number]['scope'], [number | null, number]> = {
     org_lists: [2, 50],
     user_lists: [1, 10],
     list_items: [null, 500],
     list_locales: [null, 11],
     ...over,
   }
+  const appliesTo: Record<QuotaStatus['quotas'][number]['scope'], QuotaStatus['quotas'][number]['applies_to']> = {
+    org_lists: 'organization',
+    user_lists: 'user',
+    list_items: 'list',
+    list_locales: 'list',
+  }
   return {
-    scopes: Object.entries(base).map(([scope, [current, limit]]) => ({
-      scope: scope as QuotaStatus['scopes'][number]['scope'],
-      current,
-      limit,
+    organization_id: 'org_01h455vb4pex5vsknk084sn02q',
+    quotas: (Object.keys(base) as Array<keyof typeof base>).map(scope => ({
+      scope,
+      applies_to: appliesTo[scope],
+      current: base[scope][0],
+      limit: base[scope][1],
     })),
   }
 }

@@ -42,6 +42,9 @@ function parsePayload(raw: unknown): unknown {
 /**
  * Drain one batch of pending outbox rows.
  *
+ * @deprecated v1 relay (global `created_at` order). Use `createOutboxRelay` from
+ * `@izzywdev/fuzefront-events` (per-aggregate `aggregate_version` order, DLQ, graceful stop).
+ *
  * On Postgres the claim uses `FOR UPDATE SKIP LOCKED`, so multiple relay
  * replicas never publish the same row. Publishing happens inside the claiming
  * transaction: a publish failure increments `attempts` and leaves the row
@@ -111,6 +114,8 @@ export interface OutboxRelayHandle {
 }
 
 /**
+ * @deprecated Use `createOutboxRelay(...).start()` from `@izzywdev/fuzefront-events`.
+ *
  * Start a background relay that calls `drainOutboxOnce` on an interval. The poll
  * interval is the base retry delay; a Kafka outage simply means rows accumulate
  * as 'pending' and drain once publishing recovers. Returns a handle to stop it

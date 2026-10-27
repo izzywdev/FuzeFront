@@ -50,7 +50,14 @@
         "route": "/",
         "approved": true,
         "approvedBy": "izzywdev",
-        "approvedAt": "2026-09-24T09:05:03.758Z"
+        "approvedAt": "2026-09-24T09:05:03.758Z",
+        "implementation": {
+          "paths": [
+            "frontend/src/components/UserMenu.tsx",
+            "frontend/src/components/WorkspaceProvisioningGate.tsx",
+            "frontend/src/lib/orgMembership.ts"
+          ]
+        }
       },
       {
         "id": "my-orgs",
@@ -171,5 +178,5 @@
       ]
     }
   ],
-  "stamp": "369316f584f9d7302adac5def681f22c434f2b965720a8a20fa00dfbf349f86d"
+  "stamp": "40501e3080371b7358e099fc26f170980801416215f030fb37121b26b222096e"
 }

@@ -33,16 +33,16 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
+        uses: github/codeql-action/init@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         with:
           languages: ${{ matrix.language }}
           config-file: ./.github/codeql/codeql-config.yml
 
       - name: Autobuild
-        uses: github/codeql-action/autobuild@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
+        uses: github/codeql-action/autobuild@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
+        uses: github/codeql-action/analyze@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         with:
           category: '/language:${{matrix.language}}'
 
@@ -138,7 +138,21 @@ jobs:
           # (no copyleft); the package is a server-side Kafka producer, never
           # conveyed to end-users. Exempted by name for the same reason Zlib/ISC
           # would belong on the allow-list if they were valid SPDX entries here.
-          allow-dependencies-licenses: "pkg:githubactions/trufflesecurity/trufflehog, pkg:pypi/confluent-kafka"
+          #
+          # typing-extensions (pkg:pypi/typing-extensions) is the CPython typing
+          # backport, licensed PSF (Python-2.0). GitHub's dependency-review
+          # action emits a compound SPDX expression
+          # "Python-2.0 AND GPL-1.0-or-later AND Python-2.0 AND BSD-3-Clause ..."
+          # because it aggregates license signals from multiple CPython-bundled
+          # artifacts that appear in the PyPI SPDX metadata. The actual
+          # typing-extensions distribution is Python-2.0 (PSF) only — a
+          # permissive license with no copyleft. GPL-1.0-or-later must NOT be
+          # added to allow-licenses (that would permit copyleft in the product's
+          # own npm graph); instead we exempt this package by name, the same
+          # pattern applied to confluent-kafka. Surfaced by
+          # build/a2a/requirements.txt which pins typing-extensions as a
+          # transitive dep of pydantic/jsonschema (PR #1710).
+          allow-dependencies-licenses: "pkg:githubactions/trufflesecurity/trufflehog, pkg:pypi/confluent-kafka, pkg:pypi/typing-extensions"
           # GHSA-qwcr-r2fm-qrc7 (body-parser@1.20.2 DoS via URL-encoding, high
           # severity): transitive via express@4.19.2, same version already on
           # master (see .trivyignore) and unrelated to this PR's devportal
@@ -353,10 +367,38 @@ jobs:
         # CycloneDX abort on an invalid `npm ls` tree.
         run: npm ci
 
+      - name: Verify the production dependency tree resolves
+        # This is the half of `npm ls` that is worth failing on. The *production*
+        # tree must resolve cleanly; `--omit=dev` exits 0 today, so a regression
+        # here is a real supply-chain defect and still fails this job loudly.
+        #
+        # The dev tree does NOT resolve cleanly, and that is why the step below
+        # needs --ignore-npm-errors. `npm ci` installs the lockfile exactly and
+        # exits 0, but `npm ls --all` then exits 1 (ELSPROBLEMS) on six dev-only
+        # packages that npm deduped to root copies too old for the dependent:
+        #   selection-list-client's vitest 3.x <- pathe@1.1.2 (needs ^2.0.3),
+        #   tinyrainbow@1.2.0 (^2.0.0), tinyglobby@0.2.12 (^0.2.14),
+        #   @types/chai@4.3.20 (^5.2.2), plus @types/express 4-vs-5 in
+        #   packages/metered-usage.
+        # Root cause is vitest 1.x/2.x/3.x drift across the workspaces; fixing
+        # it means aligning vitest majors repo-wide, which changes test-runner
+        # behaviour and is tracked separately. `npm install --package-lock-only`
+        # does NOT fix it — it deletes the services/*/@types/express@4.17.21
+        # pins those services require exactly, making the tree worse.
+        run: npm ls --all --omit=dev > /dev/null
+
       - name: Generate SBOM
+        # Pinned: an unpinned SBOM generator makes the SBOM unreproducible and
+        # silently changes the inventory when upstream releases.
+        #
+        # --ignore-npm-errors is required because CycloneDX treats ANY non-zero
+        # `npm ls` as fatal and exits 254 (this job's failure on every push to
+        # master). It keeps the inventory COMPLETE (1764 components); the
+        # alternative, --omit dev, turns the job green by dropping 1200 of those
+        # components out of a security artifact, which is strictly worse.
         run: |
-          npx @cyclonedx/cyclonedx-npm --output-file frontfuse-sbom.json
-          npx @cyclonedx/cyclonedx-npm --output-format xml --output-file frontfuse-sbom.xml
+          npx -y @cyclonedx/cyclonedx-npm@6.0.1 --ignore-npm-errors --output-file frontfuse-sbom.json
+          npx -y @cyclonedx/cyclonedx-npm@6.0.1 --ignore-npm-errors --output-format xml --output-file frontfuse-sbom.xml
 
       - name: Upload SBOM artifacts
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
