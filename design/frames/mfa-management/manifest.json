@@ -72,17 +72,17 @@
         "id": "sms-enroll",
         "orchestrator": "SmsEnrollFlow",
         "route": "/account/security/mfa/add/phone",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-27T00:31:28.835Z"
       },
       {
         "id": "recovery-codes",
         "orchestrator": "RecoveryCodesFlow",
         "route": "/account/security/mfa/recovery-codes",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null,
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-27T00:33:10.004Z",
         "responsive": {
           "mobileFrame": "04-recovery-codes",
           "coveredViewports": [
@@ -95,9 +95,9 @@
         "id": "mfa-step-up",
         "orchestrator": "MfaStepUpFlow",
         "route": "/login/mfa",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null,
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-27T00:33:38.158Z",
         "responsive": {
           "coveredViewports": [
             "desktop",

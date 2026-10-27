@@ -55,9 +55,9 @@
         "id": "mfa-stepup-mobile",
         "orchestrator": "MfaStepUpMobileFlow",
         "route": "/login/mfa",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null,
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-27T00:33:57.716Z",
         "implementation": {
           "paths": [
             "packages/account-security-ui/src/components/mfa/**"
