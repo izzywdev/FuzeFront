@@ -55,9 +55,10 @@ export function useEffectiveList(
   key: string | null | undefined,
   options: UseEffectiveListOptions = {}
 ): UseEffectiveListResult {
-  const { enabled: sharedLists } = useSharedLists()
+  const { enabled: sharedLists, ready } = useSharedLists()
   const { locale, skip = false } = options
-  const active = typeof key === 'string' && key !== '' && !skip
+  // Not ready ⇒ the flag has not settled: which lookup (4.0.0 / effective) is not known yet.
+  const active = ready && typeof key === 'string' && key !== '' && !skip
 
   const { settled, reload } = useResource(
     active ? `${sharedLists ? 'shared' : 'own'}|${locale ?? ''}|${key}` : null,

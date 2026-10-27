@@ -103,7 +103,9 @@ async function main() {
     brokers: config.kafka.brokers,
   });
   const producer = new TypedProducer(kafka);
-  await producer.connect();
+  // Producer.connect() is deferred to startKafka() below, after the HTTP health
+  // port binds, so a broker that is unreachable at boot degrades the service
+  // instead of blocking startup and CrashLoopBackOff-ing it on the /health probe.
   const emitter = new KafkaBillingEmitter(producer);
 
   // --- Services ---
@@ -127,10 +129,6 @@ async function main() {
     : undefined;
 
   const consumer = new TypedConsumer(kafka, config.kafka.groupId);
-  // The usage consumer runs in the background; failures dead-letter via producer.
-  startUsageConsumer(consumer, metering, producer).catch((err) =>
-    console.error('[billing-service] usage consumer failed to start:', err),
-  );
 
   // --- L1 referential integrity (FFRNT-184) ---
   // Its OWN consumer group: this consumer replays from the beginning when the
@@ -138,33 +136,16 @@ async function main() {
   // replay billing.usage.recorded too — re-metering usage that was already
   // billed. Separate groups keep a projection rebuild from touching money.
   const refIndexConsumer = new TypedConsumer(kafka, `${config.kafka.groupId}-ref-index`);
-  startRefIndexConsumer(refIndexConsumer, refIndex, producer).catch((err) =>
-    console.error('[billing-service] ref-index consumer failed to start:', err),
-  );
 
   // --- identity.org.deleted -> cancel the org's Stripe subscription ---
   // Its OWN consumer group: TypedConsumer.run binds a single schema per loop,
   // and this reaction must not share offsets with the usage/ref-index consumers.
   const orgDeletedConsumer = new TypedConsumer(kafka, `${config.kafka.groupId}-org-deleted`);
-  startOrgDeletedConsumer(
-    orgDeletedConsumer,
-    { customers: customerRepo, subscriptions: subscriptionRepo, subscriptionService },
-    producer,
-  ).catch((err) =>
-    console.error('[billing-service] org-deleted consumer failed to start:', err),
-  );
 
   // --- identity.user.deleted -> cancel any user-scoped Stripe subscription ---
   // Its OWN consumer group: keeps offsets independent of org-deleted / ref-index
   // so a user.deleted replay cannot re-trigger org-deleted logic.
   const userDeletedConsumer = new TypedConsumer(kafka, `${config.kafka.groupId}-user-deleted`);
-  startUserDeletedConsumer(
-    userDeletedConsumer,
-    { customers: customerRepo, subscriptions: subscriptionRepo, subscriptionService },
-    producer,
-  ).catch((err) =>
-    console.error('[billing-service] user-deleted consumer failed to start:', err),
-  );
 
   // --- Metering flush loop ---
   const flushTimer = setInterval(() => {
@@ -211,6 +192,48 @@ async function main() {
   };
   const app = createApp(deps);
   const server = startHttp(app, config.port);
+
+  // --- Kafka (background; producer connect retried) ---
+  // Connect the producer AFTER the health port is up, retrying so a broker that
+  // is unreachable at boot degrades the service (requests that publish fail, but
+  // /health stays green) instead of CrashLoopBackOff-ing the pod. The consumers
+  // are started only once the producer has connected; each still dead-letters
+  // via the producer, so they must not run before it is ready.
+  const startKafka = async (): Promise<void> => {
+    for (;;) {
+      try {
+        await producer.connect();
+        break;
+      } catch (err) {
+        console.error('[billing-service] Kafka producer connect failed; retrying in 5s:', err);
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+      }
+    }
+    console.log('[billing-service] Kafka producer connected');
+
+    // The usage consumer runs in the background; failures dead-letter via producer.
+    startUsageConsumer(consumer, metering, producer).catch((err) =>
+      console.error('[billing-service] usage consumer failed to start:', err),
+    );
+    startRefIndexConsumer(refIndexConsumer, refIndex, producer).catch((err) =>
+      console.error('[billing-service] ref-index consumer failed to start:', err),
+    );
+    startOrgDeletedConsumer(
+      orgDeletedConsumer,
+      { customers: customerRepo, subscriptions: subscriptionRepo, subscriptionService },
+      producer,
+    ).catch((err) =>
+      console.error('[billing-service] org-deleted consumer failed to start:', err),
+    );
+    startUserDeletedConsumer(
+      userDeletedConsumer,
+      { customers: customerRepo, subscriptions: subscriptionRepo, subscriptionService },
+      producer,
+    ).catch((err) =>
+      console.error('[billing-service] user-deleted consumer failed to start:', err),
+    );
+  };
+  void startKafka();
 
   // Sync the plan catalogue at startup (best-effort).
   plans.syncPlans().catch((err) => console.error('[billing-service] plan sync failed:', err));

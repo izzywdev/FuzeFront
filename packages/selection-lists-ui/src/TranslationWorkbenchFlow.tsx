@@ -24,6 +24,7 @@ import {
 } from './api'
 import { useSharedLists } from './shared-lists/core'
 import { SharedTranslationsGate } from './shared-lists/browse'
+import { PanelSkeleton } from './shared-lists/browse/PanelState'
 
 const RTL_LOCALES = new Set(['ar', 'he'])
 
@@ -323,8 +324,8 @@ function TranslationIndex({
                 </div>
                 <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
                   {pct}% ({entry.translated}/{entry.total})
-                  {hasMachine && ` · ${entry.machine_count}M`}
-                  {hasStale && ` · ${entry.stale_count} stale`}
+                  {hasMachine && ' · M'}
+                  {hasStale && ' · stale'}
                 </div>
                 {/* Progress bar */}
                 <div style={{ height: 4, background: 'var(--bg-muted)', borderRadius: 'var(--radius-sm)', marginTop: 'var(--space-1)', overflow: 'hidden' }}>
@@ -619,9 +620,11 @@ const INDEX_PATH = '/settings/selection-lists'
 export function TranslationWorkbenchFlow() {
   const { listId, locale } = useParams<{ listId: string; locale?: string }>()
   const navigate = useNavigate()
-  const { enabled: sharedLists } = useSharedLists()
+  const { enabled: sharedLists, ready } = useSharedLists()
 
   if (!listId) return null
+  // The host's shared-lists flag has not settled: which workbench to mount is not known yet.
+  if (!ready) return <PanelSkeleton label="Loading" />
 
   const workbench = () =>
     locale ? (

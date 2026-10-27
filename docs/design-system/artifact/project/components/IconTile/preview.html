@@ -1,4 +1,4 @@
-<!-- @dsCard group="Core" height=172 static -->
+<!-- @dsCard group="Core" height=352 static -->
 <style>@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");</style>
 <style>
   body { margin: 0; padding: var(--space-6); background: var(--bg-primary); font-family: var(--font-sans); }
@@ -12,4 +12,13 @@
 &lt;IconTile tone="accent" size="lg"&gt;&lt;Shield size={28} /&gt;&lt;/IconTile&gt;
 &lt;IconTile tone="accent" size="md" variant="surface"&gt;&lt;Zap size={20} /&gt;&lt;/IconTile&gt;
 &lt;IconTile tone="accent" variant="plain"&gt;&lt;Newspaper size={24} /&gt;&lt;/IconTile&gt;
-&lt;IconTile tone="success" variant="plain" label="Success"&gt;&lt;CheckCircle size={20} /&gt;&lt;/IconTile&gt;</code></pre>
+&lt;IconTile tone="success" variant="plain" label="Success"&gt;&lt;CheckCircle size={20} /&gt;&lt;/IconTile&gt;
+
+{/* Icon on a caller-owned colored/gradient tile (e.g. a per-product
+    marketing brand gradient) — ds-fp:c607f2d639f8, issue #945. The box's
+    background stays the caller's own markup (often a data-driven gradient,
+    not a DS tone); IconTile only replaces the raw `className="text-white"`
+    with the `--primary-foreground` token. */}
+&lt;div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${product.gradient} flex items-center justify-center`}&gt;
+  &lt;IconTile tone="inverse" variant="plain"&gt;&lt;Icon size={22} /&gt;&lt;/IconTile&gt;
+&lt;/div&gt;</code></pre>

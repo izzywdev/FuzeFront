@@ -53,7 +53,11 @@
         "frames": [
           "01-portals-list",
           "02-portals-list-states"
-        ]
+        ],
+        "responsive": {
+          "exempt": true,
+          "exemptReason": "The portals directory at /portals is a master-admin-only left-menu surface for finding and opening managed portals in a new tab; a gated operator surface with no end-user mobile flow."
+        }
       }
     ],
     "components": [
@@ -129,5 +133,5 @@
       ]
     }
   ],
-  "stamp": "0ead155c2a1e8381c2480598eabfad0a11c50a5cb7506b8e06dacabf8a77431d"
+  "stamp": "ced54fc6da186e7e4ffeedac44090f990adbbcf9dcd2b024fa119d0d9b7292cb"
 }

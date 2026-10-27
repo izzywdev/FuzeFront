@@ -1,0 +1,43 @@
+{
+  "$schema": "./manifest.schema.json",
+  "title": "FuzeFront Help Center",
+  "description": "Index of record for the FuzeFront in-app help system (app.fuzefront.com/help). Bidirectional coverage is enforced by gate-help-conformance: every article listed here must exist, and every published article on disk must be listed here. See governance/help-system-policy.md.",
+  "version": "1.0.0",
+  "devPortal": "https://developers.fuzefront.com",
+  "sections": [
+    {
+      "id": "user-guide",
+      "title": "User Guide",
+      "audience": "user",
+      "description": "Using the FuzeFront portal day to day: signing in, finding and using apps, managing your organization, account, security, and billing.",
+      "articles": [
+        "docs/help/user-guide/getting-started.md",
+        "docs/help/user-guide/navigating-the-portal.md",
+        "docs/help/user-guide/organizations-and-teams.md",
+        "docs/help/user-guide/installing-and-using-apps.md",
+        "docs/help/user-guide/account-and-security.md",
+        "docs/help/user-guide/billing-and-plans.md",
+        "docs/help/user-guide/mobile-app.md",
+        "docs/help/user-guide/getting-help.md"
+      ]
+    },
+    {
+      "id": "developer-guide",
+      "title": "Developer Guide",
+      "audience": "developer",
+      "description": "Building, registering, and deploying a micro-frontend or service on FuzeFront, and using the Developer Portal (developers.fuzefront.com).",
+      "articles": [
+        "docs/help/developer-guide/overview.md",
+        "docs/help/developer-guide/quickstart-build-a-microfrontend.md",
+        "docs/help/developer-guide/module-federation-contract.md",
+        "docs/help/developer-guide/design-system.md",
+        "docs/help/developer-guide/authentication-and-authorization.md",
+        "docs/help/developer-guide/registering-your-app.md",
+        "docs/help/developer-guide/apis-and-contracts.md",
+        "docs/help/developer-guide/developer-portal.md",
+        "docs/help/developer-guide/deployment.md",
+        "docs/help/developer-guide/troubleshooting.md"
+      ]
+    }
+  ]
+}

@@ -76,7 +76,11 @@
         },
         "frames": [
           "01-build-entry"
-        ]
+        ],
+        "responsive": {
+          "exempt": true,
+          "exemptReason": "Builder entry gallery is a desktop app-authoring surface (create / import / browse buildable apps). App creation is a workstation task gated to app creators; no end-user phone layout is designed."
+        }
       },
       {
         "id": "build-session",
@@ -110,7 +114,11 @@
           "02-build-form",
           "03-build-progress",
           "04-build-outcomes"
-        ]
+        ],
+        "responsive": {
+          "exempt": true,
+          "exemptReason": "The AI build session (prompt editor + streaming build progress + generated-app outcomes/diffs) is a code-generation workstation surface that requires a wide layout to read generated output; not an end-user mobile flow."
+        }
       },
       {
         "id": "creator-ownership",
@@ -136,7 +144,11 @@
         },
         "frames": [
           "05-creator-ownership"
-        ]
+        ],
+        "responsive": {
+          "exempt": true,
+          "exemptReason": "Creator ownership / transfer administration is a gated app-owner console action performed at a desktop; it has no end-user mobile surface."
+        }
       },
       {
         "id": "marketplace-publish",
@@ -173,7 +185,11 @@
         "frames": [
           "06-publish-request",
           "07-review-queue"
-        ]
+        ],
+        "responsive": {
+          "exempt": true,
+          "exemptReason": "Marketplace publish request + reviewer moderation queue is operator/reviewer workstation tooling; there is no end-user mobile layout for the review queue."
+        }
       }
     ],
     "components": [
@@ -379,5 +395,5 @@
       ]
     }
   ],
-  "stamp": "5e7510ac80081053ceb4071e08aa2e91af5076d5e4910b34d761ddb7ecdbb83a"
+  "stamp": "07cef54da69302b2a47c87b8a10640ef0150ecef51ea731ca201dfecd00044fa"
 }

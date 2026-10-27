@@ -38,7 +38,11 @@
         "route": "/settings/tokens",
         "approved": true,
         "approvedBy": "izzywdev",
-        "approvedAt": "2026-08-18T12:35:42.442Z"
+        "approvedAt": "2026-08-18T12:35:42.442Z",
+        "responsive": {
+          "exempt": true,
+          "exemptReason": "Machine-to-machine service-token management at /settings/tokens (create-scoped token, reveal-once secret, list, revoke) is developer/DevOps workstation tooling — scoped tokens and reveal-once secrets are generated for services and CI at a desktop, not an end-user mobile flow."
+        }
       }
     ],
     "components": [
@@ -150,5 +154,5 @@
       ]
     }
   ],
-  "stamp": "b68d7a63997bea13989c844140b286f1f076623d1dd846f11a03b78e47e6b220"
+  "stamp": "e44084a70e5afdc859d5e9e87c66c1b5adc45182eee76cd9800f8dd085a86ec8"
 }
