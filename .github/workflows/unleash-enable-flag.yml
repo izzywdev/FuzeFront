@@ -40,7 +40,6 @@ concurrency:
 jobs:
   toggle:
     runs-on: fuzefront
-    environment: unleash-production
     timeout-minutes: 5
     steps:
       - name: Preconditions
