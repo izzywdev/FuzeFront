@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FuzeFront Auth Contract
-  version: 0.1.0
+  version: 0.1.1
   description: >-
     SUPERSEDED — this spec is replaced by the provider-agnostic FuzeFront
     Security API in `packages/security/openapi.yaml` (`@fuzefront/security-client`).
