@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fuzefront-events"
+version = "0.1.0"
+description = "Event envelope v2, transactional outbox, relay and idempotent consumer runtime for FuzeFront Python services"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "UNLICENSED" }
+dependencies = [
+    "aiokafka>=0.10",
+    "sqlalchemy[asyncio]>=2.0",
+    "jsonschema>=4.18",
+    "fuzefront-identity>=1.0,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "aiosqlite>=0.19",
+    "psycopg[binary]>=3.1",
+    "asyncpg>=0.29",
+    "ruff>=0.5",
+]
+
+[tool.setuptools.packages.find]
+include = ["fuzefront_events*"]
+
+[tool.setuptools.package-data]
+fuzefront_events = ["envelope.v2.schema.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "postgres: needs a real Postgres (FUZEFRONT_EVENTS_TEST_PG_URL, e.g. postgresql+asyncpg://...); skipped when unset",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"

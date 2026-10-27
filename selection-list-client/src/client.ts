@@ -1,4 +1,8 @@
-import { SelectionListApiError } from './errors'
+import {
+  EffectiveLookupIncompleteError,
+  MAX_EFFECTIVE_LOOKUP_PAGES,
+  SelectionListApiError,
+} from './errors'
 import type {
   ItemTranslationLocaleStatus,
   ListSelectionListItemsParams,
@@ -14,6 +18,7 @@ import type {
   SelectionListAutofillResult,
   SelectionListCreate,
   SelectionListErrorBody,
+  SelectionListForkRequest,
   SelectionListId,
   SelectionListItem,
   SelectionListItemCreate,
@@ -69,13 +74,16 @@ interface RequestOptions {
   /** Set when the endpoint may legitimately answer `204 No Content`. */
   allowEmpty?: boolean
   signal?: AbortSignal
+  /** Receives the HTTP status of a successful response (for 200-vs-201 distinctions). */
+  onStatus?: (status: number) => void
 }
 
 /**
  * Typed client for the FuzeFront selection-list-service.
  *
  * One method per endpoint of `services/selection-list-service/openapi.yaml`
- * v4.0.0, plus {@link SelectionListClient.paginate} for walking a cursor.
+ * v4.2.0, plus {@link SelectionListClient.paginate} for walking a cursor and
+ * {@link SelectionListClient.getEffectiveList} for key lookups.
  * Zero runtime dependencies — it uses the platform `fetch`.
  */
 export class SelectionListClient {
@@ -122,9 +130,79 @@ export class SelectionListClient {
         status: params.status,
         key: params.key,
         locale: params.locale ?? this.defaultLocale,
+        include_shared: params.include_shared,
+        visibility: params.visibility,
       },
       signal,
     })
+  }
+
+  /**
+   * The **effective** list for `key` (contract 4.1.0): the caller org's own
+   * readable active list with that key (e.g. its fork) if any, else the active
+   * `platform` common list with that key; `null` when neither exists. The
+   * service makes the choice through ONE endpoint,
+   * `GET /v1/selection-lists?key=…&include_shared=true&limit=1` — what a picker
+   * should use to turn a list key into a list; never fetch both and merge.
+   *
+   * Usually that is one call, but not always (2.2.0). The service applies
+   * pagination BEFORE it drops rows the caller cannot read (a newer unreadable
+   * private list with the same key can sit ahead of an older readable common
+   * list), so a page may be EMPTY and still carry a next cursor. An empty page
+   * is therefore only "no list" when it is TERMINAL; otherwise this follows the
+   * cursor through the same query until a row for `key` is found or a page has
+   * no next cursor. The walk is bounded by `MAX_EFFECTIVE_LOOKUP_PAGES`;
+   * exhausting it rejects with `EffectiveLookupIncompleteError` and never
+   * resolves `null`. A failed page rejects (no fallback to another list), and an
+   * aborted `signal` stops the walk with an `AbortError`.
+   */
+  async getEffectiveList(
+    key: string,
+    locale?: Locale,
+    signal?: AbortSignal
+  ): Promise<SelectionList | null> {
+    let cursor: string | undefined
+    for (let walked = 0; walked < MAX_EFFECTIVE_LOOKUP_PAGES; walked++) {
+      if (signal?.aborted) throw abortError(signal)
+      const page = await this.getLists(
+        { key, include_shared: true, locale, limit: 1, ...(cursor ? { cursor } : {}) },
+        signal
+      )
+      // Only a row for THIS key counts — never a differently-keyed row.
+      const hit = page.items.find((list) => list.key === key)
+      if (hit) return hit
+      if (!page.page.hasMore || !page.page.nextCursor) return null
+      cursor = page.page.nextCursor
+    }
+    throw new EffectiveLookupIncompleteError(MAX_EFFECTIVE_LOOKUP_PAGES)
+  }
+
+  /**
+   * `POST /v1/selection-lists/{listId}/fork` — copy a common (`platform`) list
+   * into the caller's org as a list the caller owns (copy-on-write, 4.1.0).
+   *
+   * Resolves to `{ list, created }`: `created: true` for a new fork (`201`),
+   * `false` when the org already held one and it was returned unchanged
+   * (`200`). The body carries no id or key — the service mints ids and the
+   * fork keeps the source key. Use it after a `CONFLICT` whose `reason` is
+   * `fork_required` (see `SelectionListApiError.isForkRequired`).
+   */
+  async forkList(
+    listId: SelectionListId,
+    body: SelectionListForkRequest = {},
+    signal?: AbortSignal
+  ): Promise<{ list: SelectionList; created: boolean }> {
+    let status = 0
+    const list = await this.request<SelectionList>({
+      method: 'POST',
+      path: `/v1/selection-lists/${encodeURIComponent(listId)}/fork`,
+      body,
+      signal,
+      onStatus: (s) => {
+        status = s
+      },
+    })
+    return { list, created: status === 201 }
   }
 
   /** `POST /v1/selection-lists` — create a list. The service mints the id. */
@@ -160,6 +238,9 @@ export class SelectionListClient {
    * Requires `update` on the list; a body with `status: 'archived'` also
    * requires `delete` (contract 4.0.0, `x-permit-additional-actions`), so a
    * `list-editor` gets a `FORBIDDEN` error for it — same as {@link archiveList}.
+   * A body with `visibility` also requires `manage_access` (owner); `platform`
+   * is operator-only and one-way (4.1.0). On a common list the caller holds no
+   * role on, expect a `CONFLICT` with `reason: 'fork_required'`.
    */
   async updateList(
     listId: SelectionListId,
@@ -538,6 +619,10 @@ export class SelectionListClient {
    * must carry an organization claim, and resolution is scoped to that org —
    * another org's ids land in `missing`. There is no anonymous mode; a missing
    * or org-less token throws a `401` {@link SelectionListApiError}.
+   *
+   * 4.1.0: items of `platform` (common) lists resolve for every org, and when
+   * the caller's org holds an `org`-visible fork of that common list the
+   * result comes from the fork item, named in `effective_item_id`.
    */
   async resolveIds(
     ids: SelectionListItemId[],
@@ -642,6 +727,10 @@ export class SelectionListClient {
       init
     )
 
+    if (response.ok && options.onStatus) {
+      options.onStatus(response.status)
+    }
+
     if (response.status === 204 || response.status === 205) {
       // `allowEmpty` is declared per call rather than inferred from the status,
       // so an endpoint that unexpectedly returns no body fails loudly here
@@ -696,4 +785,10 @@ function isErrorBody(value: unknown): value is SelectionListErrorBody {
     typeof (value as { code?: unknown }).code === 'string' &&
     typeof (value as { message?: unknown }).message === 'string'
   )
+}
+
+/** The error an aborted walk rejects with: the signal's own reason when it has one, else an `AbortError`. */
+function abortError(signal: AbortSignal): unknown {
+  if (signal.reason !== undefined) return signal.reason
+  return new DOMException('This operation was aborted', 'AbortError')
 }

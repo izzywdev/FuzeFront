@@ -22,6 +22,7 @@ COPY backend/security/package.json ./backend/security/
 COPY backend/applications/package.json ./backend/applications/
 COPY shared/package.json ./shared/
 COPY packages/identity/package.json ./packages/identity/
+COPY packages/events/package.json ./packages/events/
 COPY packages/auth/package.json ./packages/auth/
 COPY packages/telemetry/package.json ./packages/telemetry/
 COPY packages/service-auth/package.json ./packages/service-auth/
@@ -30,6 +31,7 @@ COPY sdk/package.json ./sdk/
 COPY billing-client/package.json ./billing-client/
 COPY config-client/package.json ./config-client/
 COPY packages/config-ui/package.json ./packages/config-ui/
+COPY packages/fuzepicker-ui/package.json ./packages/fuzepicker-ui/
 COPY custom-hostname-client/package.json ./custom-hostname-client/
 COPY packages/billing-ui/package.json ./packages/billing-ui/
 COPY packages/chat-client/package.json ./packages/chat-client/
@@ -45,14 +47,21 @@ COPY packages/i18n-translate/package.json ./packages/i18n-translate/
 COPY packages/feature-flags/package.json ./packages/feature-flags/
 COPY packages/security/package.json ./packages/security/
 COPY packages/selection-lists-ui/package.json ./packages/selection-lists-ui/
+COPY selection-list-client/package.json ./selection-list-client/
 COPY design-system/package.json ./design-system/
 COPY services/chat-service/package.json ./services/chat-service/
 COPY services/email-service/package.json ./services/email-service/
 COPY services/notification-service/package.json ./services/notification-service/
 COPY services/selection-list-service/package.json ./services/selection-list-service/
 COPY services/devportal-service/package.json ./services/devportal-service/
+COPY packages/billing-types/package.json ./packages/billing-types/
+COPY packages/metered-usage/package.json ./packages/metered-usage/
+COPY services/billing-service/package.json ./services/billing-service/
 
-RUN npm ci --workspace=services/devportal-service --omit=dev --ignore-scripts
+RUN npm ci --workspace=services/devportal-service --omit=dev --ignore-scripts && \
+    mkdir -p packages/auth/node_modules packages/telemetry/node_modules
+# npm may hoist every auth runtime dependency into /app/node_modules. Keep the
+# optional workspace dependency directory copyable in either locked layout.
 
 # ---------- specs: gather this repo's own openapi.yaml files ----------
 # Only the spec FILES are needed here, not each service's full source — see
@@ -61,6 +70,7 @@ RUN npm ci --workspace=services/devportal-service --omit=dev --ignore-scripts
 FROM node:24-alpine AS specs
 WORKDIR /app
 COPY scripts/collect-devportal-specs.mjs ./scripts/collect-devportal-specs.mjs
+COPY services/fuzepicker/openapi.yaml ./services/fuzepicker/openapi.yaml
 COPY services/app-registry-service/openapi.yaml ./services/app-registry-service/openapi.yaml
 COPY services/billing-service/openapi.yaml ./services/billing-service/openapi.yaml
 COPY services/chat-service/openapi.yaml ./services/chat-service/openapi.yaml
@@ -86,12 +96,14 @@ COPY backend/security/package.json ./backend/security/
 COPY backend/applications/package.json ./backend/applications/
 COPY shared/package.json ./shared/
 COPY packages/identity/package.json ./packages/identity/
+COPY packages/events/package.json ./packages/events/
 COPY packages/auth/package.json ./packages/auth/
 COPY packages/telemetry/package.json ./packages/telemetry/
 COPY packages/service-auth/package.json ./packages/service-auth/
 COPY billing-client/package.json ./billing-client/
 COPY config-client/package.json ./config-client/
 COPY packages/config-ui/package.json ./packages/config-ui/
+COPY packages/fuzepicker-ui/package.json ./packages/fuzepicker-ui/
 COPY custom-hostname-client/package.json ./custom-hostname-client/
 COPY packages/billing-ui/package.json ./packages/billing-ui/
 COPY packages/chat-client/package.json ./packages/chat-client/
@@ -107,23 +119,31 @@ COPY packages/i18n-translate/package.json ./packages/i18n-translate/
 COPY packages/feature-flags/package.json ./packages/feature-flags/
 COPY packages/security/package.json ./packages/security/
 COPY packages/selection-lists-ui/package.json ./packages/selection-lists-ui/
+COPY selection-list-client/package.json ./selection-list-client/
 COPY design-system/package.json ./design-system/
 COPY services/chat-service/package.json ./services/chat-service/
 COPY services/email-service/package.json ./services/email-service/
 COPY services/notification-service/package.json ./services/notification-service/
 COPY services/selection-list-service/package.json ./services/selection-list-service/
 COPY services/devportal-service/package.json ./services/devportal-service/
+COPY packages/billing-types/package.json ./packages/billing-types/
+COPY packages/metered-usage/package.json ./packages/metered-usage/
+COPY services/billing-service/package.json ./services/billing-service/
 
 RUN npm ci --workspace=services/devportal-service --ignore-scripts
 
 COPY packages/auth/ ./packages/auth/
+COPY packages/telemetry/ ./packages/telemetry/
 COPY services/devportal-service/ ./services/devportal-service/
 COPY --from=specs /app/services/devportal-service/specs ./services/devportal-service/specs
 
 # Build @fuzefront/auth first (src/middleware/authz.ts imports it at module
-# load), then devportal-service. Mirrors services/selection-list-service/
-# Dockerfile's identical treatment of the same package.
+# load), then @fuzefront/telemetry (app.ts calls tracingMiddleware(), index.ts
+# calls initTelemetry() at module load — same reasoning), then
+# devportal-service. Mirrors services/selection-list-service/Dockerfile's
+# identical treatment of the same package.
 RUN cd packages/auth && npm install --ignore-scripts && npm run build
+RUN cd packages/telemetry && npm install --ignore-scripts && npm run build
 RUN cd services/devportal-service && npm run build
 
 # ---------- production ----------
@@ -136,6 +156,11 @@ RUN apk add --no-cache dumb-init && \
 COPY --from=base /app/node_modules ./node_modules
 COPY --from=base /app/services/devportal-service/node_modules ./services/devportal-service/node_modules
 COPY --from=build /app/services/devportal-service/dist ./services/devportal-service/dist
+# index.ts reads its own service.version via `require('../package.json').version`
+# (OTel resource attribute — npm_package_version is unset under the bare `node
+# dist/index.js` CMD below). Without this the container dies at boot with
+# "Cannot find module '../package.json'".
+COPY --from=build /app/services/devportal-service/package.json ./services/devportal-service/package.json
 COPY --from=build /app/services/devportal-service/specs ./services/devportal-service/specs
 # @fuzefront/auth is a workspace dependency, so npm LINKS it —
 # node_modules/@fuzefront/auth is a symlink to /app/packages/auth. Mirrors
@@ -144,6 +169,12 @@ COPY --from=build /app/services/devportal-service/specs ./services/devportal-ser
 COPY --from=build /app/packages/auth/package.json ./packages/auth/package.json
 COPY --from=build /app/packages/auth/dist ./packages/auth/dist
 COPY --from=base /app/packages/auth/node_modules ./packages/auth/node_modules
+# @fuzefront/telemetry, same symlink shape as @fuzefront/auth above — index.ts
+# calls initTelemetry() at module load, so without this the container dies at
+# boot with "Cannot find module '@fuzefront/telemetry'".
+COPY --from=build /app/packages/telemetry/package.json ./packages/telemetry/package.json
+COPY --from=build /app/packages/telemetry/dist ./packages/telemetry/dist
+COPY --from=base /app/packages/telemetry/node_modules ./packages/telemetry/node_modules
 # Copy openapi.yaml so the docs route can serve swagger-ui-express at runtime
 COPY --from=build /app/services/devportal-service/openapi.yaml ./services/devportal-service/openapi.yaml
 

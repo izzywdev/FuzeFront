@@ -1,34 +1,123 @@
 {
   "$comment": [
     "Regression guard for FuzeFront#286: a branch-ruleset REQUIRED status check whose",
-    "producing workflow is path-filtered on `pull_request:` never runs — and never reports —",
-    "on a PR that touches none of its paths. GitHub treats a required-but-never-reported",
-    "context as unsatisfied, so the PR is permanently BLOCKED with no red to look at and",
-    "nothing to re-run. Measured against master 2026-08-27: the ruleset ('Protect Master')",
-    "requires both contexts below, and as of PR #794 (2026-08-23) their workflows carry no",
-    "`paths:`/`paths-ignore:` filter on `pull_request:` — this file plus",
-    "scripts/check-required-check-triggers.mjs is what keeps it that way.",
+    "producing workflow never runs — and so never reports — leaves the PR permanently",
+    "BLOCKED. GitHub treats a required-but-never-reported context as unsatisfied, so there",
+    "is no red to look at and nothing to re-run. #286 was the `paths:`-filter form of that",
+    "bug; it was fixed in #794 and `scripts/check-required-check-triggers.mjs` keeps it fixed.",
     "",
-    "Every entry here names a required-ruleset `context` and the workflow file that produces",
-    "it. scripts/check-required-check-triggers.mjs fails if that workflow's `pull_request:`",
-    "trigger gains a `paths:`/`paths-ignore:` key. Two entries pre-date this file and already",
-    "state the same rule in their own header comments (workspace-deps-check.yml: 'NO `paths:`",
-    "FILTER, and that is load-bearing rather than an oversight'; gate-sealed-keys.yml: 'Runs on",
-    "every PR (no path filter) so it is safe to add to the branch ruleset's required checks').",
-    "This file turns that prose into something CI actually checks.",
+    "Every entry names a `context` and the workflow file that produces it. The script",
+    "enforces two properties:",
+    "  1. ALL entries: the workflow's `pull_request:` trigger carries no `paths:`/",
+    "     `paths-ignore:` filter (the original #286 bug).",
+    "  2. Entries with \"requiredInRuleset\": true — the workflow ALSO triggers on",
+    "     `merge_group:`. A merge queue builds each candidate on a",
+    "     `refs/heads/gh-readonly-queue/...` branch and emits `merge_group`, never",
+    "     `pull_request`. A required context whose workflow has no `merge_group` trigger is",
+    "     therefore never created for a queue entry — #286 relocated into the queue, where",
+    "     it strands the entry instead of the PR.",
     "",
-    "Adding a NEW required context to the ruleset? Add its workflow here in the same PR — the",
-    "gate is only as complete as this list."
+    "`requiredInRuleset` records whether ruleset 17974934 (live name 'Protect default",
+    "branch', verified 2026-10-26) currently lists the context under `required_status_checks`.",
+    "The eleven true entries below are exactly that live set. The four false entries are NOT",
+    "required today and are kept deliberately — their `pull_request:` path-filter protection",
+    "still applies, and dropping them would only shrink enforcement. Two of them,",
+    "`gate-frames-schema` and `gate-ds-artifact`, are STAGED FOR PROMOTION to the required set",
+    "(they are already in governance/required-status-checks.json's desired set): their",
+    "workflows now carry a `merge_group:` trigger PROACTIVELY, because both are sub-second and",
+    "dependency-free so running them on a queue entry costs nothing — flipping their",
+    "`requiredInRuleset` to true is then a pure listing with no workflow edit. The other two,",
+    "`gate-platform-org-pin` and `Playwright sign-in flow`, are left without `merge_group`",
+    "deliberately — adding it (notably e2e.yml's Playwright run) would burn runner time on",
+    "every queue entry to satisfy a context nothing gates on.",
+    "",
+    "This file WAS stale: it listed six contexts, only two of which the ruleset required,",
+    "while nine required contexts were absent — so the guard covered 2 of 11. Its own rule",
+    "below is what went unfollowed as the required set grew from two to eleven.",
+    "",
+    "Adding a NEW required context to the ruleset? Add its workflow here in the same PR,",
+    "with \"requiredInRuleset\": true — the gate is only as complete as this list. Flipping a",
+    "context's `requiredInRuleset` to true without giving its workflow a `merge_group`",
+    "trigger will fail this gate, by design."
   ],
 
   "workflows": [
     {
       "context": "In-repo packages resolve from source",
-      "file": ".github/workflows/workspace-deps-check.yml"
+      "file": ".github/workflows/workspace-deps-check.yml",
+      "requiredInRuleset": true
     },
     {
       "context": "gate-sealed-keys",
-      "file": ".github/workflows/gate-sealed-keys.yml"
+      "file": ".github/workflows/gate-sealed-keys.yml",
+      "requiredInRuleset": true
+    },
+    {
+      "context": "Security Scan",
+      "file": ".github/workflows/ci.yml",
+      "requiredInRuleset": true
+    },
+    {
+      "context": "gate-lint",
+      "file": ".github/workflows/harden-gate.yml",
+      "requiredInRuleset": true
+    },
+    {
+      "context": "gate-test",
+      "file": ".github/workflows/harden-gate.yml",
+      "requiredInRuleset": true
+    },
+    {
+      "context": "gate-build",
+      "file": ".github/workflows/harden-gate.yml",
+      "requiredInRuleset": true
+    },
+    {
+      "context": "gate-sast",
+      "file": ".github/workflows/harden-gate.yml",
+      "requiredInRuleset": true
+    },
+    {
+      "context": "gate-secret-scan",
+      "file": ".github/workflows/harden-gate.yml",
+      "requiredInRuleset": true
+    },
+    {
+      "context": "gate-dependency-scan",
+      "file": ".github/workflows/harden-gate.yml",
+      "requiredInRuleset": true
+    },
+    {
+      "context": "gate-ds-conformance",
+      "file": ".github/workflows/harden-gate.yml",
+      "requiredInRuleset": true
+    },
+    {
+      "context": "gate-frontend-build",
+      "file": ".github/workflows/harden-gate.yml",
+      "requiredInRuleset": true
+    },
+    {
+      "context": "gate-platform-org-pin",
+      "file": ".github/workflows/gate-platform-org-pin.yml",
+      "requiredInRuleset": false
+    },
+    {
+      "context": "gate-frames-schema",
+      "file": ".github/workflows/gate-frames-schema.yml",
+      "requiredInRuleset": false,
+      "note": "STAGED FOR PROMOTION. In governance/required-status-checks.json's desired set, not yet in the live ruleset (verified 2026-10-26: live required set is the 11 requiredInRuleset:true contexts). The workflow now carries a merge_group: trigger (added proactively — the gate is sub-second and dependency-free, so unlike Playwright it costs nothing on a queue entry), so promoting it is a pure listing: flip requiredInRuleset to true here IN THE SAME CHANGE that FuzeSDLC's apply-ruleset.yml adds it live, with no workflow edit. See docs/runbooks/widen-required-checks.md §4a."
+    },
+    {
+      "context": "gate-ds-artifact",
+      "file": ".github/workflows/gate-ds-artifact.yml",
+      "requiredInRuleset": false,
+      "note": "STAGED FOR PROMOTION. In governance/required-status-checks.json's desired set, not yet in the live ruleset (verified 2026-10-26). The workflow now carries a merge_group: trigger (added proactively — a pure regenerate-and-diff that reads no PR context, so it behaves identically under merge_group), so promoting it is a pure listing: flip requiredInRuleset to true here IN THE SAME CHANGE that FuzeSDLC's apply-ruleset.yml adds it live, with no workflow edit. See docs/runbooks/widen-required-checks.md §4a."
+    },
+    {
+      "context": "Playwright sign-in flow",
+      "file": ".github/workflows/e2e.yml",
+      "requiredInRuleset": false
     }
   ]
 }

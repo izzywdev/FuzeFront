@@ -5,19 +5,25 @@ global:
 
 backendImage:
   repository: ghcr.io/izzywdev/fuzequality-backend
-  tag: 9e5483e06726
+  tag: 7b0714d7abb4
 frontendImage:
   repository: ghcr.io/izzywdev/fuzequality-frontend
-  tag: 9e5483e06726
+  tag: 7b0714d7abb4
+
+# FuzeQuality is a live, same-origin federated remote. Its registration assets
+# and sealed registration token are delivered by this chart, so run the
+# idempotent post-upgrade registration Job and restore the portal entry.
+registration:
+  enabled: true
 
 ingress:
   enabled: true
   className: traefik
-  host: quality.prod.fuzefront.com
+  host: fuzequality.fuzefront.com
 
-# The path the host shell actually loads the remote from. quality.prod.fuzefront.com
-# above stays for direct/admin access, but it sits behind the *.prod Cloudflare
-# Access wall, so it can never serve remoteEntry.js to a browser.
+# The path the host shell actually loads the remote from. The standalone host
+# above serves the installable PWA/TWA at `/`, while portal federation remains
+# same-origin under app.fuzefront.com.
 federatedMount:
   enabled: true
   className: traefik

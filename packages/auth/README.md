@@ -1,4 +1,4 @@
-# @fuzefront/auth
+# @izzywdev/fuzefront-auth
 
 The consumable **authN/authZ client** for the FuzeFront family (resolves
 [#117](https://github.com/izzywdev/FuzeFront/issues/117)). Every product verifies
@@ -12,28 +12,34 @@ eventual federated-JWKS migration — is uniform across the family.
 > [`jose`](https://github.com/panva/jose) (one dependency covers HS256 today and
 > RS256/JWKS for the federated target).
 
+> **Python services:** use the peer package [`fuzefront-auth`](../auth-py) — same
+> `Identity` shape and error codes, with a Flask decorator and a FastAPI dependency.
+
 ## Install
 
 ```bash
 npm install @izzywdev/fuzefront-auth        # + express, if you use the middleware
 ```
 
-> **Published name.** `@fuzefront/auth` is the *workspace-internal* name and is **not installable** —
-> the `@fuzefront` scope does not exist on GitHub. The published package is **`@izzywdev/fuzefront-auth`**
-> (latest `0.2.2`). To keep the short specifier used in the examples below, alias it in your
-> `package.json`: `"@fuzefront/auth": "npm:@izzywdev/fuzefront-auth@^0.2.2"`.
+> **Published name.** The published package is **`@izzywdev/fuzefront-auth`**; the examples below
+> import it by that name. `@fuzefront/auth` is only the *workspace-internal* name and is **not
+> installable** (the `@fuzefront` scope does not exist on GitHub). If you prefer the short
+> specifier, alias it in your `package.json`:
+> `"@fuzefront/auth": "npm:@izzywdev/fuzefront-auth@^0.4.0"`.
 
 ## Use it as middleware
 
 ```ts
 import express from 'express'
-import { createVerifier, requireAuth, requireRoles } from '@fuzefront/auth'
+import { createVerifier, requireAuth, requireRoles } from '@izzywdev/fuzefront-auth'
 
 // Today's FuzeFront session token (HS256 over the shared JWT_SECRET).
 // It carries no tenant/roles, so hydrate them out-of-band if you gate on them.
 const verifier = createVerifier({
   mode: 'legacy-hs256',
   secret: process.env.JWT_SECRET!,
+  // Required for session tokens: ask the session store whether the session is still active.
+  sessionValidator: async (userId, sessionId) => sessionIsActive(sessionId),
   resolver: {
     async resolve(userId) {
       const row = await db('users').where({ id: userId }).first()
@@ -63,6 +69,12 @@ const verifier = createVerifier({
 - **Fail-closed everywhere.** Every failure throws `AuthError`; no path returns a
   permissive identity. `requireAuth` never calls `next()` on an unauthenticated
   request.
+- **Sessions must be checkable (0.4.0).** A `legacy-hs256` token that names a `sessionId`
+  is refused (500 `VERIFIER_UNAVAILABLE`, a deployment misconfiguration) unless a
+  `sessionValidator` is configured. A logged-out or revoked session otherwise keeps
+  authenticating until `exp`. Only a validator answering `true` keeps it alive; a throwing
+  validator is a retryable 503. A service that truly cannot reach the session store opts out
+  loudly with `allowUnvalidatedSessions: true`, which never disables a configured validator.
 - **Algorithms are pinned per mode.** `legacy-hs256` accepts only `HS256`;
   `federated-jwks` accepts only asymmetric algs. This is what blocks algorithm
   confusion (e.g. a token that names `alg: none`, or an RS256 public key abused
@@ -91,7 +103,7 @@ import {
   requireAuth, requireRoles, requireTenant, // Express middleware
   AuthError, AUTH_CONTRACT_VERSION,
   type Identity, type Verifier, type VerifierConfig,
-} from '@fuzefront/auth';
+} from '@izzywdev/fuzefront-auth';
 ```
 
 - **`Identity`** — the stable normalized principal: `{ userId, tenantId: string | null, roles: string[], authMode, email?, ... }`. Invariant across the HS256 → OIDC migration.

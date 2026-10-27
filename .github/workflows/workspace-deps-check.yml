@@ -23,6 +23,12 @@ name: Workspace deps
 on:
   pull_request:
     branches: [master]
+  # REQUIRED context ("In-repo packages resolve from source"), so it must also report for
+  # a merge-queue entry — a queue build emits `merge_group`, not `pull_request`. Same
+  # reasoning as the no-`paths:`-filter rule this file's header already states: a required
+  # context that never reports blocks permanently (FuzeFront#286).
+  merge_group:
+  workflow_dispatch:
 
 permissions:
   contents: read

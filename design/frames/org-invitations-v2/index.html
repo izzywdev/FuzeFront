@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Org invitations v2 — Approval Frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .wrap { max-width: 960px; margin: 0 auto; padding: var(--space-12) var(--space-8) var(--space-16); }
+  .eyebrow { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--cyan-400); margin-bottom: var(--space-3); }
+  h1 { font-family: var(--font-display); font-size: var(--text-2xl); letter-spacing: var(--tracking-display); margin: 0 0 var(--space-2); }
+  .lead { color: var(--text-secondary); margin: 0; max-width: 70ch; }
+  h2 { font-family: var(--font-display); font-size: var(--text-xl); letter-spacing: var(--tracking-display);
+    margin: var(--space-12) 0 var(--space-4); }
+  .flow-head { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--accent-color); margin: var(--space-8) 0 var(--space-2); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-5); margin-top: var(--space-4); }
+  @media (max-width: 640px){ .grid { grid-template-columns: 1fr; } }
+  .frame-link { display: block; text-decoration: none; color: inherit; background: var(--bg-tertiary);
+    border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: var(--space-6);
+    position: relative; overflow: hidden; transition: transform var(--duration-base) var(--ease-standard); }
+  .frame-link:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--border-strong); }
+  .frame-link .seam { position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--seam); opacity: 0; transition: opacity var(--duration-base); }
+  .frame-link:hover .seam { opacity: 1; }
+  .frame-link .step { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-tertiary); letter-spacing: var(--tracking-wide); }
+  .frame-link h3 { margin: var(--space-2) 0; font-size: var(--text-lg); }
+  .frame-link p { margin: 0; color: var(--text-tertiary); font-size: var(--text-sm); }
+  .inv { margin-top: var(--space-5); background: var(--bg-tertiary); border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg); padding: var(--space-6); }
+  .inv h3 { margin: 0 0 var(--space-3); font-size: var(--text-md); font-family: var(--font-display); }
+  .inv h3:not(:first-child) { margin-top: var(--space-6); }
+  .inv dl { display: grid; grid-template-columns: 160px 1fr; gap: var(--space-2) var(--space-4); margin: 0; }
+  .inv dt { color: var(--text-tertiary); font-family: var(--font-mono); font-size: var(--text-xs);
+    text-transform: uppercase; letter-spacing: var(--tracking-wide); }
+  .inv dd { margin: 0; color: var(--text-secondary); font-size: var(--text-sm); }
+  .chip { display: inline-block; font-family: var(--font-mono); font-size: var(--text-2xs);
+    background: var(--bg-quaternary); border: 1px solid var(--border-color); border-radius: var(--radius-pill);
+    padding: 2px 8px; margin: 0 var(--space-1) var(--space-1) 0; color: var(--text-secondary); }
+  .chip.pkg { color: var(--accent-2); border-color: rgba(41,211,230,0.4); }
+  .chip.flow { color: var(--accent-color); border-color: rgba(110,92,255,0.4); }
+  .chip.new { color: var(--warning-color); border-color: rgba(245,185,80,0.4); }
+  .meta { margin-top: var(--space-10); font-size: var(--text-sm); color: var(--text-tertiary); }
+  .meta code { font-family: var(--font-mono); color: var(--text-secondary); }
+  ul.tight { margin: var(--space-2) 0 0; padding-left: var(--space-5); color: var(--text-secondary); font-size: var(--text-sm); }
+  ul.tight li { margin-bottom: var(--space-2); }
+  .pending { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono);
+    font-size: var(--text-2xs); padding: 2px 8px; border-radius: var(--radius-pill);
+    color: var(--warning-color); border: 1px solid rgba(245,185,80,0.4); text-transform: uppercase;
+    letter-spacing: var(--tracking-wide); margin-top: var(--space-4); }
+</style>
+</head>
+<body data-frame="index">
+<div class="wrap">
+  <div class="eyebrow">Contract-freeze · UX approval · FFRNT-306 (epic FFRNT-304)</div>
+  <h1>Org invitations v2 — Approval Frames</h1>
+  <p class="lead">Inviting people into an organization, done properly: choose who (an existing account-holder or
+    an external person), how to reach them (<b>email</b> or <b>WhatsApp</b>), their <b>role</b> and their
+    <b>member type</b> (employee or customer); a brand-new invitee resolves the link, signs up (incl. Google /
+    Facebook) and is <b>auto-bound</b> to the org; and the root owner invites external customers directly.
+    These frames freeze the flows, screens, states and build inventory before any UI is written. Rendered in the
+    fuse-seam design system (tokens only). No identity-vendor name appears — the browser only ever sees
+    <code>app.fuzefront.com</code> and, for social sign-up, <code>accounts.google.com</code> / <code>facebook.com</code>.</p>
+
+  <h2>Walk the flows</h2>
+
+  <div class="flow-head">Flow 1 · Invite — OrgInviteFlow · route /settings/access</div>
+  <div class="grid">
+    <a href="01-invite-modal.html" class="frame-link" data-nav="01-invite-modal">
+      <div class="seam"></div>
+      <div class="step">Frame (a) · route /settings/access</div>
+      <h3>Invite modal</h3>
+      <p>Invitee kind (existing / external), channel (email / WhatsApp), role (admin / member / viewer),
+        member type (employee / customer), live review → POST /invitations.</p>
+    </a>
+    <a href="02-pending-invitations.html" class="frame-link" data-nav="02-pending-invitations">
+      <div class="seam"></div>
+      <div class="step">Frame (b) · route /settings/access</div>
+      <h3>Pending invitations</h3>
+      <p>Per-org pending list on the Members tab: status pills, resend (rate-limited), revoke. GET /invitations.</p>
+    </a>
+  </div>
+
+  <div class="flow-head">Flow 2 · Accept → sign up → bind — InvitationAcceptFlow · route /invitations/accept</div>
+  <div class="grid">
+    <a href="03-accept-resolve.html" class="frame-link" data-nav="03-accept-resolve">
+      <div class="seam"></div>
+      <div class="step">Frame (c) · route /invitations/accept</div>
+      <h3>Accept · resolve token</h3>
+      <p>Public landing resolves the token and previews org + role + member type before sign-up.
+        GET /invitations/resolve.</p>
+    </a>
+    <a href="04-accept-signup-bind.html" class="frame-link" data-nav="04-accept-signup-bind">
+      <div class="seam"></div>
+      <div class="step">Frame (d) · route /invitations/accept</div>
+      <h3>Sign up &amp; bind</h3>
+      <p>Create account (Google / Facebook / email, locked to the invited address) → POST /invitations/accept
+        auto-binds → confirms org + role + member type.</p>
+    </a>
+  </div>
+
+  <div class="flow-head">Flow 3 · Root customer invite — RootCustomerInviteFlow · route /root/customers</div>
+  <div class="grid">
+    <a href="05-root-customer-invite.html" class="frame-link" data-nav="05-root-customer-invite">
+      <div class="seam"></div>
+      <div class="step">Frame (e) · route /root/customers</div>
+      <h3>Root customer invite</h3>
+      <p>Root owner invites an external person (Gmail / WhatsApp) as a <b>customer</b>; member type fixed,
+        role defaults to Viewer. POST /invitations.</p>
+    </a>
+    <a href="06-states.html" class="frame-link" data-nav="06-states">
+      <div class="seam"></div>
+      <div class="step">Shared · all flows</div>
+      <h3>States &amp; fail-closed</h3>
+      <p>Loading / empty / error, channel &amp; validation variants, and the fail-closed contract:
+        410 expired-revoked, 403 mismatch, 409 already-accepted, 409 last-owner, 403 forbidden.</p>
+    </a>
+  </div>
+
+  <h2>Build inventory <span style="font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--text-tertiary)">— approving a flow approves its slice of this plan</span></h2>
+  <div class="inv" data-build-inventory>
+    <h3>Flows (per-flow approval)</h3>
+    <dl>
+      <dt>invite</dt>
+      <dd><span class="chip flow">OrgInviteFlow</span> route <code>/settings/access</code> · approved: <b>false</b></dd>
+      <dt>accept-bind</dt>
+      <dd><span class="chip flow">InvitationAcceptFlow</span> route <code>/invitations/accept</code> · approved: <b>false</b></dd>
+      <dt>root-customer-invite</dt>
+      <dd><span class="chip flow">RootCustomerInviteFlow</span> route <code>/root/customers</code> · approved: <b>false</b></dd>
+    </dl>
+
+    <h3>React components</h3>
+    <dd style="margin:0">
+      <span class="chip">OrgInviteButton</span><span class="chip">InviteModal</span>
+      <span class="chip">InviteeKindToggle</span><span class="chip">InviteChannelToggle</span>
+      <span class="chip">InviteeAccountPicker</span><span class="chip">EmailInviteField</span>
+      <span class="chip">PhoneE164Field</span><span class="chip">InviteRolePicker</span>
+      <span class="chip">MemberTypeToggle</span><span class="chip">InviteReviewSummary</span>
+      <span class="chip">PendingInvitationsPanel</span><span class="chip">PendingInvitationRow</span>
+      <span class="chip">InviteStatusPill</span><span class="chip">ResendInviteButton</span>
+      <span class="chip">RevokeInviteDialog</span><span class="chip">InvitationAcceptCard</span>
+      <span class="chip">InvitationSignupPanel</span><span class="chip">InvitationBindSuccess</span>
+      <span class="chip">InvitationErrorState</span><span class="chip">RootCustomerInviteForm</span>
+    </dd>
+
+    <h3>npm packages</h3>
+    <dd style="margin:0">
+      <span class="chip pkg">@fuzefront/identity-ui</span>
+      <span class="chip pkg">@fuzefront/auth-ui</span>
+      <span class="chip pkg">@fuzefront/security-client</span>
+    </dd>
+    <dd style="margin:var(--space-2) 0 0">Primary home is <code>@fuzefront/identity-ui</code> (beside authz-admin,
+      member-directory, employee-console). Reuses <code>SocialButton</code> from <code>@fuzefront/auth-ui</code> and
+      the generated <code>@fuzefront/security-client</code>. <b>Orchestrator decision:</b> keep in identity-ui unless
+      the multi-channel + public accept-bind scope earns an independent <code>@fuzefront/org-invitations-ui</code>
+      package — flagged here, not assumed.</dd>
+
+    <h3>Design-system additions</h3>
+    <dd style="margin:0"><code>frontend-engineer</code> adds these to <code>@fuzefront/design-system</code> as a
+      foundation PR before the feature UI depends on them — drawn here from tokens only, never one-offed:</dd>
+    <ul class="tight">
+      <li><span class="chip new">SegmentedControl</span> — token-driven 2–3 option toggle (invitee kind, channel, member type). NET-NEW.</li>
+      <li><span class="chip new">PhoneNumberInput</span> — E.164 country-code + number field with validation. NET-NEW (no phone-input / libphonenumber exists today).</li>
+      <li><span class="chip new">SocialButton · Facebook</span> — new provider variant. Only Google exists today; Facebook sign-up is NET-NEW.</li>
+      <li><span class="chip">StatusCallout</span> — soft-tinted inline banner for the fail-closed states. Already named by account-security; reuse.</li>
+    </ul>
+
+    <h3>Contract deltas</h3>
+    <dd style="margin:0" data-contract>Invitations have <b>no OpenAPI contract today</b> — v1 is un-contracted Express
+      (<code>backend/src/routes/invitations.ts</code>, <code>organizations.ts</code>). This approval commissions
+      <code>contract-designer</code> to freeze the following in <code>packages/security/openapi.yaml</code> →
+      <code>@fuzefront/security-client</code>:</dd>
+    <ul class="tight">
+      <li><code>POST /v1/security/tenants/{tenantId}/invitations</code> — create (InvitationCreate → 201 Invitation).</li>
+      <li><code>GET /v1/security/tenants/{tenantId}/invitations</code> — list pending (InvitationPage, cursor).</li>
+      <li><code>POST /v1/security/tenants/{tenantId}/invitations/{invitationId}/resend</code> — resend (202; rate-limited).</li>
+      <li><code>DELETE /v1/security/tenants/{tenantId}/invitations/{invitationId}</code> — revoke (204, idempotent).</li>
+      <li><code>GET /v1/security/invitations/resolve?token=</code> — public resolve (InvitationPreview; 410 expired/revoked, 409 already-accepted).</li>
+      <li><code>POST /v1/security/invitations/accept</code> — accept + bind ({token} → 200 Membership; 403 IDENTITY_MISMATCH, 410 expired/revoked, 409 already-accepted).</li>
+      <li>NEW fields: <code>Invitation.channel</code> (email | whatsapp), <code>Invitation.memberType</code> (employee | customer) — <b>member_type is net-new</b> (today the distinction is structural, not a field).</li>
+      <li>NEW delivery: WhatsApp channel (Twilio WhatsApp sender) alongside email (ZeptoMail / <code>services/email-service</code> <code>org-invite</code> template) — WhatsApp is net-new.</li>
+      <li>NEW events: <code>identity.invitation.created / accepted / revoked</code> (Kafka Zod in <code>shared/</code>); accept also emits the existing <code>identity.membership.added</code>.</li>
+      <li>409 <code>LAST_OWNER</code> invariant on ownership-affecting actions (extends authz-admin's LAST_ADMIN to the owner tier).</li>
+    </ul>
+  </div>
+
+  <span class="pending" data-approval-status="pending">● Awaiting approval — per flow</span>
+
+  <p class="meta">
+    Design system: <code>@fuzefront/design-system</code> (fuse-seam) ·
+    Contract: <code>packages/security/openapi.yaml</code> → <code>@fuzefront/security-client</code> (commissioned) ·
+    Flag: <code>fuzefront.identity.org-invitations</code> (default OFF) ·
+    Siblings: <code>authz-admin</code>, <code>member-directory</code>, <code>employee-console</code>, <code>auth-experience</code>.<br />
+    Approve per flow by setting <code>approved: true</code> (+ approver + date) on that flow in
+    <code>manifest.json</code>, or reply <code>@claude approve &lt;flow&gt;</code> / <code>@claude reject: &lt;reason&gt;</code>.
+  </p>
+</div>
+</body>
+</html>

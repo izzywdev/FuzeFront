@@ -18,7 +18,8 @@
  * never pulls in `@opentelemetry/sdk-node` / the gRPC exporter / any other
  * Node-only OTel package.
  */
-import { context, propagation, trace } from '@opentelemetry/api';
+import { context, propagation } from '@opentelemetry/api';
+import { getActiveSpanId, getActiveTraceId } from './rum-trace';
 import { W3CTraceContextPropagator } from '@opentelemetry/core';
 import {
   BatchSpanProcessor,
@@ -130,20 +131,28 @@ export function initBrowserTelemetry(options: BrowserTelemetryOptions): BrowserT
   };
 }
 
-/** The `trace_id` of the currently-active span, if any (e.g. inside a
- * `fetch`/`XHR` instrumentation's created span, or a span the app started
- * manually). `undefined` when nothing is active — most of the time, since
- * spans here are per-network-call, not per-page-view. */
-export function getActiveTraceId(): string | undefined {
-  const span = trace.getSpan(context.active());
-  return span?.spanContext().traceId;
-}
+export { getActiveSpanId, getActiveTraceId };
 
-/** The `span_id` of the currently-active span, if any. */
-export function getActiveSpanId(): string | undefined {
-  const span = trace.getSpan(context.active());
-  return span?.spanContext().spanId;
-}
+// RUM (Core Web Vitals, navigation/resource timing, error + log capture) —
+// see ./rum.ts. Observability-standard P31–P37.
+export {
+  DEFAULT_RUM_ENDPOINT,
+  getRumSessionId,
+  initBrowserRum,
+  redactAttrs,
+  redactString,
+  sanitizeUrl,
+  sendRumPayload,
+} from './rum';
+export type {
+  BrowserRumHandle,
+  BrowserRumOptions,
+  RumEvent,
+  RumEventType,
+  RumLogLevel,
+  RumLogger,
+  RumPayload,
+} from './rum';
 
 /**
  * Tags a client-side error/log payload with the active `trace_id` (+

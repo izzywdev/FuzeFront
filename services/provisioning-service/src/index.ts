@@ -21,6 +21,7 @@ import {
   IdentityMembershipRemovedPayloadV1,
   identityMembershipRemovedSchemaV1,
 } from '@fuzefront/shared/kafka';
+import { initTelemetry, type TelemetryHandle } from '@fuzefront/telemetry';
 import { loadConfig } from './config';
 import {
   handleUserCreated,
@@ -35,6 +36,20 @@ import {
 } from './handler';
 import { createApp } from './app';
 
+// Bootstrap OpenTelemetry BEFORE the express app is constructed below (see
+// backend/security/src/index.ts for the full rationale). Sends OTLP to
+// FuzeInfra's Collector; endpoint/protocol/sampling default from OTEL_* env.
+// npm_package_version is only set by an npm lifecycle script; the production
+// Dockerfile runs `node dist/index.js` directly, so it's always undefined
+// there and every span's service.version would be silently empty. Read the
+// version straight from package.json instead.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const SERVICE_VERSION: string = require('../package.json').version;
+const telemetry: TelemetryHandle = initTelemetry({
+  serviceName: 'provisioning-service',
+  serviceVersion: SERVICE_VERSION,
+});
+
 async function main() {
   const config = loadConfig();
 
@@ -45,8 +60,9 @@ async function main() {
   });
 
   // DLQ producer: forwards poison/schema-invalid/handler-failed messages to <topic>.dlq
+  // Connected in the background (startConsumers below), not here, so a broker
+  // that is down at boot cannot block startup before the health port binds.
   const dlqProducer = new TypedProducer(kafka);
-  await dlqProducer.connect();
 
   const handlerDeps: HandlerDeps = {
     securityServiceUrl: config.securityServiceUrl,
@@ -82,121 +98,233 @@ async function main() {
     };
   }
 
+  // --- Consumers (constructed here; connected in the background below) ---
   // identity.user.created -> provision the user (personal org + Permit wiring)
   const userConsumer = new TypedConsumer(kafka, config.kafka.groupId);
-  await userConsumer.connect();
-  await userConsumer.subscribe(TOPICS.IDENTITY_USER_CREATED);
-  await userConsumer.run(
-    withDlq<IdentityUserCreatedPayloadV1>(TOPICS.IDENTITY_USER_CREATED, event =>
-      handleUserCreated(event, handlerDeps)
-    ),
-    identityUserCreatedSchemaV1,
-    dlqProducer
-  );
-
   // identity.org.created -> reconcile the org's Permit wiring (via its owner).
   // Separate consumer/group: TypedConsumer.run binds a single schema per loop.
   const orgConsumer = new TypedConsumer(kafka, `${config.kafka.groupId}-org`);
-  await orgConsumer.connect();
-  await orgConsumer.subscribe(TOPICS.IDENTITY_ORG_CREATED);
-  await orgConsumer.run(
-    withDlq<IdentityOrgCreatedPayloadV1>(TOPICS.IDENTITY_ORG_CREATED, event =>
-      handleOrgCreated(event, handlerDeps)
-    ),
-    identityOrgCreatedSchemaV1,
-    dlqProducer
-  );
-
   // identity.org.updated -> re-reconcile the org's Permit wiring.
   const orgUpdatedConsumer = new TypedConsumer(kafka, `${config.kafka.groupId}-org-updated`);
-  await orgUpdatedConsumer.connect();
-  await orgUpdatedConsumer.subscribe(TOPICS.IDENTITY_ORG_UPDATED);
-  await orgUpdatedConsumer.run(
-    withDlq<IdentityOrgUpdatedPayloadV1>(TOPICS.IDENTITY_ORG_UPDATED, event =>
-      handleOrgUpdated(event, handlerDeps)
-    ),
-    identityOrgUpdatedSchemaV1,
-    dlqProducer
-  );
-
   // identity.org.deleted -> tear down the org's Permit access (soft/hard).
   const orgDeletedConsumer = new TypedConsumer(kafka, `${config.kafka.groupId}-org-deleted`);
-  await orgDeletedConsumer.connect();
-  await orgDeletedConsumer.subscribe(TOPICS.IDENTITY_ORG_DELETED);
-  await orgDeletedConsumer.run(
-    withDlq<IdentityOrgDeletedPayloadV1>(TOPICS.IDENTITY_ORG_DELETED, event =>
-      handleOrgDeleted(event, handlerDeps)
-    ),
-    identityOrgDeletedSchemaV1,
-    dlqProducer
-  );
-
   // identity.user.updated -> re-sync the user's profile into Permit.
   const userUpdatedConsumer = new TypedConsumer(kafka, `${config.kafka.groupId}-user-updated`);
-  await userUpdatedConsumer.connect();
-  await userUpdatedConsumer.subscribe(TOPICS.IDENTITY_USER_UPDATED);
-  await userUpdatedConsumer.run(
-    withDlq<IdentityUserUpdatedPayloadV1>(TOPICS.IDENTITY_USER_UPDATED, event =>
-      handleUserUpdated(event, handlerDeps)
-    ),
-    identityUserUpdatedSchemaV1,
-    dlqProducer
-  );
-
   // identity.user.deleted -> tear down the user's Permit principal + sessions.
   const userDeletedConsumer = new TypedConsumer(kafka, `${config.kafka.groupId}-user-deleted`);
-  await userDeletedConsumer.connect();
-  await userDeletedConsumer.subscribe(TOPICS.IDENTITY_USER_DELETED);
-  await userDeletedConsumer.run(
-    withDlq<IdentityUserDeletedPayloadV1>(TOPICS.IDENTITY_USER_DELETED, event =>
-      handleUserDeleted(event, handlerDeps)
-    ),
-    identityUserDeletedSchemaV1,
-    dlqProducer
-  );
-
   // identity.membership.added -> assign the member's Permit role.
   const membershipAddedConsumer = new TypedConsumer(kafka, `${config.kafka.groupId}-membership-added`);
-  await membershipAddedConsumer.connect();
-  await membershipAddedConsumer.subscribe(TOPICS.IDENTITY_MEMBERSHIP_ADDED);
-  await membershipAddedConsumer.run(
-    withDlq<IdentityMembershipAddedPayloadV1>(TOPICS.IDENTITY_MEMBERSHIP_ADDED, event =>
-      handleMembershipAdded(event, handlerDeps)
-    ),
-    identityMembershipAddedSchemaV1,
-    dlqProducer
-  );
-
   // identity.membership.removed -> revoke the member's Permit role.
   const membershipRemovedConsumer = new TypedConsumer(kafka, `${config.kafka.groupId}-membership-removed`);
-  await membershipRemovedConsumer.connect();
-  await membershipRemovedConsumer.subscribe(TOPICS.IDENTITY_MEMBERSHIP_REMOVED);
-  await membershipRemovedConsumer.run(
-    withDlq<IdentityMembershipRemovedPayloadV1>(TOPICS.IDENTITY_MEMBERSHIP_REMOVED, event =>
-      handleMembershipRemoved(event, handlerDeps)
-    ),
-    identityMembershipRemovedSchemaV1,
-    dlqProducer
-  );
 
   // --- HTTP health probe ---
+  // Bind the health port BEFORE connecting to Kafka so an unreachable or slow
+  // broker at boot cannot block app.listen and fail the /health probe into
+  // CrashLoopBackOff. The consumers connect in the background (startConsumers
+  // below) with retry; until the broker is reachable the pod stays healthy and
+  // simply consumes nothing.
   const app = createApp();
-  app.listen(config.port, () => {
+  const server = app.listen(config.port, () => {
     console.log(`[provisioning-service] Listening on port ${config.port}`);
   });
+
+  // --- Kafka consumers (background; connect + subscribe/run retried) ---
+  const startConsumers = async (): Promise<void> => {
+    // ONE retry loop covering connect AND subscribe/run, each step guarded so a
+    // failure partway through resumes from where it left off on the next pass
+    // instead of re-invoking connect()/run() on an already-initialized KafkaJS
+    // client (which throws 'already initialized'/'already running' and would
+    // wedge the loop). Keeping subscribe/run inside the loop also means a broker
+    // drop after connect retries the subscription, rather than leaving the pod
+    // healthy (/health green) but silently consuming zero events.
+    const connectables: Array<{ connect(): Promise<void> }> = [
+      dlqProducer,
+      userConsumer,
+      orgConsumer,
+      orgUpdatedConsumer,
+      orgDeletedConsumer,
+      userUpdatedConsumer,
+      userDeletedConsumer,
+      membershipAddedConsumer,
+      membershipRemovedConsumer,
+    ];
+    const starters: Array<{
+      consumer: TypedConsumer;
+      subscribe: () => Promise<void>;
+      run: () => Promise<void>;
+    }> = [
+      {
+        consumer: userConsumer,
+        subscribe: () => userConsumer.subscribe(TOPICS.IDENTITY_USER_CREATED),
+        run: () =>
+          userConsumer.run(
+            withDlq<IdentityUserCreatedPayloadV1>(TOPICS.IDENTITY_USER_CREATED, event =>
+              handleUserCreated(event, handlerDeps)
+            ),
+            identityUserCreatedSchemaV1,
+            dlqProducer
+          ),
+      },
+      {
+        consumer: orgConsumer,
+        subscribe: () => orgConsumer.subscribe(TOPICS.IDENTITY_ORG_CREATED),
+        run: () =>
+          orgConsumer.run(
+            withDlq<IdentityOrgCreatedPayloadV1>(TOPICS.IDENTITY_ORG_CREATED, event =>
+              handleOrgCreated(event, handlerDeps)
+            ),
+            identityOrgCreatedSchemaV1,
+            dlqProducer
+          ),
+      },
+      {
+        consumer: orgUpdatedConsumer,
+        subscribe: () => orgUpdatedConsumer.subscribe(TOPICS.IDENTITY_ORG_UPDATED),
+        run: () =>
+          orgUpdatedConsumer.run(
+            withDlq<IdentityOrgUpdatedPayloadV1>(TOPICS.IDENTITY_ORG_UPDATED, event =>
+              handleOrgUpdated(event, handlerDeps)
+            ),
+            identityOrgUpdatedSchemaV1,
+            dlqProducer
+          ),
+      },
+      {
+        consumer: orgDeletedConsumer,
+        subscribe: () => orgDeletedConsumer.subscribe(TOPICS.IDENTITY_ORG_DELETED),
+        run: () =>
+          orgDeletedConsumer.run(
+            withDlq<IdentityOrgDeletedPayloadV1>(TOPICS.IDENTITY_ORG_DELETED, event =>
+              handleOrgDeleted(event, handlerDeps)
+            ),
+            identityOrgDeletedSchemaV1,
+            dlqProducer
+          ),
+      },
+      {
+        consumer: userUpdatedConsumer,
+        subscribe: () => userUpdatedConsumer.subscribe(TOPICS.IDENTITY_USER_UPDATED),
+        run: () =>
+          userUpdatedConsumer.run(
+            withDlq<IdentityUserUpdatedPayloadV1>(TOPICS.IDENTITY_USER_UPDATED, event =>
+              handleUserUpdated(event, handlerDeps)
+            ),
+            identityUserUpdatedSchemaV1,
+            dlqProducer
+          ),
+      },
+      {
+        consumer: userDeletedConsumer,
+        subscribe: () => userDeletedConsumer.subscribe(TOPICS.IDENTITY_USER_DELETED),
+        run: () =>
+          userDeletedConsumer.run(
+            withDlq<IdentityUserDeletedPayloadV1>(TOPICS.IDENTITY_USER_DELETED, event =>
+              handleUserDeleted(event, handlerDeps)
+            ),
+            identityUserDeletedSchemaV1,
+            dlqProducer
+          ),
+      },
+      {
+        consumer: membershipAddedConsumer,
+        subscribe: () => membershipAddedConsumer.subscribe(TOPICS.IDENTITY_MEMBERSHIP_ADDED),
+        run: () =>
+          membershipAddedConsumer.run(
+            withDlq<IdentityMembershipAddedPayloadV1>(TOPICS.IDENTITY_MEMBERSHIP_ADDED, event =>
+              handleMembershipAdded(event, handlerDeps)
+            ),
+            identityMembershipAddedSchemaV1,
+            dlqProducer
+          ),
+      },
+      {
+        consumer: membershipRemovedConsumer,
+        subscribe: () => membershipRemovedConsumer.subscribe(TOPICS.IDENTITY_MEMBERSHIP_REMOVED),
+        run: () =>
+          membershipRemovedConsumer.run(
+            withDlq<IdentityMembershipRemovedPayloadV1>(TOPICS.IDENTITY_MEMBERSHIP_REMOVED, event =>
+              handleMembershipRemoved(event, handlerDeps)
+            ),
+            identityMembershipRemovedSchemaV1,
+            dlqProducer
+          ),
+      },
+    ];
+
+    // connect, subscribe and run are three independently tracked phases: a
+    // failure in any one resumes only the unfinished work on the next retry.
+    // An already-connected client is never re-connected, an already-subscribed
+    // consumer never re-subscribed, an already-running consumer never re-run —
+    // each of which KafkaJS rejects and would otherwise wedge the loop. (The
+    // subscribe/run split is why a subscribe-ok/run-fail no longer re-subscribes
+    // on retry.)
+    const connected = new Set<{ connect(): Promise<void> }>();
+    const subscribed = new Set<TypedConsumer>();
+    const running = new Set<TypedConsumer>();
+    for (;;) {
+      try {
+        for (const client of connectables) {
+          if (!connected.has(client)) {
+            await client.connect();
+            connected.add(client);
+          }
+        }
+        for (const s of starters) {
+          if (!subscribed.has(s.consumer)) {
+            await s.subscribe();
+            subscribed.add(s.consumer);
+          }
+        }
+        for (const s of starters) {
+          if (!running.has(s.consumer)) {
+            await s.run();
+            running.add(s.consumer);
+          }
+        }
+        console.log('[provisioning-service] Kafka consumers running');
+        return;
+      } catch (err) {
+        console.error('[provisioning-service] Kafka startup failed; retrying in 5s:', err);
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+      }
+    }
+  };
+  startConsumers().catch((err) =>
+    console.error('[provisioning-service] Kafka startup aborted:', err),
+  );
 
   // --- Graceful shutdown ---
   const shutdown = async () => {
     console.log('[provisioning-service] Shutting down...');
-    await userConsumer.disconnect();
-    await orgConsumer.disconnect();
-    await orgUpdatedConsumer.disconnect();
-    await orgDeletedConsumer.disconnect();
-    await userUpdatedConsumer.disconnect();
-    await userDeletedConsumer.disconnect();
-    await membershipAddedConsumer.disconnect();
-    await membershipRemovedConsumer.disconnect();
-    await dlqProducer.disconnect();
+    // Close the listener (letting in-flight requests finish) BEFORE flushing
+    // telemetry — otherwise a request still in flight when SIGTERM arrives
+    // either finishes after the SDK has shut down (its span lost) or is cut
+    // off by process.exit(0) below.
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    // Each disconnect is isolated: if the broker is unavailable during
+    // SIGTERM and one of these rejects, an unguarded `await` chain would
+    // abort right there, skipping every consumer/producer after it AND the
+    // telemetry flush below — leaving buffered spans dropped and the
+    // process hung for Kubernetes to kill. Caught by a Codex review on
+    // PR #1489 (email-service had the identical ordering, fixed alongside).
+    for (const client of [
+      userConsumer,
+      orgConsumer,
+      orgUpdatedConsumer,
+      orgDeletedConsumer,
+      userUpdatedConsumer,
+      userDeletedConsumer,
+      membershipAddedConsumer,
+      membershipRemovedConsumer,
+      dlqProducer,
+    ]) {
+      await client.disconnect().catch((error) => {
+        console.error('[provisioning-service] Error disconnecting a Kafka client during shutdown:', error);
+      });
+    }
+    // Flush any spans still buffered before the process exits — otherwise the
+    // last few requests before shutdown silently never reach Tempo.
+    await telemetry.shutdown().catch(() => {});
     process.exit(0);
   };
   process.on('SIGTERM', shutdown);

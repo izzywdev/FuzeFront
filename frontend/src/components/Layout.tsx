@@ -7,6 +7,7 @@ import { useActiveApp } from '../platform/useActiveApp'
 import { isTopbarHidden } from '../platform/appManifest'
 import { PortalBrandingProvider, PortalThemeScope, usePortalContext } from '@fuzefront/portal-branding-ui'
 import { useFlag } from '../platform/featureFlags'
+import MobileInstallBanner from './MobileInstallBanner'
 
 interface LayoutProps {
   children: React.ReactNode
@@ -50,6 +51,7 @@ function PortalScopedLayout({ children }: LayoutProps) {
     <PortalThemeScope context={status === 'ready' ? context : null}>
       <div className="app-layout">
         {!hideTopBar && <TopBar onMenuToggle={toggleSidebar} />}
+        <MobileInstallBanner app={activeApp} />
         <div className="main-content">
           <SidePanel isOpen={isSidebarOpen} onClose={closeSidebar} />
           {/* Scrim: visible only on mobile when drawer is open */}

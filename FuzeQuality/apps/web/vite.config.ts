@@ -6,8 +6,30 @@ import { fileURLToPath } from 'node:url'
 
 const appRoot = fileURLToPath(new URL('.', import.meta.url))
 
-export default defineConfig({
+export default defineConfig(({ command, mode }) => {
+  // Match the API's explicitly opted-in local authentication bypass without
+  // exposing a general VITE_* client variable. `vite --mode production` stays
+  // fail-closed even when a developer's shell carries the flag.
+  const developmentAuthBypass = command === 'serve'
+    && mode !== 'production'
+    && process.env.FUZEQUALITY_DEV_AUTH_BYPASS === 'true'
+
+  return {
   root: resolve(appRoot),
+  define: {
+    'import.meta.env.FUZEQUALITY_DEV_AUTH_BYPASS': JSON.stringify(developmentAuthBypass),
+  },
+  resolve: {
+    // Shared Design System modules resolve from the monorepo root. Dedupe them
+    // onto the remote's singleton React runtime before federation packaging.
+    dedupe: ['react', 'react-dom', 'react/jsx-runtime'],
+    // TypeScript and Vitest already resolve this workspace contract alias.
+    // Keep the production federation build on the same implementation now
+    // that the web app consumes runtime eligibility guards as well as types.
+    alias: {
+      '@fuzequality/contracts/workflow-execution': resolve(appRoot, '../../packages/contracts/src/workflow-execution.ts'),
+    },
+  },
   // Served by the host shell at https://<host>/apps/fuzequality/ — the FuzeFront
   // ingress proxies that prefix straight to this app's in-cluster Service, so the
   // remote never re-enters the public edge. `base` must match that prefix (and
@@ -52,8 +74,9 @@ export default defineConfig({
     proxy: { '/api': 'http://localhost:4180', '/health': 'http://localhost:4180' },
   },
   build: {
-    outDir: resolve(appRoot, '../../dist/web'),
+    outDir: resolve(appRoot, '../../dist'),
     emptyOutDir: true,
     target: 'esnext',
   },
+  }
 })

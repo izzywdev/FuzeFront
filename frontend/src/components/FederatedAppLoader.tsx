@@ -1,9 +1,9 @@
 import React, { useState, useEffect, Suspense } from 'react'
 import type { App } from '@fuzefront/app-registry-client'
-import { useCurrentUser } from '../lib/shared'
+import { useCurrentUser, useOrganizations } from '../lib/shared'
 import { getActiveAuthToken } from '../lib/accounts'
 import { useAppRegistry } from '../platform/appRegistry'
-import { usePortalContext } from '@fuzefront/portal-branding-ui'
+import { createFederatedTenantResolver, resolveFederatedTenantId } from '../platform/tenantContext'
 import { Button } from '@fuzefront/design-system'
 import {
   loadFederatedAppFromManifest,
@@ -14,6 +14,18 @@ import { FederatedAppErrorBoundary } from './FederatedAppErrorBoundary'
 interface FederatedAppLoaderProps {
   /** App slug (the manifest's immutable id, used in /app/:slug). */
   appId: string
+}
+
+/**
+ * Host-owned identity resolvers passed to every federated React remote.
+ *
+ * The tenant resolver is intentionally separate from the bearer token: a
+ * token identifies the account, while the selected Personal/organization
+ * workspace determines the tenant-scoped authorization boundary.
+ */
+export interface FederatedAppSecurityProps {
+  getToken?: () => string | null
+  getTenantId?: () => string | null
 }
 
 const LoadingSpinner = () => (
@@ -58,14 +70,10 @@ const LoadingSpinner = () => (
 export function FederatedAppLoader({ appId }: FederatedAppLoaderProps) {
   const { apps, loading: appsLoading, getBySlug } = useAppRegistry()
   const { user } = useCurrentUser()
-  // White-label portal branding (FF-EPIC-13/FF-EPIC-10): resolves to the real
-  // portal id once Layout.tsx's multi-tenant-portals flag is on and boot has
-  // resolved; otherwise (flag off, still loading, or errored) this stays null
-  // and the session context below falls back to 'default-tenant' exactly as
-  // before.
-  const { status: portalStatus, context: portal } = usePortalContext()
+  const { organizations, activeOrganizationId, personalTenantId } = useOrganizations()
+  const tenantId = resolveFederatedTenantId({ activeOrganizationId, organizations, personalTenantId })
   const [FederatedComponent, setFederatedComponent] =
-    useState<React.ComponentType<{ getToken?: () => string | null }> | null>(null)
+    useState<React.ComponentType<FederatedAppSecurityProps> | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [retryKey, setRetryKey] = useState(0)
@@ -82,7 +90,7 @@ export function FederatedAppLoader({ appId }: FederatedAppLoaderProps) {
           ? {
               id: 'current-session',
               userId: user.id,
-              tenantId: portalStatus === 'ready' && portal ? portal.id : 'default-tenant',
+              tenantId,
               expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
             }
           : null,
@@ -96,7 +104,7 @@ export function FederatedAppLoader({ appId }: FederatedAppLoaderProps) {
         getAccessToken: getActiveAuthToken,
       }
     }
-  }, [user, app, apps, portalStatus, portal])
+  }, [user, app, apps, tenantId])
 
   useEffect(() => {
     let mounted = true
@@ -246,7 +254,10 @@ export function FederatedAppLoader({ appId }: FederatedAppLoaderProps) {
   return (
     <FederatedAppErrorBoundary appName={app?.manifest.name} onRetry={handleRetry}>
       <Suspense fallback={<LoadingSpinner />}>
-        <FederatedComponent getToken={getActiveAuthToken} />
+        <FederatedComponent
+          getToken={getActiveAuthToken}
+          getTenantId={createFederatedTenantResolver(tenantId)}
+        />
       </Suspense>
     </FederatedAppErrorBoundary>
   )

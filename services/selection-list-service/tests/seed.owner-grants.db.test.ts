@@ -25,6 +25,7 @@ import { _setGrantTokenProviderForTesting } from '../src/lib/machineIdentity';
 import { FLAGS, setFlagClient } from '../src/flags';
 import { applySeedRequest, runReconcilerOnce, ReconcilerBackoff } from '../src/seed';
 import { ownerGrantSkippedTotal, ownerGrantsTotal } from '../src/lib/metrics';
+import { permitKey } from './helpers/ids';
 
 // ---- the fake Security API: records every grant, fails on demand ------------------------------
 interface RecordedGrant {
@@ -107,10 +108,10 @@ dbDescribe('org owner list-owner grants on seeded lists (real Postgres, recordin
     const ls = await lists(org);
     expect(ls).toHaveLength(3);
 
-    // Security API: one grant per list, instance-scoped, for the owner's usr_ TypeID in the org's tenant.
+    // Security API: one grant per list, instance-scoped, for the owner in the org's tenant, both named by Permit's key (bare UUID).
     expect(grants).toHaveLength(3);
     for (const g of grants) {
-      expect(g).toMatchObject({ subject: OWNER_WIRE, tenant: org, role: 'list-owner', token: MACHINE_TOKEN });
+      expect(g).toMatchObject({ subject: OWNER_UUID, tenant: permitKey(org), role: 'list-owner', token: MACHINE_TOKEN }); // Permit's keys (bare UUIDs)
       expect(g.resource?.type).toBe('SelectionList');
     }
     expect(grants.map((g) => g.resource?.key).sort()).toEqual(ls.map((l: any) => l.id).sort());
@@ -119,7 +120,7 @@ dbDescribe('org owner list-owner grants on seeded lists (real Postgres, recordin
     const rows = await mirror(org);
     expect(rows).toHaveLength(3);
     for (const r of rows) {
-      expect(r).toMatchObject({ user_id: OWNER_WIRE, role: 'list-owner', granted_by: 'system:selection-list-service', org_id: org, revoked_at: null });
+      expect(r).toMatchObject({ user_id: OWNER_UUID, role: 'list-owner', granted_by: 'system:selection-list-service', org_id: permitKey(org), revoked_at: null });
     }
 
     // Seed trail: one audit row per grant, naming who got what.
@@ -212,14 +213,14 @@ dbDescribe('org owner list-owner grants on seeded lists (real Postgres, recordin
     const org = wire(uuid);
     await handleOrgCreated(event(uuid) as never);
     const [first, second] = await lists(org);
-    await db('selection_list_access').where({ list_id: first.id, user_id: OWNER_WIRE }).update({ revoked_at: new Date() });
-    await db('selection_list_access').where({ list_id: second.id, user_id: OWNER_WIRE }).update({ role: 'list-viewer' });
+    await db('selection_list_access').where({ list_id: first.id, user_id: OWNER_UUID }).update({ revoked_at: new Date() });
+    await db('selection_list_access').where({ list_id: second.id, user_id: OWNER_UUID }).update({ role: 'list-viewer' });
     grants.length = 0;
 
     await handleOrgCreated(event(uuid) as never);
     expect(grants).toHaveLength(0);
-    expect((await db('selection_list_access').where({ list_id: first.id, user_id: OWNER_WIRE }).first()).revoked_at).not.toBeNull();
-    expect((await db('selection_list_access').where({ list_id: second.id, user_id: OWNER_WIRE }).first()).role).toBe('list-viewer');
+    expect((await db('selection_list_access').where({ list_id: first.id, user_id: OWNER_UUID }).first()).revoked_at).not.toBeNull();
+    expect((await db('selection_list_access').where({ list_id: second.id, user_id: OWNER_UUID }).first()).role).toBe('list-viewer');
   });
 
   it('an inactive org is projected but gets no seed and no grant', async () => {
@@ -259,7 +260,7 @@ dbDescribe('org owner list-owner grants on seeded lists (real Postgres, recordin
       sleep: async () => undefined,
     });
     expect(summary.failed).toBe(0);
-    expect(grants.filter((g) => g.tenant === org)).toHaveLength(3);
+    expect(grants.filter((g) => g.tenant === permitKey(org))).toHaveLength(3);
     expect(await mirror(org)).toHaveLength(3);
 
     // ... and once healed it is no longer a candidate: a second sweep grants nothing.

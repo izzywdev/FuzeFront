@@ -45,11 +45,24 @@ export function Input({
   type,
   disabled = false,
   revealToggle = true,
+  showPasswordLabel = "Show password",
+  hidePasswordLabel = "Hide password",
+  adornment,
+  valid = false,
+  invalid = false,
   style,
   ...rest
 }) {
-  const hasError = Boolean(error);
-  const baseBorder = hasError ? "var(--error-color)" : "var(--border-color)";
+  // `invalid` flags the field (red ring + aria-invalid) WITHOUT a message of its
+  // own — for callers that render the explanation elsewhere (e.g. an inline
+  // availability line). `valid` lights the success ring. An `error` message
+  // always implies invalid.
+  const hasError = Boolean(error) || invalid;
+  const baseBorder = hasError
+    ? "var(--error-color)"
+    : valid
+      ? "var(--success-color)"
+      : "var(--border-color)";
   // Always associate the label with the control: fall back to a generated id
   // when the consumer doesn't pass one, so the field is reachable by its label
   // (accessibility + testing-library getByLabelText).
@@ -97,7 +110,7 @@ export function Input({
             boxSizing: "border-box",
             padding: "var(--space-3) var(--space-3)",
             // Clear room for the reveal button so text never runs under it.
-            paddingInlineEnd: showToggle ? "var(--space-10)" : undefined,
+            paddingInlineEnd: showToggle || adornment ? "var(--space-10)" : undefined,
             fontFamily: "var(--font-sans)",
             fontSize: "var(--text-sm)",
             fontWeight: "var(--weight-regular)",
@@ -127,6 +140,23 @@ export function Input({
           }}
           {...rest}
         />
+        {adornment && !showToggle && (
+          <span
+            aria-hidden="true"
+            style={{
+              position: "absolute",
+              insetBlockStart: "50%",
+              insetInlineEnd: "var(--space-3)",
+              transform: "translateY(-50%)",
+              display: "inline-flex",
+              alignItems: "center",
+              lineHeight: 0,
+              pointerEvents: "none",
+            }}
+          >
+            {adornment}
+          </span>
+        )}
         {showToggle && (
           <button
             type="button"
@@ -141,7 +171,7 @@ export function Input({
             // same accessible name (getByRole name) without that false match.
             aria-pressed={revealed}
             aria-controls={fieldId}
-            title={revealed ? "Hide password" : "Show password"}
+            title={revealed ? hidePasswordLabel : showPasswordLabel}
             style={{
               position: "absolute",
               insetBlockStart: "50%",
@@ -183,13 +213,13 @@ export function Input({
                 border: 0,
               }}
             >
-              {revealed ? "Hide password" : "Show password"}
+              {revealed ? hidePasswordLabel : showPasswordLabel}
             </span>
             {revealed ? <EyeOffIcon /> : <EyeIcon />}
           </button>
         )}
       </div>
-      {hasError && (
+      {Boolean(error) && (
         <span
           role="alert"
           style={{

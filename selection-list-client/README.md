@@ -2,7 +2,7 @@
 
 Typed client for the FuzeFront **selection-list-service**. Zero runtime dependencies; uses the platform `fetch`.
 
-Derived from the frozen contract at [`services/selection-list-service/openapi.yaml`](../services/selection-list-service/openapi.yaml) **v4.0.0**. The spec wins any disagreement.
+Derived from the frozen contract at [`services/selection-list-service/openapi.yaml`](../services/selection-list-service/openapi.yaml) **v4.2.0**. The spec wins any disagreement.
 
 ```ts
 import { SelectionListClient, isSelectionListApiError } from '@fuzeone/selection-list-client'
@@ -49,20 +49,109 @@ Lists and items also carry a read-only `seed` (`SeedProvenance` or `null`):
 `source`, `pack_key`, `pack_version`, `user_modified`. It is `null` for every
 user-authored row.
 
-## Install locally (pre-publish)
+## Shared and common lists, forks (2.1.0, contract 4.1.0)
 
-The `@fuzeone` scope IS published now — but only for packages that are root
-workspaces. `@fuzeone/selection-lists-ui` is live as
-`@izzywdev/fuzeone-selection-lists-ui@0.1.0`; **this** package is not, because
-`selection-list-client` is missing from the root `package.json` `workspaces`
-array, which is the one list `scripts/publish-packages.mjs` reads. No workspace
-entry means no matrix leg, so `packages-publish` never attempts it and stays
-green regardless. Until it is added:
+Lists carry `visibility` (`private` / `org` / `platform`), `forked_from` and a
+caller-relative `editable` hint; items carry `origin_item_id`. `org` lists are
+pickable by every member of their org and `platform` lists are common lists
+pickable by every org — read-only without an instance role. The service
+implements all of it (design record:
+`docs/planning/selection-lists-shared-and-fork.md`), **dark behind the release
+flag `fuzefront.selection-lists.shared-lists`** (default OFF; it also needs
+`fuzefront.selection-lists.service`). While the flag is OFF `include_shared` /
+`visibility` are ignored, `forkList` answers `404`, a non-`private` `visibility`
+on create/PATCH is a `400`, and every list reads `visibility: 'private'`,
+`forked_from: null`, items `origin_item_id: null`, with no `editable`. The
+shared-lists UI is not built yet.
+
+All four fields are still typed **optional** in the 4.1.0 types (`visibility?`,
+`forked_from?`, `editable?`, `origin_item_id?`) because the spec types them
+optional (the service always emits the first, second and fourth, and `editable`
+while the flag is ON). Absent means the 4.0.0 state: `visibility` = `'private'`, `forked_from` /
+`origin_item_id` = `null`, `editable` = unknown (test `editable === false`, never
+`!editable`). A later contract MINOR tightens them to required.
+
+```ts
+const list = await client.getEffectiveList('priority') // own org's list/fork first, else the common list
+try {
+  await client.updateList(list!.id, { name: 'Urgency' })
+} catch (e) {
+  if (isSelectionListApiError(e) && e.isForkRequired) {
+    const { list: fork } = await client.forkList(e.sourceListId!) // same key; items keep origin_item_id
+    await client.updateList(fork.id, { name: 'Urgency' })
+  } else throw e
+}
+```
+
+`getEffectiveList` follows the cursor of its own query (2.2.0): the service cuts
+a page before it drops rows the caller cannot read, so a key lookup can get an
+**empty page that still has a `nextCursor`**. It walks on until a row for the
+key or the last page (`null`), at most `MAX_EFFECTIVE_LOOKUP_PAGES` (10) pages;
+exhausting the bound throws `EffectiveLookupIncompleteError` (never `null`), a
+failed page throws, and an aborted `signal` stops the walk. The same applies to
+any listing you walk by hand: a short or empty page is not the end — only
+`hasMore === false` is (`paginate` already does this).
+
+`getLists({ include_shared: true })` adds lists readable through visibility
+(the default is unchanged).
+
+**Pages can be shorter than `limit`, even empty, and still not be the last.**
+The service filters unreadable lists *after* it paginates, so follow
+`page.nextCursor` until `page.hasMore` is `false` (`paginate()` does) and never
+stop on a short or empty page. `getEffectiveList` asks for `limit: 1`, so the
+first row in database order for the key can be one the caller cannot read (for
+example a colleague's `private` fork) while the common list is on the next page;
+since 2.2.0 it follows the cursor for that reason (above). On 2.1.x it returned
+`null` there — look the key up with
+`paginate((p) => client.getLists({ ...p, key, include_shared: true }))` and take
+the first item instead.
+
+`forkList` answers `201` (`created: true`) or `200` (the org already holds a
+fork you can read); a fork you cannot read is `409` `reason: 'fork_exists'`,
+your own org's list is `409` `reason: 'fork_not_applicable'`, a key already used
+by a different list is a plain `409`, over 5000 items is `400`, and quota is
+`403` `QUOTA_EXCEEDED`. A `platform` list is never demoted: `409`
+`reason: 'visibility_locked'`. `resolveIds` resolves common-list ids in every org
+and, where the org holds an `org`-visible fork, answers from the fork item with
+`effective_item_id` set.
+
+## Is a fork behind its source? (2.2.0, contract 4.2.0)
+
+Lists carry a read-only `revision` — the per-list counter the events carry as
+`listRevision` (`1` at creation, `+1` per committed change event about the list
+or anything inside it, never decreasing). A fork's `forked_from.revision` is the
+source's revision at copy time. `compareForkToSource(fork, source)` compares
+them: `'behind'` / `'up-to-date'` / `'unknown'`.
+
+```ts
+const source = await client.getList(fork.forked_from!.list_id)
+const state = compareForkToSource(fork, source) // never looks at updated_at
+```
+
+`revision?` is **optional** at 4.2.0: the service does not emit it until its
+implementation ships, and **absent means unknown** (`'unknown'` → show
+"comparison unavailable"). Archived (`status`) and gone (`404`) sources are
+yours to render; the helper answers only the revision question.
+
+## Install
+
+`selection-list-client` is a root `package.json` `workspaces` entry, which is the
+one list `scripts/publish-packages.mjs` reads, so `packages-publish.yml` builds
+and publishes it to GitHub Packages as
+`@izzywdev/fuzeone-selection-list-client` (the owner-scope alias of this
+canonical name) on a version bump merged to `master`. Whether a given version is
+in the registry is not something this repo can show; check it with
+`gh api users/izzywdev/packages/npm/fuzeone-selection-list-client/versions --jq '[.[].name]'`.
+Inside this repo no mapping is needed (it links from the tree). To test an
+unpublished build:
 
 ```bash
 cd selection-list-client && npm install && npm run build && npm pack
-npm install /path/to/fuzeone-selection-list-client-1.0.0.tgz
+npm install /path/to/fuzeone-selection-list-client-2.2.0.tgz
 ```
+
+See `docs/guides/SELECTION_LIST_SERVICE.md` for the registry `.npmrc` and the
+alias.
 
 ## Scripts
 

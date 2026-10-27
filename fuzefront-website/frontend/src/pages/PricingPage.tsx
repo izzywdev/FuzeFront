@@ -3,9 +3,9 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Check, X, ArrowRight, Zap, Rocket, Crown, Sparkles } from 'lucide-react'
-import { Container } from '@fuzefront/design-system'
+import { Container, ResponsiveGrid, Text, SectionIcon, PageSection, Stack } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
-import { ListStack } from '@fuzefront/design-system'
+import { ListStack, IconListItem } from '@fuzefront/design-system'
 
 interface Plan {
   name: string
@@ -35,7 +35,7 @@ const plans: Plan[] = [
     features: [
       'Up to 2 team members',
       'Core auth & billing',
-      'FuzeFront Platform access',
+      'FuzeFront access',
       '1 GB storage',
       'Community support',
     ],
@@ -57,7 +57,7 @@ const plans: Plan[] = [
       'Basic analytics',
       '99.9% uptime SLA',
       'Community support',
-      'FuzeFront Platform access',
+      'FuzeFront access',
       '5 GB storage',
     ],
     notIncluded: ['SSO / SAML', 'Advanced analytics', 'Custom integrations', 'API access'],
@@ -181,7 +181,7 @@ export const PricingPage: React.FC = () => {
       {/* Plans */}
       <section className="py-16 bg-secondary-50">
         <Container size="7xl">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <ResponsiveGrid columns={4} gap="lg">
             {plans.map((plan, i) => {
               const Icon = plan.icon
               const price = yearly ? plan.yearlyPrice : plan.monthlyPrice
@@ -206,7 +206,7 @@ export const PricingPage: React.FC = () => {
                   )}
 
                   <div className="p-6">
-                    <div className="flex items-center gap-3 mb-4">
+                    <Stack gap="sm" mb="md">
                       <div className={`w-10 h-10 rounded-xl ${plan.popular ? 'bg-primary-100' : 'bg-secondary-100'} flex items-center justify-center`}>
                         <Icon size={18} className={plan.popular ? 'text-primary-600' : 'text-secondary-600'} />
                       </div>
@@ -214,9 +214,16 @@ export const PricingPage: React.FC = () => {
                         <h3 className="font-bold text-gray-900">{plan.name}</h3>
                         <p className="text-xs text-gray-600">{plan.members}</p>
                       </div>
-                    </div>
+                    </Stack>
 
-                    <p className="text-sm text-gray-600 mb-5 leading-relaxed">{plan.description}</p>
+                    <Text
+                      as="p"
+                      tone="secondary"
+                      size="sm"
+                      style={{ lineHeight: 'var(--leading-relaxed)', marginBlockEnd: 'var(--space-5)' }}
+                    >
+                      {plan.description}
+                    </Text>
 
                     <div className="mb-6">
                       {isEnterprise ? (
@@ -260,28 +267,26 @@ export const PricingPage: React.FC = () => {
 
                     <ListStack gap="md">
                       {plan.features.map((feature) => (
-                        <li key={feature} className="flex items-start gap-2 text-sm">
-                          <Check size={14} className="text-success-500 flex-shrink-0 mt-0.5" />
+                        <IconListItem key={feature} icon={Check} className="text-sm">
                           <span className="text-gray-700">{feature}</span>
-                        </li>
+                        </IconListItem>
                       ))}
                       {plan.notIncluded?.map((feature) => (
-                        <li key={feature} className="flex items-start gap-2 text-sm">
-                          <X size={14} className="text-gray-300 flex-shrink-0 mt-0.5" />
+                        <IconListItem key={feature} icon={X} tone="muted" className="text-sm">
                           <span className="text-gray-600">{feature}</span>
-                        </li>
+                        </IconListItem>
                       ))}
                     </ListStack>
                   </div>
                 </motion.div>
               )
             })}
-          </div>
+          </ResponsiveGrid>
         </Container>
       </section>
 
       {/* Feature Comparison Table */}
-      <section className="py-20 bg-white">
+      <PageSection spacing="md">
         <Container size="5xl">
           <h2 className="text-2xl sm:text-3xl font-heading font-bold text-gray-900 mb-10 text-center">
             Compare all features
@@ -320,7 +325,7 @@ export const PricingPage: React.FC = () => {
             </table>
           </div>
         </Container>
-      </section>
+      </PageSection>
 
       {/* Enterprise CTA */}
       <section
@@ -334,7 +339,9 @@ export const PricingPage: React.FC = () => {
           transition={{ duration: 0.6 }}
           className="relative max-w-3xl mx-auto px-4 text-center"
         >
-          <Crown size={40} className="text-primary-400 mx-auto mb-6" />
+          <SectionIcon tone="accent">
+            <Crown size={40} />
+          </SectionIcon>
           <h2 className="text-3xl sm:text-4xl font-heading font-bold text-white mb-4">
             Need something custom?
           </h2>
