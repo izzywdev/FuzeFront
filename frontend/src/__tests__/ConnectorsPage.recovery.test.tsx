@@ -2,7 +2,10 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import ConnectorsPage from '../pages/ConnectorsPage'
 
-vi.mock('../lib/accounts', () => ({ getActiveAuthToken: () => 'synthetic' }))
+vi.mock('../lib/accounts', () => ({
+  getActiveAuthToken: () => 'synthetic',
+  getActiveValue: () => 'selected-org',
+}))
 
 const catalog = [
   { id: 'google-drive', name: 'Google Drive', authentication: 'oauth', configured: true },
@@ -27,6 +30,20 @@ test('catalog cards appear while Gmail and another provider status are still pen
   expect(card('Google Drive').getByText('Loading connection status…')).toBeTruthy()
   expect(card('Google Drive').getByRole('button', { name: 'Connect' }).hasAttribute('disabled')).toBe(true)
   expect(card('Google Gmail').getByText('Loading connection status…')).toBeTruthy()
+})
+
+test('connector requests include the active organization selector', async () => {
+  const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
+    if (url.endsWith('/catalog')) return ok({ connectors: [] })
+    return ok({ provider: 'google-gmail', status: 'disconnected' })
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  render(<ConnectorsPage />)
+  await screen.findByRole('heading', { name: 'Connectors' })
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+  expect(fetchMock.mock.calls.some(([, init]) =>
+    (init?.headers as Record<string, string>)?.['X-Active-Organization'] === 'selected-org',
+  )).toBe(true)
 })
 
 test('failed metadata stays visible as unavailable and disables connection controls', async () => {
