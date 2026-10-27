@@ -128,13 +128,15 @@ async function main() {
     console.log(`[provisioning-service] Listening on port ${config.port}`);
   });
 
-  // --- Kafka consumers (background; broker connect retried) ---
+  // --- Kafka consumers (background; connect + subscribe/run retried) ---
   const startConsumers = async (): Promise<void> => {
-    // Connect each client at most once. If a later connect fails, the retry
-    // must NOT re-invoke connect() on an already-initialized KafkaJS client —
-    // KafkaJS throws 'already initialized', which would wedge the loop in a
-    // permanent failure state that no broker recovery could clear. Tracking
-    // the connected set keeps the retry resuming from where it left off.
+    // ONE retry loop covering connect AND subscribe/run, each step guarded so a
+    // failure partway through resumes from where it left off on the next pass
+    // instead of re-invoking connect()/run() on an already-initialized KafkaJS
+    // client (which throws 'already initialized'/'already running' and would
+    // wedge the loop). Keeping subscribe/run inside the loop also means a broker
+    // drop after connect retries the subscription, rather than leaving the pod
+    // healthy (/health green) but silently consuming zero events.
     const connectables: Array<{ connect(): Promise<void> }> = [
       dlqProducer,
       userConsumer,
@@ -146,7 +148,115 @@ async function main() {
       membershipAddedConsumer,
       membershipRemovedConsumer,
     ];
+    const starters: Array<{ consumer: TypedConsumer; start: () => Promise<void> }> = [
+      {
+        consumer: userConsumer,
+        start: async () => {
+          await userConsumer.subscribe(TOPICS.IDENTITY_USER_CREATED);
+          await userConsumer.run(
+            withDlq<IdentityUserCreatedPayloadV1>(TOPICS.IDENTITY_USER_CREATED, event =>
+              handleUserCreated(event, handlerDeps)
+            ),
+            identityUserCreatedSchemaV1,
+            dlqProducer
+          );
+        },
+      },
+      {
+        consumer: orgConsumer,
+        start: async () => {
+          await orgConsumer.subscribe(TOPICS.IDENTITY_ORG_CREATED);
+          await orgConsumer.run(
+            withDlq<IdentityOrgCreatedPayloadV1>(TOPICS.IDENTITY_ORG_CREATED, event =>
+              handleOrgCreated(event, handlerDeps)
+            ),
+            identityOrgCreatedSchemaV1,
+            dlqProducer
+          );
+        },
+      },
+      {
+        consumer: orgUpdatedConsumer,
+        start: async () => {
+          await orgUpdatedConsumer.subscribe(TOPICS.IDENTITY_ORG_UPDATED);
+          await orgUpdatedConsumer.run(
+            withDlq<IdentityOrgUpdatedPayloadV1>(TOPICS.IDENTITY_ORG_UPDATED, event =>
+              handleOrgUpdated(event, handlerDeps)
+            ),
+            identityOrgUpdatedSchemaV1,
+            dlqProducer
+          );
+        },
+      },
+      {
+        consumer: orgDeletedConsumer,
+        start: async () => {
+          await orgDeletedConsumer.subscribe(TOPICS.IDENTITY_ORG_DELETED);
+          await orgDeletedConsumer.run(
+            withDlq<IdentityOrgDeletedPayloadV1>(TOPICS.IDENTITY_ORG_DELETED, event =>
+              handleOrgDeleted(event, handlerDeps)
+            ),
+            identityOrgDeletedSchemaV1,
+            dlqProducer
+          );
+        },
+      },
+      {
+        consumer: userUpdatedConsumer,
+        start: async () => {
+          await userUpdatedConsumer.subscribe(TOPICS.IDENTITY_USER_UPDATED);
+          await userUpdatedConsumer.run(
+            withDlq<IdentityUserUpdatedPayloadV1>(TOPICS.IDENTITY_USER_UPDATED, event =>
+              handleUserUpdated(event, handlerDeps)
+            ),
+            identityUserUpdatedSchemaV1,
+            dlqProducer
+          );
+        },
+      },
+      {
+        consumer: userDeletedConsumer,
+        start: async () => {
+          await userDeletedConsumer.subscribe(TOPICS.IDENTITY_USER_DELETED);
+          await userDeletedConsumer.run(
+            withDlq<IdentityUserDeletedPayloadV1>(TOPICS.IDENTITY_USER_DELETED, event =>
+              handleUserDeleted(event, handlerDeps)
+            ),
+            identityUserDeletedSchemaV1,
+            dlqProducer
+          );
+        },
+      },
+      {
+        consumer: membershipAddedConsumer,
+        start: async () => {
+          await membershipAddedConsumer.subscribe(TOPICS.IDENTITY_MEMBERSHIP_ADDED);
+          await membershipAddedConsumer.run(
+            withDlq<IdentityMembershipAddedPayloadV1>(TOPICS.IDENTITY_MEMBERSHIP_ADDED, event =>
+              handleMembershipAdded(event, handlerDeps)
+            ),
+            identityMembershipAddedSchemaV1,
+            dlqProducer
+          );
+        },
+      },
+      {
+        consumer: membershipRemovedConsumer,
+        start: async () => {
+          await membershipRemovedConsumer.subscribe(TOPICS.IDENTITY_MEMBERSHIP_REMOVED);
+          await membershipRemovedConsumer.run(
+            withDlq<IdentityMembershipRemovedPayloadV1>(TOPICS.IDENTITY_MEMBERSHIP_REMOVED, event =>
+              handleMembershipRemoved(event, handlerDeps)
+            ),
+            identityMembershipRemovedSchemaV1,
+            dlqProducer
+          );
+        },
+      },
+    ];
+
     const connected = new Set<{ connect(): Promise<void> }>();
+    const started = new Set<TypedConsumer>();
     for (;;) {
       try {
         for (const client of connectables) {
@@ -155,86 +265,19 @@ async function main() {
             connected.add(client);
           }
         }
-        break;
+        for (const s of starters) {
+          if (!started.has(s.consumer)) {
+            await s.start();
+            started.add(s.consumer);
+          }
+        }
+        console.log('[provisioning-service] Kafka consumers running');
+        return;
       } catch (err) {
-        console.error('[provisioning-service] Kafka connect failed; retrying in 5s:', err);
+        console.error('[provisioning-service] Kafka startup failed; retrying in 5s:', err);
         await new Promise((resolve) => setTimeout(resolve, 5000));
       }
     }
-
-    await userConsumer.subscribe(TOPICS.IDENTITY_USER_CREATED);
-    await userConsumer.run(
-      withDlq<IdentityUserCreatedPayloadV1>(TOPICS.IDENTITY_USER_CREATED, event =>
-        handleUserCreated(event, handlerDeps)
-      ),
-      identityUserCreatedSchemaV1,
-      dlqProducer
-    );
-
-    await orgConsumer.subscribe(TOPICS.IDENTITY_ORG_CREATED);
-    await orgConsumer.run(
-      withDlq<IdentityOrgCreatedPayloadV1>(TOPICS.IDENTITY_ORG_CREATED, event =>
-        handleOrgCreated(event, handlerDeps)
-      ),
-      identityOrgCreatedSchemaV1,
-      dlqProducer
-    );
-
-    await orgUpdatedConsumer.subscribe(TOPICS.IDENTITY_ORG_UPDATED);
-    await orgUpdatedConsumer.run(
-      withDlq<IdentityOrgUpdatedPayloadV1>(TOPICS.IDENTITY_ORG_UPDATED, event =>
-        handleOrgUpdated(event, handlerDeps)
-      ),
-      identityOrgUpdatedSchemaV1,
-      dlqProducer
-    );
-
-    await orgDeletedConsumer.subscribe(TOPICS.IDENTITY_ORG_DELETED);
-    await orgDeletedConsumer.run(
-      withDlq<IdentityOrgDeletedPayloadV1>(TOPICS.IDENTITY_ORG_DELETED, event =>
-        handleOrgDeleted(event, handlerDeps)
-      ),
-      identityOrgDeletedSchemaV1,
-      dlqProducer
-    );
-
-    await userUpdatedConsumer.subscribe(TOPICS.IDENTITY_USER_UPDATED);
-    await userUpdatedConsumer.run(
-      withDlq<IdentityUserUpdatedPayloadV1>(TOPICS.IDENTITY_USER_UPDATED, event =>
-        handleUserUpdated(event, handlerDeps)
-      ),
-      identityUserUpdatedSchemaV1,
-      dlqProducer
-    );
-
-    await userDeletedConsumer.subscribe(TOPICS.IDENTITY_USER_DELETED);
-    await userDeletedConsumer.run(
-      withDlq<IdentityUserDeletedPayloadV1>(TOPICS.IDENTITY_USER_DELETED, event =>
-        handleUserDeleted(event, handlerDeps)
-      ),
-      identityUserDeletedSchemaV1,
-      dlqProducer
-    );
-
-    await membershipAddedConsumer.subscribe(TOPICS.IDENTITY_MEMBERSHIP_ADDED);
-    await membershipAddedConsumer.run(
-      withDlq<IdentityMembershipAddedPayloadV1>(TOPICS.IDENTITY_MEMBERSHIP_ADDED, event =>
-        handleMembershipAdded(event, handlerDeps)
-      ),
-      identityMembershipAddedSchemaV1,
-      dlqProducer
-    );
-
-    await membershipRemovedConsumer.subscribe(TOPICS.IDENTITY_MEMBERSHIP_REMOVED);
-    await membershipRemovedConsumer.run(
-      withDlq<IdentityMembershipRemovedPayloadV1>(TOPICS.IDENTITY_MEMBERSHIP_REMOVED, event =>
-        handleMembershipRemoved(event, handlerDeps)
-      ),
-      identityMembershipRemovedSchemaV1,
-      dlqProducer
-    );
-
-    console.log('[provisioning-service] Kafka consumers running');
   };
   startConsumers().catch((err) =>
     console.error('[provisioning-service] Kafka startup aborted:', err),
