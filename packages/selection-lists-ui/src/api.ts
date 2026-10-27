@@ -163,12 +163,24 @@ export async function getSelectionList(listId: string): Promise<SelectionList> {
 
 export async function listItems(
   listId: string,
-  params: { cursor?: string | null } = {},
+  params: {
+    cursor?: string | null
+    /**
+     * `GET …/items?status=` filter. Absent = the 4.0.0 request (no parameter):
+     * only the shared-lists effective picker (SL9) sends it, with `active`.
+     */
+    status?: string
+    signal?: AbortSignal
+  } = {},
 ): Promise<PagedResponse<SelectionListItem>> {
   const qs = new URLSearchParams()
   if (params.cursor) qs.set('cursor', params.cursor)
+  if (params.status) qs.set('status', params.status)
   const url = `${BASE}/${listId}/items${qs.toString() ? '?' + qs.toString() : ''}`
-  const { data } = await request<PagedResponse<SelectionListItem>>(url)
+  const { data } = await request<PagedResponse<SelectionListItem>>(
+    url,
+    params.signal ? { signal: params.signal } : {},
+  )
   return data
 }
 
