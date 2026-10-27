@@ -433,8 +433,15 @@ export function SelectionListPicker(props: SelectionListPickerProps) {
   }, [loadItems, shared])
 
   // A new initialValue re-seeds the picker (uncontrolled: it is a seed, not a binding).
+  // Only a change of the seed CONTENT re-seeds. The flag arriving late (the host's
+  // flag evaluation is async) switches the data path but must never undo a pick,
+  // removal or "Clear all" the user already made — no onChange accompanies a reset.
+  const seededKeyRef = useRef<string | null>(null)
   useEffect(() => {
-    touchedRef.current = false
+    const seedChanged = seededKeyRef.current !== seedKey
+    seededKeyRef.current = seedKey
+    if (seedChanged) touchedRef.current = false
+    else if (touchedRef.current) return
     const seedIds = JSON.parse(seedKey) as string[]
     if (shared) {
       // Shared lists: hold the host's ids at once; the resolve is a hook of its own.

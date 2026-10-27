@@ -20,7 +20,25 @@ const pill: CSSProperties = {
   whiteSpace: 'nowrap',
 }
 
-export const effectiveStyles = {
+type StyleName =
+  | 'source'
+  | 'forkBadge'
+  | 'commonBadge'
+  | 'inspector'
+  | 'inspectorLabel'
+  | 'comboControl'
+  | 'comboMenu'
+  | 'comboSearch'
+  | 'option'
+  | 'optionSelected'
+  | 'skeleton'
+  | 'placeholder'
+  | 'invalidControl'
+  | 'fieldError'
+  | 'retry'
+
+// Annotated as plain `CSSProperties` so the published declarations reference `react` only.
+export const effectiveStyles: Record<StyleName, CSSProperties> = {
   /** The opt-in provenance caption: wraps UNDER the control, never widens the field. */
   source: {
     display: 'flex',
@@ -33,19 +51,19 @@ export const effectiveStyles = {
     overflowWrap: 'anywhere',
     fontSize: 'var(--text-sm)',
     color: 'var(--text-tertiary)',
-  } satisfies CSSProperties,
+  },
   forkBadge: {
     ...pill,
     color: 'var(--accent-color)',
     background: 'var(--accent-soft)',
     borderColor: 'var(--accent-color)',
-  } satisfies CSSProperties,
+  },
   commonBadge: {
     ...pill,
     color: 'var(--cyan-400)',
     background: 'var(--bg-quaternary)',
     borderColor: 'var(--cyan-400)',
-  } satisfies CSSProperties,
+  },
 
   /** The harness inspector: which list the key resolved to. */
   inspector: {
@@ -57,11 +75,11 @@ export const effectiveStyles = {
     color: 'var(--text-secondary)',
     fontSize: 'var(--text-xs)',
     overflowWrap: 'anywhere',
-  } satisfies CSSProperties,
+  },
   inspectorLabel: {
     fontWeight: 'var(--weight-semibold)',
     marginBlockEnd: 'var(--space-1)',
-  } satisfies CSSProperties,
+  },
 
   // ── The picker control, shared-lists mode ───────────────────────────────────
   // Real DS tokens (the 4.0.0 picker's `--bg-surface` / `--danger` do not exist
@@ -74,7 +92,7 @@ export const effectiveStyles = {
     background: 'var(--bg-secondary)',
     border: 'var(--border-width) solid var(--border-color)',
     color: 'var(--text-primary)',
-  } satisfies CSSProperties,
+  },
   /** Inline under the control, in the flow — an `overflow: hidden` host cannot clip it. */
   comboMenu: {
     position: 'static',
@@ -82,12 +100,12 @@ export const effectiveStyles = {
     background: 'var(--bg-tertiary)',
     border: 'var(--border-width) solid var(--border-strong)',
     boxShadow: 'var(--shadow-md)',
-  } satisfies CSSProperties,
+  },
   comboSearch: {
     minBlockSize: 'var(--touch-target)',
     background: 'var(--bg-secondary)',
     borderBlockEnd: 'var(--border-width) solid var(--border-color)',
-  } satisfies CSSProperties,
+  },
   option: {
     display: 'flex',
     alignItems: 'center',
@@ -95,10 +113,10 @@ export const effectiveStyles = {
     gap: 'var(--space-3)',
     minBlockSize: 'var(--touch-target)',
     boxSizing: 'border-box',
-  } satisfies CSSProperties,
+  },
   optionSelected: {
     background: 'var(--bg-quaternary)',
-  } satisfies CSSProperties,
+  },
 
   // ── In-place states ─────────────────────────────────────────────────────────
   skeleton: {
@@ -107,15 +125,15 @@ export const effectiveStyles = {
     blockSize: 'var(--space-3)',
     borderRadius: 'var(--radius-sm)',
     background: 'var(--bg-quaternary)',
-  } satisfies CSSProperties,
+  },
   placeholder: {
     flex: 1,
     color: 'var(--text-tertiary)',
     textAlign: 'start',
-  } satisfies CSSProperties,
+  },
   invalidControl: {
-    borderColor: 'var(--error-color)',
-  } satisfies CSSProperties,
+    border: 'var(--border-width) solid var(--error-color)',
+  },
   fieldError: {
     display: 'flex',
     alignItems: 'flex-start',
@@ -124,7 +142,7 @@ export const effectiveStyles = {
     marginBlockStart: 'var(--space-2)',
     fontSize: 'var(--text-sm)',
     color: 'var(--error-color)',
-  } satisfies CSSProperties,
+  },
   retry: {
     minBlockSize: 'var(--touch-target)',
     paddingInline: 'var(--space-3)',
@@ -134,5 +152,5 @@ export const effectiveStyles = {
     color: 'var(--accent-color)',
     fontSize: 'var(--text-sm)',
     cursor: 'pointer',
-  } satisfies CSSProperties,
-} as const
+  },
+}

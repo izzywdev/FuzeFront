@@ -5,7 +5,8 @@
  * Pure — no React, no network. The picker keeps the host's value as it is; this
  * only decides what to SHOW for ids the effective list does not offer itself.
  *
- *  - missing     → "Unknown value" (another org's item, or purged); the id stays.
+ *  - missing     → "Unknown value" (another org's item, or purged); the id stays
+ *                  (unless the effective list offers that id itself).
  *  - redirected  → the service named the org fork's item (`effective_item_id`):
  *                  show THAT label with no badge, notice or dirty marker, and
  *                  mark the matching fork option selected. The value is NOT
@@ -40,7 +41,9 @@ export function storedStatesFor(
     const outcome = outcomes[id]
     if (!outcome) continue
     if (outcome.kind === 'missing') {
-      states.push({ kind: 'missing', id })
+      // The effective list offers the id itself: it is a current value, however
+      // the resolve accounted for it.
+      if (!activeItemIds.has(id)) states.push({ kind: 'missing', id })
       continue
     }
     const effectiveId =
