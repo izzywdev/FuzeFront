@@ -433,6 +433,9 @@ async function resolveInvitee(invitee: ParsedInvitee): Promise<ResolvedInvitee> 
   if (invitee.kind === 'account') {
     const user = await db('users').where('id', invitee.userId).first()
     if (!user) throw new InviteError(404, 'NOT_FOUND', 'Invitee account not found')
+    if (!user.email) {
+      throw new InviteError(400, 'BAD_REQUEST', 'This account has no email address; use a WhatsApp invitation instead')
+    }
     return {
       channel: 'email',
       email: normalizeEmail(user.email),

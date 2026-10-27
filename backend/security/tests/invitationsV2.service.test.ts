@@ -10,6 +10,7 @@ jest.mock('@fuzefront/core', () => ({
 
 import {
   BULK_MAX,
+  createInvitation,
   decodeCursor,
   encodeCursor,
   hashBindToken,
@@ -200,5 +201,36 @@ describe('invite-v2 flag reader (fail-safe OFF)', () => {
 
   it('direct import keeps the type surface', async () => {
     expect(typeof isInviteV2Enabled).toBe('function')
+  })
+})
+
+describe('createInvitation — account invitee with no email', () => {
+  const ORG = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+  const INVITER = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+  const NO_EMAIL_USER = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
+
+  beforeEach(() => {
+    fakeDb.reset()
+    fakeDb.tables.users.push(
+      { id: INVITER, email: 'inviter@example.com' },
+      { id: NO_EMAIL_USER, email: null, phone: '+14155550001', phone_verified: true }
+    )
+    fakeDb.tables.organizations.push({ id: ORG, name: 'Acme', owner_id: INVITER, parent_id: null })
+    fakeDb.tables.organization_memberships.push({
+      id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      user_id: INVITER,
+      organization_id: ORG,
+      role: 'owner',
+      status: 'active',
+      member_type: 'employee',
+    })
+  })
+
+  it('throws InviteError 400 instead of TypeError when the account has no email', async () => {
+    const ctx = { userId: INVITER, org: { id: ORG }, isOwner: true }
+    const invitee = { kind: 'account' as const, userId: NO_EMAIL_USER }
+    await expect(
+      createInvitation(ctx, { role: 'member', memberType: 'employee' }, invitee)
+    ).rejects.toMatchObject({ status: 400, code: 'BAD_REQUEST' })
   })
 })
