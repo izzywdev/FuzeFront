@@ -51,7 +51,7 @@ docker compose -f docker-compose.e2e.yml exec -T postgres psql -v ON_ERROR_STOP=
 
 Success: `INSERT 0 1`. Refresh http://localhost:4173, open **Clock** under **APPS** in the sidebar, and it mounts inside the shell showing "Mounted inside FuzeFront: yes" and your signed-in email. The dashboard itself may still say "No applications available"; use the sidebar.
 
-From here, inspect the runtime app registry, the example federated application, routing, and the integration SDK.
+From here, inspect the runtime app registry, the example federated application, routing, and the integration SDK. To see the *full* onboarding contract this shortcut skips — the registration API calls, the manifest shape, auth/routing assumptions, and health/heartbeat — follow [`docs/guides/reference-app-onboarding.md`](guides/reference-app-onboarding.md), which walks `clock-app` through the actual `/api/v1/app-registry` flow a real external app uses.
 
 **Stop:** `docker compose -f docker-compose.e2e.yml down`. Add `-v` to also delete the data (users, registered apps).
 

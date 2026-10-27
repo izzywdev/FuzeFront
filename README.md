@@ -233,7 +233,7 @@ sequenceDiagram
 docker compose -f docker-compose.e2e.yml up -d --build
 ```
 
-This boots the platform shell, backend API, security service and Authentik. Open http://localhost:4173 and create an account. To sign in and run the federated sample application (`clock-app`), follow the [Adoption Quickstart](docs/ADOPTION_QUICKSTART.md#1-developer-run-the-platform-locally), which also covers Windows troubleshooting.
+This boots the platform shell, backend API, security service and Authentik. Open http://localhost:4173 and create an account. To sign in and run the federated sample application (`clock-app`), follow the [Adoption Quickstart](docs/ADOPTION_QUICKSTART.md#1-developer-run-the-platform-locally), which also covers Windows troubleshooting. For the full onboarding contract behind that sample app — registration, auth/routing assumptions, and health/heartbeat — see the [reference app onboarding walkthrough](docs/guides/reference-app-onboarding.md).
 
 ### Local Kubernetes
 
