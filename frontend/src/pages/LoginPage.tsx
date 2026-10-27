@@ -182,10 +182,18 @@ function LoginPage() {
   const [callbackError, setCallbackError] = useState('')
   const [callbackNotice, setCallbackNotice] = useState('')
   // MFA step-up (FFRNT-141/362) behind default-OFF flags; flag OFF = unchanged.
-  const stepUp = useLoginStepUp(session => {
-    authAPI.completeMfaSession(session)
-    void completeSession({ status: 'authenticated', ...session } as unknown as SessionResult)
-  })
+  // The verify has already consumed the challenge, so a hydrate failure must be retried by
+  // re-running ONLY getCurrentUser() (the session is already persisted) — never by re-verifying.
+  const finishStepUp = (session: { token: string; sessionId?: string }) =>
+    completeSession({ status: 'authenticated', ...session } as unknown as SessionResult, { propagateHydrateError: true })
+  const stepUp = useLoginStepUp(
+    async session => {
+      authAPI.completeMfaSession(session)
+      await finishStepUp(session)
+    },
+    finishStepUp,
+    ti
+  )
 
   // Route an authenticated Security-API session into the app: hydrate the
   // current user then land on the dashboard. Always re-fetches via
@@ -194,7 +202,10 @@ function LoginPage() {
   // callback-exchange SessionResult and on AuthPanel's AuthenticatedSession),
   // while getCurrentUser() already returns the shape this app's `User` expects.
   // A `SessionResult` may instead be an `mfa_required` challenge (step-up).
-  const completeSession = async (result: SessionResult): Promise<void> => {
+  const completeSession = async (
+    result: SessionResult,
+    opts: { propagateHydrateError?: boolean } = {}
+  ): Promise<void> => {
     if (result.status === 'mfa_required') {
       if (stepUp.begin(result)) return
       setCallbackNotice(buildAuthLabels(ti).mfaNotice ?? '')
@@ -205,6 +216,8 @@ function LoginPage() {
       setUser(user)
     } catch (err) {
       console.error('Failed to hydrate user after sign-in:', err)
+      // Step-up callers own a retryable state (the challenge is already consumed).
+      if (opts.propagateHydrateError) throw err
       setCallbackError(authError(ti, 'profileLoad'))
       return
     }

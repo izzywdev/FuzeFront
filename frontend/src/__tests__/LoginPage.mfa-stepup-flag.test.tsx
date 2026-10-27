@@ -249,4 +249,80 @@ describe('LoginPage — MFA step-up', () => {
       vi.unstubAllGlobals()
     })
   })
+
+  describe.each([
+    ['flags OFF (desktop)', false],
+    ['mfa-stepup-mobile ON + compact (mobile)', true],
+  ])('verified, but the account fails to load — %s', (_label, mobile) => {
+    const setUser = vi.fn()
+    const reach = async (getCurrentUser: ReturnType<typeof vi.fn>) => {
+      setCompact(mobile)
+      setFlags(mobile ? { [MOBILE]: true } : undefined)
+      ;(sharedMock.useCurrentUser as ReturnType<typeof vi.fn>).mockReturnValue({
+        user: null, currentUser: null, isAuthenticated: false, setUser, setCurrentUser: vi.fn(),
+      })
+      const persist = vi.spyOn(authAPI, 'completeMfaSession').mockImplementation(() => {})
+      vi.spyOn(authAPI, 'getCurrentUser').mockImplementation(getCurrentUser as never)
+      const fetchMock = vi.fn(async () =>
+        new Response(JSON.stringify({ token: 'tok_h', sessionId: 'sess_h' }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      )
+      vi.stubGlobal('fetch', fetchMock)
+      const user = userEvent.setup()
+      render(<LoginPage />)
+      const find = (sel: string) =>
+        waitFor(() => {
+          const el = document.querySelector(sel)
+          if (!el) throw new Error(`missing ${sel}`)
+          return el
+        })
+      if (mobile) await user.click(await find('[data-factor="totp"][data-action="challenge"]'))
+      await user.click(await find('[data-component="otp-input"] input'))
+      await user.keyboard('123456')
+      await user.click(document.querySelector('[data-action="verify-mfa"]')!)
+      await waitFor(() => expect(document.querySelector('[data-state="signed-in-load-failed"]')).toBeTruthy())
+      return { user, persist, fetchMock }
+    }
+    afterEach(() => vi.unstubAllGlobals())
+
+    it('leaves the verifying state for a retryable "signed in, but failed to load your profile" state', async () => {
+      const { fetchMock, persist } = await reach(vi.fn().mockRejectedValue(new Error('profile 500')))
+      const box = document.querySelector('[data-state="signed-in-load-failed"]')!
+      expect(box.textContent).toMatch(/signed in, but failed to load your profile/i)
+      expect(document.querySelector('[data-action="verify-mfa"]')).toBeNull()
+      expect(document.querySelector('[data-component="otp-input"]')).toBeNull()
+      expect((document.querySelector('[data-action="retry-load-account"]') as HTMLButtonElement).disabled).toBe(false)
+      expect(document.querySelector('[data-action="back-to-sign-in"]')).toBeTruthy()
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(persist).toHaveBeenCalledWith({ token: 'tok_h', sessionId: 'sess_h' })
+    })
+
+    it('Try again re-runs ONLY getCurrentUser (never verify) and navigates in on success', async () => {
+      const getCurrentUser = vi.fn().mockRejectedValueOnce(new Error('x')).mockResolvedValueOnce({ id: 'u1' })
+      const { user, fetchMock, persist } = await reach(getCurrentUser)
+      await user.click(document.querySelector('[data-action="retry-load-account"]')!)
+      await waitFor(() => expect(setUser).toHaveBeenCalledWith({ id: 'u1' }))
+      expect(getCurrentUser).toHaveBeenCalledTimes(2)
+      expect(fetchMock).toHaveBeenCalledTimes(1) // verify was never called again
+      expect(persist).toHaveBeenCalledTimes(1)
+    })
+
+    it('a failing retry stays retryable, and verify is still never called twice', async () => {
+      const getCurrentUser = vi.fn().mockRejectedValue(new Error('still down'))
+      const { user, fetchMock } = await reach(getCurrentUser)
+      await user.click(document.querySelector('[data-action="retry-load-account"]')!)
+      await waitFor(() => expect(getCurrentUser).toHaveBeenCalledTimes(2))
+      await waitFor(() => expect((document.querySelector('[data-action="retry-load-account"]') as HTMLButtonElement).disabled).toBe(false))
+      expect(document.querySelector('[data-state="signed-in-load-failed"]')).toBeTruthy()
+      await user.click(document.querySelector('[data-action="retry-load-account"]')!)
+      await waitFor(() => expect(getCurrentUser).toHaveBeenCalledTimes(3))
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('Back to sign in is the escape', async () => {
+      const { user } = await reach(vi.fn().mockRejectedValue(new Error('x')))
+      await user.click(document.querySelector('[data-action="back-to-sign-in"]')!)
+      await waitFor(() => expect(document.querySelector('[data-state="signed-in-load-failed"]')).toBeNull())
+      expect(document.querySelector('[data-component="mfa-challenge"]')).toBeNull()
+    })
+  })
 })
