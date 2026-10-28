@@ -29,6 +29,20 @@ export function unavailableFlowArtifactTargetIds(
   ])].filter(targetId => !known.has(targetId))
 }
 
+export function promptEvidenceLabel(analysis: NonNullable<RepositoryFlowCandidate['analysis']>) {
+  if (analysis.inputArtifactCount === undefined || analysis.promptArtifactCount === undefined) return undefined
+  const omitted = analysis.promptOmittedArtifactCount ?? Math.max(
+    analysis.inputArtifactCount - analysis.promptArtifactCount,
+    0,
+  )
+  const qualifiers: string[] = []
+  if (omitted > 0) qualifiers.push(`${omitted} ${omitted === 1 ? 'artifact' : 'artifacts'} omitted`)
+  if (analysis.promptContentTruncated === true) qualifiers.push('source content truncated')
+  if (!analysis.promptTruncated) qualifiers.push('complete')
+  else if (!qualifiers.length) qualifiers.push('bounded')
+  return `${analysis.promptArtifactCount} of ${analysis.inputArtifactCount} repository artifacts supplied · ${qualifiers.join(' · ')}`
+}
+
 export function FlowInspector({
   open,
   flow,
@@ -191,10 +205,7 @@ export function FlowInspector({
                     flow.analysis.promptArtifactCount !== undefined && (
                       <div>
                         <dt>Prompt evidence</dt>
-                        <dd>
-                          {flow.analysis.promptArtifactCount} of {flow.analysis.inputArtifactCount} artifacts
-                          {flow.analysis.promptTruncated ? ' · bounded' : ' · complete'}
-                        </dd>
+                        <dd>{promptEvidenceLabel(flow.analysis)}</dd>
                       </div>
                     )}
                   {flow.analysis.grounding && (

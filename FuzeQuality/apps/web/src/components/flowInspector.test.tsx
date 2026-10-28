@@ -18,7 +18,8 @@ const flow: RepositoryFlowCandidate = {
   status: 'proposed', source: 'litellm', createdAt: '2026-10-11T00:00:00.000Z',
   analysis: {
     provider: 'fuzeinfra-litellm', model: 'quality-analysis', promptVersion: 'flow-v2', schemaVersion: '2.0',
-    inputArtifactCount: 140, promptArtifactCount: 100, promptTruncated: true,
+    inputArtifactCount: 140, promptArtifactCount: 100, promptOmittedArtifactCount: 40,
+    promptContentTruncated: true, promptTruncated: true,
     grounding: { referencedArtifactCount: 1, groundedArtifactCount: 1, rejectedArtifactCount: 0, ungroundedStepCount: 0 },
   },
 }
@@ -36,7 +37,7 @@ describe('FlowInspector', () => {
     expect(wireframe).toHaveTextContent('Dashboard')
     expect(screen.getByRole('region', { name: 'Flow steps' })).toHaveTextContent('Dashboard opens')
     expect(screen.getByRole('region', { name: 'Flow provenance' })).toHaveTextContent('fuzeinfra-litellm')
-    expect(screen.getByRole('region', { name: 'Flow provenance' })).toHaveTextContent('100 of 140 artifacts · bounded')
+    expect(screen.getByRole('region', { name: 'Flow provenance' })).toHaveTextContent('100 of 140 repository artifacts supplied · 40 artifacts omitted · source content truncated')
     expect(screen.getByRole('region', { name: 'Flow provenance' })).toHaveTextContent('1 of 1 artifact references verified')
     expect(screen.getByTitle('Stable grounded-candidate identity')).toHaveTextContent('flow-1')
     expect(screen.getByText('apps/web/src/routes/login.tsx')).toBeVisible()

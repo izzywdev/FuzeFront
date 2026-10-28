@@ -87,7 +87,7 @@ import { PolicyGateEvidence, policyGateArtifactReferenceProblems } from './compo
 import { GovernanceInspector } from './components/governanceInspector'
 import { ExecutionInspector } from './components/executionInspector'
 import { FlowInventoryFilters, type FlowAnalysisRisk, type FlowRevisionScope } from './components/flowInventoryFilters'
-import { FlowInspector, flowArtifactTargetIds, unavailableFlowArtifactTargetIds } from './components/flowInspector'
+import { FlowInspector, flowArtifactTargetIds, promptEvidenceLabel, unavailableFlowArtifactTargetIds } from './components/flowInspector'
 import { RepositoryAnalysisStatus } from './components/repositoryAnalysisStatus'
 import { RequirementFreshnessStatus } from './components/requirementFreshnessStatus'
 import { MAX_HISTORICAL_FLOW_EVIDENCE_REVISIONS, historicalFlowEvidenceSelection } from './flowEvidence'
@@ -5881,16 +5881,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                   flow.analysis.promptArtifactCount !== undefined && (
                                     <div>
                                       <dt>Prompt evidence</dt>
-                                      <dd>
-                                        {flow.analysis.promptArtifactCount} of{' '}
-                                        {flow.analysis.inputArtifactCount} repository artifacts supplied
-                                        {flow.analysis.promptTruncated
-                                          ? ` · ${Math.max(
-                                              flow.analysis.inputArtifactCount - flow.analysis.promptArtifactCount,
-                                              0
-                                            )} omitted by prompt budget`
-                                          : ' · complete'}
-                                      </dd>
+                                      <dd>{promptEvidenceLabel(flow.analysis)}</dd>
                                     </div>
                                   )}
                               </dl>

@@ -2002,6 +2002,8 @@ describe('RepositoryIntelligence flow inventory', () => {
           schemaVersion: '1.0',
           inputArtifactCount: 20,
           promptArtifactCount: 3,
+          promptOmittedArtifactCount: 17,
+          promptContentTruncated: false,
           promptTruncated: true,
         },
       },
@@ -2009,7 +2011,23 @@ describe('RepositoryIntelligence flow inventory', () => {
 
     render(<RepositoryIntelligence data={portfolio} />)
 
-    expect(await screen.findByText('3 of 20 repository artifacts supplied · 17 omitted by prompt budget')).toBeVisible()
+    expect(await screen.findByText('3 of 20 repository artifacts supplied · 17 artifacts omitted')).toBeVisible()
+  })
+
+  it('distinguishes truncated LiteLLM source content when every artifact was supplied', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([{
+      ...candidate,
+      analysis: {
+        provider: 'fuzeinfra-litellm', model: 'quality-analysis', promptVersion: 'flow-v3', schemaVersion: '1.0',
+        inputArtifactCount: 3, promptArtifactCount: 3, promptOmittedArtifactCount: 0,
+        promptContentTruncated: true, promptTruncated: true,
+      },
+    }])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    expect(await screen.findByText('3 of 3 repository artifacts supplied · source content truncated')).toBeVisible()
   })
 
   it('blocks an inverted confidence window before querying the API', async () => {

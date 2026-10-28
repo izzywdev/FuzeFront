@@ -509,7 +509,11 @@ export type RepositoryFlowCandidate = {
     inputArtifactCount?: number
     /** Repository artifacts whose IDs and bounded content were sent to LiteLLM. */
     promptArtifactCount?: number
-    /** True when artifact selection or source-byte limits omitted input evidence. */
+    /** Exact number of repository artifacts omitted from the LiteLLM prompt. */
+    promptOmittedArtifactCount?: number
+    /** True when content from a supplied artifact was shortened by source-byte limits. */
+    promptContentTruncated?: boolean
+    /** Backward-compatible aggregate: artifact selection or source-byte limits omitted input evidence. */
     promptTruncated?: boolean
     /** Review telemetry for repository artifact references returned by the model. */
     grounding?: {

@@ -8,6 +8,8 @@ const analysisSchema = z.object({
   schemaVersion: z.string().trim().min(1).max(100),
   inputArtifactCount: z.number().int().nonnegative().optional(),
   promptArtifactCount: z.number().int().nonnegative().optional(),
+  promptOmittedArtifactCount: z.number().int().nonnegative().optional(),
+  promptContentTruncated: z.boolean().optional(),
   promptTruncated: z.boolean().optional(),
   grounding: z.object({
     referencedArtifactCount: z.number().int().nonnegative(),
@@ -44,6 +46,28 @@ const analysisSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ['promptTruncated'],
       message: 'Complete prompt provenance requires equal artifact counts',
+    })
+  }
+  if (
+    analysis.promptOmittedArtifactCount !== undefined &&
+    analysis.inputArtifactCount !== undefined &&
+    analysis.promptArtifactCount !== undefined &&
+    analysis.promptOmittedArtifactCount !== analysis.inputArtifactCount - analysis.promptArtifactCount
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['promptOmittedArtifactCount'],
+      message: 'Omitted artifact count must match repository input minus prompt artifacts',
+    })
+  }
+  if (
+    analysis.promptTruncated === false &&
+    (analysis.promptOmittedArtifactCount !== 0 || analysis.promptContentTruncated === true)
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['promptTruncated'],
+      message: 'Complete prompt provenance cannot report omitted artifacts or truncated content',
     })
   }
   if (

@@ -1890,6 +1890,8 @@ components:
         schemaVersion: { type: string }
         inputArtifactCount: { type: integer, minimum: 0 }
         promptArtifactCount: { type: integer, minimum: 0 }
+        promptOmittedArtifactCount: { type: integer, minimum: 0 }
+        promptContentTruncated: { type: boolean }
         promptTruncated: { type: boolean }
         grounding:
           type: object
