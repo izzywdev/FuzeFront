@@ -48,12 +48,19 @@ export function repositoryFlowGroundingRationaleConflict(
     grounding &&
     (grounding.rejectedArtifactCount > 0 || grounding.ungroundedStepCount > 0)
   )
-  if (status !== 'confirmed' || !hasGroundingGaps || (reason?.trim().length ?? 0) >= 3) return undefined
+  const hasPromptCoverageGaps = candidate.source === 'litellm' && candidate.analysis?.promptTruncated === true
+  if (status !== 'confirmed' || (!hasGroundingGaps && !hasPromptCoverageGaps) || (reason?.trim().length ?? 0) >= 3) return undefined
 
   return {
-    error: 'A reviewer rationale is required to confirm a LiteLLM flow with unverified repository grounding.',
-    code: 'FLOW_GROUNDING_RATIONALE_REQUIRED',
+    error: hasGroundingGaps
+      ? 'A reviewer rationale is required to confirm a LiteLLM flow with unverified repository grounding or bounded prompt evidence.'
+      : 'A reviewer rationale is required to confirm a LiteLLM flow produced from bounded prompt evidence.',
+    code: hasGroundingGaps ? 'FLOW_GROUNDING_RATIONALE_REQUIRED' : 'FLOW_PROMPT_COVERAGE_RATIONALE_REQUIRED',
     grounding,
+    promptCoverage: hasPromptCoverageGaps ? {
+      omittedArtifactCount: candidate.analysis?.promptOmittedArtifactCount,
+      contentTruncated: candidate.analysis?.promptContentTruncated,
+    } : undefined,
   } as const
 }
 

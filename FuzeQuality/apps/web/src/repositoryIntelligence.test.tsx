@@ -1554,7 +1554,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled()
     expect(screen.getByRole('status')).toHaveTextContent('Confirmation requires a reviewer rationale')
 
-    fireEvent.change(screen.getByLabelText('Review rationale required for grounding gaps'), {
+    fireEvent.change(screen.getByLabelText('Review rationale required for analysis gaps'), {
       target: { value: 'Verified against the production journey.' },
     })
     expect(screen.getByRole('button', { name: 'Confirm' })).toBeEnabled()
@@ -1563,6 +1563,35 @@ describe('RepositoryIntelligence flow inventory', () => {
       incomplete,
       'confirmed',
       'Verified against the production journey.',
+    ))
+  })
+
+  it('requires rationale to confirm a LiteLLM flow produced from bounded prompt evidence', async () => {
+    const onReview = vi.fn().mockResolvedValue(undefined)
+    const bounded = {
+      ...candidate,
+      analysis: {
+        provider: 'fuzeinfra-litellm' as const,
+        model: 'quality-analysis', promptVersion: 'v3', schemaVersion: '1.0',
+        inputArtifactCount: 20, promptArtifactCount: 20, promptOmittedArtifactCount: 0,
+        promptContentTruncated: true, promptTruncated: true,
+      },
+    }
+
+    render(<FlowReviewControls flow={bounded} currentRevision={candidate.revision} knownArtifactIds={candidate.evidence} onReview={onReview} />)
+
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled()
+    expect(screen.getByRole('status')).toHaveTextContent('used bounded prompt evidence')
+    fireEvent.change(screen.getByLabelText('Review rationale required for analysis gaps'), {
+      target: { value: 'Reviewed the truncated source context manually.' },
+    })
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+    await waitFor(() => expect(onReview).toHaveBeenCalledWith(
+      bounded,
+      'confirmed',
+      'Reviewed the truncated source context manually.',
     ))
   })
 

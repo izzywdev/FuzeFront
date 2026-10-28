@@ -125,6 +125,25 @@ describe('repository UX-flow review revision guard', () => {
     expect(repositoryFlowGroundingRationaleConflict(candidate, 'confirmed')).toBeUndefined()
   })
 
+  it('requires a reviewer rationale before confirming a proposal produced from bounded prompt evidence', () => {
+    const bounded = {
+      ...candidate,
+      analysis: {
+        provider: 'fuzeinfra-litellm' as const,
+        model: 'quality-analysis', promptVersion: 'v3', schemaVersion: '1.0',
+        inputArtifactCount: 20, promptArtifactCount: 19, promptOmittedArtifactCount: 1,
+        promptContentTruncated: false, promptTruncated: true,
+      },
+    }
+
+    expect(repositoryFlowGroundingRationaleConflict(bounded, 'confirmed')).toMatchObject({
+      code: 'FLOW_PROMPT_COVERAGE_RATIONALE_REQUIRED',
+      promptCoverage: { omittedArtifactCount: 1, contentTruncated: false },
+    })
+    expect(repositoryFlowGroundingRationaleConflict(bounded, 'confirmed', 'Reviewed the omitted repository evidence manually.')).toBeUndefined()
+    expect(repositoryFlowGroundingRationaleConflict(bounded, 'rejected')).toBeUndefined()
+  })
+
   it('blocks confirmation when a legacy LiteLLM candidate has no analysis provenance', () => {
     const withoutProvenance = { ...candidate, analysis: undefined }
 

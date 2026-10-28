@@ -3194,7 +3194,8 @@ export function FlowReviewControls({
     grounding &&
       (grounding.rejectedArtifactCount > 0 || grounding.ungroundedStepCount > 0)
   )
-  const groundingRationaleMissing = hasGroundingGaps && reason.trim().length < 3
+  const hasPromptCoverageGaps = flow.source === 'litellm' && flow.analysis?.promptTruncated === true
+  const analysisRationaleMissing = (hasGroundingGaps || hasPromptCoverageGaps) && reason.trim().length < 3
   const analysisProvenanceMissing = flow.source === 'litellm' && !flow.analysis
   const wireframeMissing = flow.wireframe.nodes.length === 0
   const unavailableTargetIds = evidenceVerification !== 'loading' && evidenceVerification !== 'unavailable'
@@ -3252,8 +3253,8 @@ export function FlowReviewControls({
           </p>
         )}
         <label>
-          {hasGroundingGaps
-            ? 'Review rationale required for grounding gaps'
+          {hasGroundingGaps || hasPromptCoverageGaps
+            ? 'Review rationale required for analysis gaps'
             : 'Optional review rationale'}
           <input
             value={reason}
@@ -3262,9 +3263,14 @@ export function FlowReviewControls({
             placeholder="Why is this flow accurate or unsuitable?"
           />
         </label>
-        {hasGroundingGaps && (
+        {(hasGroundingGaps || hasPromptCoverageGaps) && (
           <p className="performance-inventory-only" role="status">
-            LiteLLM returned unverified repository references. Confirmation requires a reviewer rationale; rejection remains available.
+            {hasGroundingGaps && hasPromptCoverageGaps
+              ? 'LiteLLM returned unverified repository references and used bounded prompt evidence.'
+              : hasGroundingGaps
+                ? 'LiteLLM returned unverified repository references.'
+                : 'LiteLLM used bounded prompt evidence because repository artifacts or source content were omitted.'}{' '}
+            Confirmation requires a reviewer rationale; rejection remains available.
           </p>
         )}
         {analysisProvenanceMissing && (
@@ -3295,7 +3301,7 @@ export function FlowReviewControls({
         <div className="row-actions">
           <QualityAction
             intent="secondary"
-            disabled={busy || !isReviewable || groundingRationaleMissing || analysisProvenanceMissing || wireframeMissing || evidenceVerificationBlocked || unavailableTargetIds.length > 0}
+            disabled={busy || !isReviewable || analysisRationaleMissing || analysisProvenanceMissing || wireframeMissing || evidenceVerificationBlocked || unavailableTargetIds.length > 0}
             onClick={() => void submit('confirmed')}
           >
             <Check size={14} /> Confirm
