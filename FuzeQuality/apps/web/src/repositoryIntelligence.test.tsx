@@ -3438,6 +3438,7 @@ describe('RepositoryIntelligence flow inventory', () => {
         gateSourcePath: '.github/workflows/auth.yml',
         revisionCount: 3,
         latestRevision: 'historical-source-revision',
+        latestCompletedAt: '2026-10-21T05:00:00.000Z',
         total: 4,
         passed: 3,
         failed: 1,
@@ -3455,6 +3456,10 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(screen.getByText('Observed across 3 source revisions')).toHaveAttribute('title', 'historical-source-revision')
     expect(screen.getByText(/3 passed · 1 failed/)).toBeVisible()
     expect(screen.getByText('4 observations · 75% passed among terminal outcomes')).toBeVisible()
+    expect(screen.getByText(/Last completed/).querySelector('time')).toHaveAttribute(
+      'datetime',
+      '2026-10-21T05:00:00.000Z',
+    )
 
     fireEvent.click(screen.getByRole('button', { name: 'Inspect execution evidence' }))
 

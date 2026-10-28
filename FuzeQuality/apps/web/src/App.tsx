@@ -6914,9 +6914,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                     {pair.total} observations · {Math.round(pair.passRate * 100)}% passed among terminal outcomes
                   </small>
                   <small>
-                    {pair.latestCompletedAt
-                      ? `Last completed ${new Date(pair.latestCompletedAt).toLocaleString()}`
-                      : 'No completed run yet'}
+                    {pair.latestCompletedAt ? (
+                      <>Last completed <time dateTime={pair.latestCompletedAt}>{new Date(pair.latestCompletedAt).toLocaleString()}</time></>
+                    ) : 'No completed run yet'}
                   </small>
                   {(pair.revisionCount ?? pair.revisions?.length ?? 0) > 0 ? (
                     <small title={pair.revisions?.join(', ') ?? pair.latestRevision}>

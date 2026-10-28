@@ -539,7 +539,13 @@ export function executionPerformance(
       current[evaluation.status]++
       const terminalOutcomes = current.passed + current.failed + current.cancelled
       current.passRate = terminalOutcomes ? current.passed / terminalOutcomes : 0
-      if (execution.completedAt && (!current.latestCompletedAt || execution.completedAt > current.latestCompletedAt)) current.latestCompletedAt = execution.completedAt
+      if (execution.completedAt) {
+        const completedAt = Date.parse(execution.completedAt)
+        const latestCompletedAt = Date.parse(current.latestCompletedAt ?? '')
+        if (Number.isFinite(completedAt) && (!Number.isFinite(latestCompletedAt) || completedAt > latestCompletedAt)) {
+          current.latestCompletedAt = new Date(completedAt).toISOString()
+        }
+      }
       results.set(key, current)
     }
   }

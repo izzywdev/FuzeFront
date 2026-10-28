@@ -127,6 +127,23 @@ describe('execution performance', () => {
       { repositoryId: 'repo-one', policyArtifactId: 'policy', gateArtifactId: 'gate', revisions: ['a'], total: 1, passed: 1, failed: 0, cancelled: 0, running: 0, passRate: 1 },
     ])
   })
+
+  it('selects the latest policy-gate completion by instant instead of timestamp text', () => {
+    const execution = (id: string, revision: string, completedAt: string) => ({
+      id, repositoryId: 'repo', tenantId: 'org', provider: 'external' as const,
+      externalRunId: id, attempt: 1, revision, kind: 'ci' as const,
+      status: 'passed' as const, name: 'CI', completedAt,
+      policyArtifactIds: ['policy'], gateArtifactIds: ['gate'], gateEvaluations: [],
+      thresholds: [], evidenceLinks: [],
+    })
+
+    const [performance] = executionPerformance([
+      execution('older', 'older', '2026-10-21T04:30:00.000Z'),
+      execution('newer-offset', 'newer', '2026-10-21T00:00:00-05:00'),
+    ])
+
+    expect(performance.latestCompletedAt).toBe('2026-10-21T05:00:00.000Z')
+  })
 })
 it('filters and trends only timestamped execution evidence', () => {
   const executions = [
