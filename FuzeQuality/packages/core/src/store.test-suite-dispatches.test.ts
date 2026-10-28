@@ -2,6 +2,22 @@ import { describe, expect, it, vi } from 'vitest'
 import type { TestSuiteDispatch } from '@fuzequality/contracts'
 import { MemoryCatalogStore, PostgresCatalogStore } from './store'
 
+const repository = {
+  id: '11111111-1111-4111-8111-111111111111',
+  tenantId: '22222222-2222-4222-8222-222222222222',
+  owner: 'acme',
+  name: 'app',
+  canonicalUrl: 'https://github.com/acme/app',
+  defaultBranch: 'main',
+  kind: 'service' as const,
+  enabled: true,
+  includeGlobs: [],
+  excludeGlobs: [],
+  jiraProjects: [],
+  jiraBindings: [],
+  lastScanStatus: 'complete' as const,
+}
+
 function dispatch(overrides: Partial<TestSuiteDispatch> = {}): TestSuiteDispatch {
   return {
     id: crypto.randomUUID(),
@@ -172,7 +188,7 @@ describe('test-suite dispatch audit', () => {
   })
 
   it('links an accepted dispatch only to its exact retained execution outcome', async () => {
-    const store = new MemoryCatalogStore()
+    const store = new MemoryCatalogStore({ repositories: [repository] })
     const accepted = dispatch({
       status: 'accepted',
       ref: `fuzequality-revision-${'a'.repeat(40)}`,
@@ -191,6 +207,17 @@ describe('test-suite dispatch audit', () => {
         kind: 'video', name: 'Playwright video', url: 'https://evidence.example/run-42/video.webm',
       }],
       evidenceCollection: { status: 'complete', checkedAt: '2026-10-22T20:03:00.000Z' },
+    })
+    await store.saveTestExecution({
+      id: 'fork-result', repositoryId: accepted.repositoryId, tenantId: accepted.tenantId,
+      provider: 'github-actions', externalRunId: 'provider-run-fork', attempt: 1,
+      revision: accepted.sourceRevision, branch: accepted.ref, headRepository: 'contributor/app',
+      kind: 'load', status: 'passed', name: 'Fork load test', workflowPath: accepted.workflowPath,
+      completedAt: '2026-10-22T20:04:00.000Z',
+      policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [],
+      evidenceCollection: {
+        status: 'partial', checkedAt: '2026-10-22T20:04:00.000Z', issues: ['head-repository-unverified'],
+      },
     })
     await store.saveTestExecution({
       id: 'wrong-revision', repositoryId: accepted.repositoryId, tenantId: accepted.tenantId,
@@ -274,6 +301,7 @@ describe('test-suite dispatch audit', () => {
     expect(String(sql)).toContain("dispatch.status='accepted'")
     expect(String(sql)).toContain('candidate.branch=dispatch.source_ref')
     expect(String(sql)).toContain("candidate.provider='github-actions'")
+    expect(String(sql)).toContain("lower(candidate.head_repository)=lower(repository.owner || '/' || repository.name)")
     expect(String(sql)).toContain('lower(candidate.revision)=lower(dispatch.source_revision)')
     expect(String(sql)).toContain("split_part(candidate.workflow_path,'@',1)=dispatch.workflow_path")
     expect(parameters).toEqual([accepted.repositoryId, accepted.tenantId, accepted.artifactLogicalId, 50])
@@ -318,6 +346,7 @@ describe('test-suite dispatch audit', () => {
     expect(String(sql)).toContain("latest.status='accepted'")
     expect(String(sql)).toContain('candidate.branch=latest.source_ref')
     expect(String(sql)).toContain("candidate.provider='github-actions'")
+    expect(String(sql)).toContain("lower(candidate.head_repository)=lower(repository.owner || '/' || repository.name)")
     expect(String(sql)).toContain('lower(candidate.revision)=lower(latest.source_revision)')
     expect(String(sql)).toContain("split_part(candidate.workflow_path,'@',1)=latest.workflow_path")
     expect(parameters).toEqual([accepted.repositoryId, accepted.tenantId])

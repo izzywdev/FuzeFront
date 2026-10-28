@@ -210,6 +210,7 @@ function safeDispatchEvidenceCollection(value: unknown) {
 export function withDispatchExecutionResult(
   dispatch: TestSuiteDispatch,
   executions: TestExecution[],
+  expectedHeadRepository?: string,
 ): TestSuiteDispatch {
   if (dispatch.status !== 'accepted') return structuredClone(dispatch)
   const execution = executions
@@ -217,6 +218,8 @@ export function withDispatchExecutionResult(
       item.repositoryId === dispatch.repositoryId &&
       item.tenantId === dispatch.tenantId &&
       item.provider === 'github-actions' &&
+      Boolean(expectedHeadRepository) &&
+      item.headRepository?.toLowerCase() === expectedHeadRepository?.toLowerCase() &&
       item.kind === executionKindForDispatch[dispatch.artifactKind] &&
       item.branch === dispatch.ref &&
       item.revision.toLowerCase() === dispatch.sourceRevision.toLowerCase() &&
@@ -848,7 +851,11 @@ export class MemoryCatalogStore implements CatalogStore {
     const page = query.limit === undefined
       ? result
       : result.slice(0, Math.min(Math.max(query.limit, 1), 101))
-    return page.map(item => withDispatchExecutionResult(item, this.executions))
+    const repository = this.data.repositories.find(item =>
+      item.id === repositoryId && item.tenantId === tenantId
+    )
+    const expectedHeadRepository = repository ? `${repository.owner}/${repository.name}` : undefined
+    return page.map(item => withDispatchExecutionResult(item, this.executions, expectedHeadRepository))
   }
 
   async testSuiteDispatchHistory(
@@ -858,12 +865,16 @@ export class MemoryCatalogStore implements CatalogStore {
     query: TestSuiteDispatchHistoryQuery = {},
   ) {
     const limit = Math.min(Math.max(query.limit ?? 50, 1), 101)
+    const repository = this.data.repositories.find(item =>
+      item.id === repositoryId && item.tenantId === tenantId
+    )
+    const expectedHeadRepository = repository ? `${repository.owner}/${repository.name}` : undefined
     return this.testSuiteDispatches
       .filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId && item.artifactLogicalId === artifactLogicalId)
       .sort((left, right) => right.requestedAt.localeCompare(left.requestedAt) || right.id.localeCompare(left.id))
       .filter(item => !query.after || item.requestedAt < query.after.createdAt || (item.requestedAt === query.after.createdAt && item.id < query.after.id))
       .slice(0, limit)
-      .map(item => withDispatchExecutionResult(item, this.executions))
+      .map(item => withDispatchExecutionResult(item, this.executions, expectedHeadRepository))
   }
 
   async testSuiteDispatchLogicalId(
@@ -2501,6 +2512,8 @@ export class PostgresCatalogStore implements CatalogStore {
               execution.evidence_collection AS result_evidence_collection,
               execution.started_at AS result_started_at,execution.completed_at AS result_completed_at
        FROM latest
+       JOIN fuzequality.repositories AS repository
+         ON repository.id=latest.repository_id AND repository.tenant_id=latest.tenant_id
        LEFT JOIN LATERAL (
          SELECT candidate.id,candidate.provider,candidate.external_run_id,candidate.attempt,candidate.status,
                 candidate.source_url,candidate.evidence_links,candidate.evidence_collection,candidate.started_at,candidate.completed_at
@@ -2509,6 +2522,7 @@ export class PostgresCatalogStore implements CatalogStore {
            AND candidate.repository_id=latest.repository_id
            AND candidate.tenant_id=latest.tenant_id
            AND candidate.provider='github-actions'
+           AND lower(candidate.head_repository)=lower(repository.owner || '/' || repository.name)
            AND candidate.kind=CASE latest.artifact_kind
              WHEN 'integration-test' THEN 'integration'
              WHEN 'post-production-test' THEN 'post-production'
@@ -2582,6 +2596,8 @@ export class PostgresCatalogStore implements CatalogStore {
          execution.evidence_collection AS result_evidence_collection,
          execution.started_at AS result_started_at,execution.completed_at AS result_completed_at
        FROM fuzequality.test_suite_dispatches AS dispatch
+       JOIN fuzequality.repositories AS repository
+         ON repository.id=dispatch.repository_id AND repository.tenant_id=dispatch.tenant_id
        LEFT JOIN LATERAL (
          SELECT candidate.id,candidate.provider,candidate.external_run_id,candidate.attempt,candidate.status,
                 candidate.source_url,candidate.evidence_links,candidate.evidence_collection,candidate.started_at,candidate.completed_at
@@ -2590,6 +2606,7 @@ export class PostgresCatalogStore implements CatalogStore {
            AND candidate.repository_id=dispatch.repository_id
            AND candidate.tenant_id=dispatch.tenant_id
            AND candidate.provider='github-actions'
+           AND lower(candidate.head_repository)=lower(repository.owner || '/' || repository.name)
            AND candidate.kind=CASE dispatch.artifact_kind
              WHEN 'integration-test' THEN 'integration'
              WHEN 'post-production-test' THEN 'post-production'

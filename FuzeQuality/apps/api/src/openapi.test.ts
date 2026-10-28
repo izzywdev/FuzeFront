@@ -679,7 +679,10 @@ describe('contract discovery', () => {
       ).toEqual(['limit', 'cursor'])
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/test-suite-dispatches/latest'].get.description
-      ).toContain('source revision, and dispatched ref all match exactly')
+      ).toContain('onboarded head repository')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/test-suite-dispatches/latest'].get.description
+      ).toContain('Fork and missing-head executions are never attached')
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/test-suites/{artifactId}/dispatches'].get.responses['200'].content[
           'application/json'
@@ -694,7 +697,7 @@ describe('contract discovery', () => {
       ).toContain('bounded tenant-scoped dispatch lookup')
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/test-suites/{artifactId}/dispatches'].get.description
-      ).toContain('source revision, and dispatched ref all match exactly')
+      ).toContain('onboarded head repository')
       expect(schemas.TestSuiteDispatchAuditPage.properties.page.$ref).toBe(
         '#/components/schemas/HistoryCursorPage'
       )
