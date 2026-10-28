@@ -101,7 +101,11 @@ export function policyGateArtifactReferenceConflict(
   evaluation: PolicyGateEvaluation,
   artifacts: QualityArtifact[],
 ) {
-  const artifactsById = new Map(artifacts.flatMap(artifact => [
+  const exactArtifacts = artifacts.filter(artifact =>
+    artifact.repositoryId === evaluation.repositoryId &&
+    (!artifact.revision || artifact.revision === evaluation.revision)
+  )
+  const artifactsById = new Map(exactArtifacts.flatMap(artifact => [
     [artifact.id, artifact] as const,
     ...(artifact.logicalId ? [[artifact.logicalId, artifact] as const] : []),
   ]))

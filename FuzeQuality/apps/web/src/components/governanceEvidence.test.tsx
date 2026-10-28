@@ -84,6 +84,41 @@ describe('PolicyGateEvidence', () => {
     expect(within(view.container).getByText('policy · governance/auth.md')).toBeInTheDocument()
   })
 
+  it('does not resolve a matching logical ID from another repository', () => {
+    const view = render(
+      <PolicyGateEvidence
+        evaluation={evaluation}
+        artifacts={[{
+          ...artifacts[0],
+          id: 'foreign-policy-auth',
+          repositoryId: '22222222-2222-4222-8222-222222222222',
+          title: 'Foreign authentication policy',
+          sourcePath: 'foreign/auth.md',
+        }]}
+      />,
+    )
+
+    expect(within(view.container).queryByText('Foreign authentication policy')).not.toBeInTheDocument()
+    expect(within(view.container).getAllByText('policy-auth')).toHaveLength(2)
+    expect(within(view.container).queryByText('policy · foreign/auth.md')).not.toBeInTheDocument()
+  })
+
+  it('keeps unversioned legacy evidence scoped to the exact repository', () => {
+    const view = render(
+      <PolicyGateEvidence
+        evaluation={evaluation}
+        artifacts={[{
+          ...artifacts[0],
+          id: 'legacy-policy-auth',
+          revision: undefined,
+          title: 'Unversioned authentication policy',
+        }]}
+      />,
+    )
+
+    expect(within(view.container).getAllByText('Unversioned authentication policy')).toHaveLength(2)
+  })
+
   it('compares contradiction polarity with the resolved policy sources', () => {
     const contradictory: PolicyGateEvaluation = {
       ...evaluation,
@@ -149,5 +184,13 @@ describe('PolicyGateEvidence', () => {
       ...evaluation,
       evidencePassages: [{ ...evaluation.evidencePassages![0], signal: 'gate' }],
     }, artifacts)).toEqual(['policy-auth'])
+  })
+
+  it('reports matching logical evidence outside the exact repository snapshot', () => {
+    expect(policyGateArtifactReferenceProblems(evaluation, [{
+      ...artifacts[0],
+      repositoryId: '22222222-2222-4222-8222-222222222222',
+    }])).toEqual(['policy-auth'])
+
   })
 })

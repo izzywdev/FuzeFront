@@ -128,5 +128,15 @@ describe('policy gate evaluation ingestion', () => {
       artifactId: 'policy-auth', signal: 'gate', expectedKind: 'gate',
       actualKind: 'policy', reason: 'signal-kind-mismatch',
     })
+
+    lookup.mockResolvedValue([{ ...policy, repositoryId: '22222222-2222-4222-8222-222222222222' }])
+    await expect(policyGateArtifactReferenceError([evaluation], lookup)).resolves.toMatchObject({
+      artifactId: 'policy-auth', expectedKind: 'policy', reason: 'unavailable',
+    })
+
+    lookup.mockResolvedValue([{ ...policy, revision: 'different-revision' }])
+    await expect(policyGateArtifactReferenceError([evaluation], lookup)).resolves.toMatchObject({
+      artifactId: 'policy-auth', expectedKind: 'policy', reason: 'unavailable',
+    })
   })
 })
