@@ -247,10 +247,17 @@ it('filters and trends only timestamped execution evidence', () => {
     executions[0], ambiguousPolicyGateInventory,
   ])
   expect(filterTestExecutions(executions, { evidenceRequirement: 'terminal-timing-missing' })).toEqual([executions[1]])
+  const invertedTerminalTiming = {
+    ...executions[0],
+    id: 'inverted-terminal-timing',
+    startedAt: '2026-10-08T12:01:00.000Z',
+    completedAt: '2026-10-08T12:00:00.000Z',
+  }
   expect(filterTestExecutions([
     ...executions,
+    invertedTerminalTiming,
     { ...executions[1], id: 'running-without-completion', status: 'running' as const, startedAt: '2026-10-08T12:00:00.000Z', completedAt: undefined },
-  ], { evidenceRequirement: 'terminal-timing-missing' })).toEqual([executions[1]])
+  ], { evidenceRequirement: 'terminal-timing-missing' })).toEqual([executions[1], invertedTerminalTiming])
   expect(filterTestExecutions(executions, { thresholdOutcome: 'failed' })).toEqual([executions[2]])
   expect(filterTestExecutions(executions, { thresholdOutcome: 'passed' })).toEqual([])
   expect(filterTestExecutions(executions, { branch: 'feature/load' })).toEqual([executions[1]])

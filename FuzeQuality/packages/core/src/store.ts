@@ -1883,7 +1883,7 @@ export class PostgresCatalogStore implements CatalogStore {
              ))
            OR ($25='terminal-timing-missing'
              AND executions.status<>'running'
-             AND (executions.started_at IS NULL OR executions.completed_at IS NULL))
+             AND (executions.started_at IS NULL OR executions.completed_at IS NULL OR executions.completed_at < executions.started_at))
            OR ($25='performance-threshold-missing'
              AND executions.kind IN ('load','stress')
              AND jsonb_array_length(COALESCE(executions.thresholds,'[]'::jsonb))=0)
@@ -2259,7 +2259,7 @@ export class PostgresCatalogStore implements CatalogStore {
              ))
            OR ($25='terminal-timing-missing'
              AND executions.status<>'running'
-             AND (executions.started_at IS NULL OR executions.completed_at IS NULL))
+             AND (executions.started_at IS NULL OR executions.completed_at IS NULL OR executions.completed_at < executions.started_at))
            OR ($25='performance-threshold-missing'
              AND executions.kind IN ('load','stress')
              AND jsonb_array_length(COALESCE(executions.thresholds,'[]'::jsonb))=0)
@@ -2397,7 +2397,7 @@ export class PostgresCatalogStore implements CatalogStore {
                ))
              OR ($28='terminal-timing-missing'
                AND executions.status<>'running'
-               AND (executions.started_at IS NULL OR executions.completed_at IS NULL))
+               AND (executions.started_at IS NULL OR executions.completed_at IS NULL OR executions.completed_at < executions.started_at))
              OR ($28='performance-threshold-missing'
                AND executions.kind IN ('load','stress')
                AND jsonb_array_length(COALESCE(executions.thresholds,'[]'::jsonb))=0)

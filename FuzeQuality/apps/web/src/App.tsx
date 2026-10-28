@@ -6509,7 +6509,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 <option value="policy-gate-outcome-missing">Missing policy–gate outcome</option>
                 <option value="post-production-video-missing">Missing post-production video</option>
                 <option value="performance-threshold-missing">Missing performance thresholds</option>
-                <option value="terminal-timing-missing">Missing terminal timing</option>
+                <option value="terminal-timing-missing">Missing or invalid terminal timing</option>
               </select>
             </label>
             <label>
@@ -6769,7 +6769,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                   Provider evidence: {day.evidenceCompleteCount ?? 0} complete · {day.evidencePartialCount ?? 0} partial · {day.evidenceUnavailableCount ?? 0} unavailable · {day.evidenceNotCollectedCount ?? 0} not collected · {day.evidenceCollectionFailureCount ?? 0} collection failures
                 </span>
                 <span>
-                  Evidence gaps: {day.invalidEvidenceUrlCount ?? 0} invalid URLs · {day.githubRunProvenanceMissingCount ?? 0} GitHub runs missing provenance · {day.attemptProvenanceUnverifiedCount ?? 0} retry attempts with unverified provenance · {day.postProductionVideoMissingCount ?? 0} post-production runs missing video · {day.terminalTimingMissingCount ?? 0} terminal runs missing timing
+                  Evidence gaps: {day.invalidEvidenceUrlCount ?? 0} invalid URLs · {day.githubRunProvenanceMissingCount ?? 0} GitHub runs missing provenance · {day.attemptProvenanceUnverifiedCount ?? 0} retry attempts with unverified provenance · {day.postProductionVideoMissingCount ?? 0} post-production runs missing video · {day.terminalTimingMissingCount ?? 0} terminal runs missing or invalid timing
                 </span>
                 <span>
                   Policy gates: {day.gatePassedCount ?? 0} passed · {day.gateFailedCount ?? 0} failed · {day.gateCancelledCount ?? 0} cancelled · {day.gateRunningCount ?? 0} running · {day.gateEvaluationCount ?? 0} evaluated · {day.gateUnevaluatedExecutionCount ?? 0} executions without an attributable gate outcome

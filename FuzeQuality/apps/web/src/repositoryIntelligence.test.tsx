@@ -1194,7 +1194,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(trend).toHaveTextContent('3 retries · 2 passed retries')
     expect(trend).toHaveTextContent('1 recovered after failure')
     expect(trend).toHaveTextContent('Provider evidence: 6 complete · 1 partial · 2 unavailable · 1 not collected · 3 collection failures')
-    expect(trend).toHaveTextContent('Evidence gaps: 1 invalid URLs · 2 GitHub runs missing provenance · 4 retry attempts with unverified provenance · 3 post-production runs missing video · 1 terminal runs missing timing')
+    expect(trend).toHaveTextContent('Evidence gaps: 1 invalid URLs · 2 GitHub runs missing provenance · 4 retry attempts with unverified provenance · 3 post-production runs missing video · 1 terminal runs missing or invalid timing')
     expect(trend).toHaveTextContent('Policy gates: 6 passed · 2 failed · 1 cancelled · 0 running · 9 evaluated · 2 executions without an attributable gate outcome')
     expect(trend).toHaveTextContent('Performance thresholds: 6 passed · 2 failed · 8 evaluated · 1 load/stress executions without threshold evidence')
     expect(api.executionTrend).toHaveBeenCalledWith(repository.id, {})
@@ -3744,6 +3744,7 @@ describe('RepositoryIntelligence flow inventory', () => {
 
     render(<RepositoryIntelligence data={portfolio} />)
     await waitFor(() => expect(api.testExecutions).toHaveBeenCalled())
+    expect(screen.getByRole('option', { name: 'Missing or invalid terminal timing' })).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('Required evidence'), {
       target: { value: 'terminal-timing-missing' },
     })

@@ -269,10 +269,14 @@ export function filterTestExecutions(
       (execution.gateEvaluations.length > 0 ||
         (execution.policyArtifactIds.length === 1 && execution.gateArtifactIds.length === 1))
     ) return false
-    if (
-      filter.evidenceRequirement === 'terminal-timing-missing' &&
-      (execution.status === 'running' || (execution.startedAt !== undefined && execution.completedAt !== undefined))
-    ) return false
+    if (filter.evidenceRequirement === 'terminal-timing-missing') {
+      const startedAt = Date.parse(execution.startedAt ?? '')
+      const completedAt = Date.parse(execution.completedAt ?? '')
+      if (
+        execution.status === 'running' ||
+        (Number.isFinite(startedAt) && Number.isFinite(completedAt) && completedAt >= startedAt)
+      ) return false
+    }
     if (filter.thresholdOutcome && !execution.thresholds.some(threshold =>
       threshold.passed === (filter.thresholdOutcome === 'passed')
     )) return false
