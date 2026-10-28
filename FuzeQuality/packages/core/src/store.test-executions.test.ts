@@ -748,6 +748,23 @@ describe('test execution evidence', () => {
     ])
   })
 
+  it('uses the PostgreSQL revision tie-break for equal-time policy-gate evidence', async () => {
+    const store = new MemoryCatalogStore()
+    const base = {
+      repositoryId: 'repo-1', tenantId: 'org-1', provider: 'external' as const,
+      attempt: 1, kind: 'ci' as const, status: 'passed' as const, name: 'CI',
+      completedAt: '2026-10-10T00:00:00.000Z', policyArtifactIds: ['policy-1'],
+      gateArtifactIds: ['gate-1'], thresholds: [], evidenceLinks: [],
+      gateEvaluations: [{ policyArtifactId: 'policy-1', gateArtifactId: 'gate-1', status: 'passed' as const }],
+    }
+    await store.saveTestExecution({ id: 'z-execution', ...base, externalRunId: 'a', revision: 'revision-a' })
+    await store.saveTestExecution({ id: 'a-execution', ...base, externalRunId: 'b', revision: 'revision-b' })
+
+    await expect(store.policyGatePerformance('repo-1', 'org-1')).resolves.toEqual([
+      expect.objectContaining({ revisionCount: 2, latestRevision: 'revision-b' }),
+    ])
+  })
+
   it('joins execution evidence across revision-scoped policy and gate observations', async () => {
     const store = new MemoryCatalogStore()
     ;(store as unknown as { artifacts: Array<Record<string, unknown>> }).artifacts = [

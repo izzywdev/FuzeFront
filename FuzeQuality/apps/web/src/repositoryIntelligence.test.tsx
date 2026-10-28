@@ -3453,7 +3453,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(await screen.findByText('Authentication policy → Authentication gate')).toBeVisible()
     expect(screen.getByLabelText('Evidence repository')).toHaveTextContent('fuze/front')
     expect(screen.getByText('governance/auth.md → .github/workflows/auth.yml')).toBeVisible()
-    expect(screen.getByText('Observed across 3 source revisions')).toHaveAttribute('title', 'historical-source-revision')
+    expect(screen.getByText('Observed across 3 source revisions · Latest historical-s')).toHaveAttribute('title', 'historical-source-revision')
     expect(screen.getByText(/3 passed · 1 failed/)).toBeVisible()
     expect(screen.getByText('4 observations · 75% passed among terminal outcomes')).toBeVisible()
     expect(screen.getByText(/Last completed/).querySelector('time')).toHaveAttribute(

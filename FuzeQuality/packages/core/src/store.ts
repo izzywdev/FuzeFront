@@ -787,7 +787,7 @@ export class MemoryCatalogStore implements CatalogStore {
   async policyGatePerformance(repositoryId: string, tenantId: string, query: PolicyGatePerformanceQuery = {}) {
     const snapshot = this.executionSnapshot(query.snapshotAt)
       .filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId)
-      .sort((left, right) => testExecutionOccurredAtMillis(right) - testExecutionOccurredAtMillis(left) || right.id.localeCompare(left.id))
+      .sort((left, right) => testExecutionOccurredAtMillis(right) - testExecutionOccurredAtMillis(left) || right.revision.localeCompare(left.revision) || right.id.localeCompare(left.id))
     const artifacts = this.artifacts.filter(item => item.repositoryId === repositoryId)
     const selectedPolicyArtifactId = qualityArtifactLogicalIdentity(repositoryId, query.policyArtifactId, artifacts)
     const selectedGateArtifactId = qualityArtifactLogicalIdentity(repositoryId, query.gateArtifactId, artifacts)

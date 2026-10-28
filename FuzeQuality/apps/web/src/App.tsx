@@ -6922,7 +6922,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                     <small title={pair.revisions?.join(', ') ?? pair.latestRevision}>
                       {(pair.revisionCount ?? pair.revisions?.length) === 1
                         ? `Source revision ${(pair.latestRevision ?? pair.revisions?.[0] ?? '').slice(0, 12)}`
-                        : `Observed across ${pair.revisionCount ?? pair.revisions?.length} source revisions`}
+                        : `Observed across ${pair.revisionCount ?? pair.revisions?.length} source revisions · Latest ${(pair.latestRevision ?? pair.revisions?.[0] ?? '').slice(0, 12)}`}
                     </small>
                   ) : null}
                   {(pair.policySourcePath || pair.gateSourcePath) && (
