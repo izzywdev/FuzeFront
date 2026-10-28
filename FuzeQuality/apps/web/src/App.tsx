@@ -3832,6 +3832,17 @@ export function flowCandidateMatchesInventory(
   if (selection.analysisRisk === 'prompt-truncated' && !(
     flow.source === 'litellm' && flow.analysis?.promptTruncated === true
   )) return false
+  if (selection.analysisRisk === 'artifacts-omitted' && !(
+    flow.source === 'litellm' && flow.analysis && (
+      (flow.analysis.promptOmittedArtifactCount ?? Math.max(
+        (flow.analysis.inputArtifactCount ?? 0) - (flow.analysis.promptArtifactCount ?? 0),
+        0,
+      )) > 0
+    )
+  )) return false
+  if (selection.analysisRisk === 'content-truncated' && !(
+    flow.source === 'litellm' && flow.analysis?.promptContentTruncated === true
+  )) return false
   if (selection.analysisRisk === 'provenance-missing' && !(
     flow.source === 'litellm' && !flow.analysis
   )) return false

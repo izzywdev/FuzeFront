@@ -59,6 +59,8 @@ describe('FlowInventoryFilters', () => {
     fireEvent.change(screen.getByLabelText('Prompt version'), { target: { value: 'flow-v2' } })
     fireEvent.change(screen.getByLabelText('Schema version'), { target: { value: '2.0' } })
     fireEvent.change(screen.getByLabelText('Analysis review risk'), { target: { value: 'grounding-gaps' } })
+    fireEvent.change(screen.getByLabelText('Analysis review risk'), { target: { value: 'artifacts-omitted' } })
+    fireEvent.change(screen.getByLabelText('Analysis review risk'), { target: { value: 'content-truncated' } })
     fireEvent.change(screen.getByLabelText('Minimum confidence (%)'), { target: { value: '70' } })
     fireEvent.change(screen.getByLabelText('Maximum confidence (%)'), { target: { value: '90' } })
 
@@ -71,6 +73,8 @@ describe('FlowInventoryFilters', () => {
     expect(onPromptVersionChange).toHaveBeenCalledWith('flow-v2')
     expect(onSchemaVersionChange).toHaveBeenCalledWith('2.0')
     expect(onAnalysisRiskChange).toHaveBeenCalledWith('grounding-gaps')
+    expect(onAnalysisRiskChange).toHaveBeenCalledWith('artifacts-omitted')
+    expect(onAnalysisRiskChange).toHaveBeenCalledWith('content-truncated')
     expect(onMinimumConfidencePercentChange).toHaveBeenCalledWith('70')
     expect(onMaximumConfidencePercentChange).toHaveBeenCalledWith('90')
   })

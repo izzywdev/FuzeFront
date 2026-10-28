@@ -56,7 +56,7 @@ export type RepositoryFlowCandidateQuery = {
   model?: string
   promptVersion?: string
   schemaVersion?: string
-  analysisRisk?: 'grounding-gaps' | 'prompt-truncated' | 'provenance-missing'
+  analysisRisk?: 'grounding-gaps' | 'prompt-truncated' | 'artifacts-omitted' | 'content-truncated' | 'provenance-missing'
   minConfidence?: number
   maxConfidence?: number
   after?: HistoryCursor
@@ -593,7 +593,7 @@ export class MemoryCatalogStore implements CatalogStore {
               ))
             : query.analysisRisk === 'prompt-truncated'
               ? item.source === 'litellm' && item.analysis?.promptTruncated === true
-              : item.source === 'litellm' && !item.analysis
+              : query.analysisRisk === 'artifacts-omitted' ? item.source === 'litellm' && Boolean(item.analysis && (item.analysis.promptOmittedArtifactCount ?? Math.max((item.analysis.inputArtifactCount ?? 0) - (item.analysis.promptArtifactCount ?? 0), 0)) > 0) : query.analysisRisk === 'content-truncated' ? item.source === 'litellm' && item.analysis?.promptContentTruncated === true : item.source === 'litellm' && !item.analysis
         )) &&
         (query.minConfidence === undefined || item.confidence >= query.minConfidence) &&
         (query.maxConfidence === undefined || item.confidence <= query.maxConfidence)
@@ -1569,7 +1569,7 @@ export class PostgresCatalogStore implements CatalogStore {
              COALESCE((analysis_provenance->'grounding'->>'rejectedArtifactCount')::integer,0)>0
              OR COALESCE((analysis_provenance->'grounding'->>'ungroundedStepCount')::integer,0)>0))
            OR ($12='prompt-truncated' AND source='litellm' AND analysis_provenance->>'promptTruncated'='true')
-           OR ($12='provenance-missing' AND source='litellm' AND analysis_provenance IS NULL))
+           OR ($12='artifacts-omitted' AND source='litellm' AND COALESCE((analysis_provenance->>'promptOmittedArtifactCount')::integer,(analysis_provenance->>'inputArtifactCount')::integer-(analysis_provenance->>'promptArtifactCount')::integer,0)>0) OR ($12='content-truncated' AND source='litellm' AND analysis_provenance->>'promptContentTruncated'='true') OR ($12='provenance-missing' AND source='litellm' AND analysis_provenance IS NULL))
          AND ($16::text IS NULL
            OR EXISTS (
              SELECT 1 FROM jsonb_array_elements_text(COALESCE(evidence, '[]'::jsonb)) AS evidence_target(value)

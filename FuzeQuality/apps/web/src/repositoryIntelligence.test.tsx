@@ -1988,6 +1988,20 @@ describe('RepositoryIntelligence flow inventory', () => {
     await waitFor(() => expect(flowRequest).toHaveBeenLastCalledWith(repository.id, {
       analysisRisk: 'grounding-gaps',
     }))
+
+    fireEvent.change(screen.getByLabelText('Analysis review risk'), {
+      target: { value: 'artifacts-omitted' },
+    })
+    await waitFor(() => expect(flowRequest).toHaveBeenLastCalledWith(repository.id, {
+      analysisRisk: 'artifacts-omitted',
+    }))
+
+    fireEvent.change(screen.getByLabelText('Analysis review risk'), {
+      target: { value: 'content-truncated' },
+    })
+    await waitFor(() => expect(flowRequest).toHaveBeenLastCalledWith(repository.id, {
+      analysisRisk: 'content-truncated',
+    }))
   })
 
   it('shows reviewers how much repository evidence the LiteLLM prompt omitted', async () => {

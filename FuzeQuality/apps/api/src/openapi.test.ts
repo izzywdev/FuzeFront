@@ -487,7 +487,7 @@ describe('contract discovery', () => {
       })
       const analysisRisk = document.paths['/api/v1/repositories/{repositoryId}/flow-candidates'].get.parameters
         .find((parameter: { name: string }) => parameter.name === 'analysisRisk')
-      expect(analysisRisk.schema.enum).toEqual(['grounding-gaps', 'prompt-truncated', 'provenance-missing'])
+      expect(analysisRisk.schema.enum).toEqual(['grounding-gaps', 'prompt-truncated', 'artifacts-omitted', 'content-truncated', 'provenance-missing'])
       expect(analysisRisk.description).toContain('FuzeInfra LiteLLM')
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}'].get.responses['200'].content[
