@@ -138,6 +138,8 @@ describe('contract discovery', () => {
         maxLength: 255,
         pattern: '^[^/\\s]+/[^/\\s]+$',
       })
+      expect(schemas.TestExecutionEvidenceCollection.properties.issues.items.enum)
+        .toContain('head-repository-unverified')
       expect(schemas.TestExecutionEvidenceCollection.oneOf).toEqual(expect.arrayContaining([
         expect.objectContaining({
           title: 'Complete evidence collection',

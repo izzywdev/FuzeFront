@@ -50,7 +50,7 @@ import { executionAttemptHistoryFilterSchema, executionPerformanceFilterSchema, 
 import { enrichPerformanceEvidence } from './execution-performance-evidence'
 import { decodeExecutionTrendCursor, executionTrendPage } from './execution-trend-pagination'
 import { decodePerformanceCursor, performancePage } from './execution-performance-pagination'
-import { executionRecord, linkExecutionToRevisionArtifacts, prepareExecutionEvidence, reconcileExecutionEvidenceForScan, refreshExecutionArtifactEvidence, webhookExecutionRecord } from './test-execution-ingestion'
+import { executionRecord, linkExecutionToRevisionArtifacts, prepareExecutionEvidence, reconcileExecutionEvidenceForScan, refreshExecutionArtifactEvidence, unverifiedGithubHeadEvidenceCollection, webhookExecutionRecord } from './test-execution-ingestion'
 import { candidateArtifactReferenceError, candidateOwnershipError, repositoryFlowCandidateIngestionSchema } from './repository-flow-ingestion'
 import { repositoryFlowFilterSchema } from './repository-flow-filter'
 import { repositoryFlowAnalysisProvenanceConflict, repositoryFlowArtifactReferenceConflict, repositoryFlowGroundingRationaleConflict, repositoryFlowReviewConflict, repositoryFlowReviewStateConflict, repositoryFlowWireframeConflict } from './repository-flow-review'
@@ -1585,8 +1585,18 @@ app.post('/api/v1/webhooks/github', async (request, response) => {
     let executionWithEvidence: typeof execution & {
       evidenceCollection?: TestExecution['evidenceCollection']
     } = execution
-    if (execution.status !== 'running' && repository.installationId) {
-      const checkedAt = new Date().toISOString()
+    const checkedAt = new Date().toISOString()
+    const headEvidenceIssue = unverifiedGithubHeadEvidenceCollection(
+      `${repository.owner}/${repository.name}`,
+      execution.headRepository,
+      checkedAt,
+    )
+    if (execution.status !== 'running' && headEvidenceIssue) {
+      executionWithEvidence = {
+        ...execution,
+        evidenceCollection: headEvidenceIssue,
+      }
+    } else if (execution.status !== 'running' && repository.installationId) {
       const installationId = repository.installationId
       executionWithEvidence = await refreshExecutionArtifactEvidence(
         execution,

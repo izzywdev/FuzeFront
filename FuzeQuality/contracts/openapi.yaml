@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.84.26
+  version: 0.84.27
   license:
     name: UNLICENSED
 servers:
@@ -2113,10 +2113,10 @@ components:
             issues:
               type: array
               minItems: 1
-              maxItems: 2
+              maxItems: 3
               items:
                 type: string
-                enum: [provider-result-limit-exceeded, attempt-provenance-unverified]
+                enum: [provider-result-limit-exceeded, attempt-provenance-unverified, head-repository-unverified]
         - title: Unavailable evidence collection
           required: [errorCode]
           properties:
@@ -2134,10 +2134,10 @@ components:
           enum: [PROVIDER_TIMEOUT, PROVIDER_UNAVAILABLE, PROVIDER_RESPONSE_INVALID, PROVIDER_RESULT_LIMIT_EXCEEDED]
         issues:
           type: array
-          maxItems: 2
+          maxItems: 3
           items:
             type: string
-            enum: [provider-result-limit-exceeded, attempt-provenance-unverified]
+            enum: [provider-result-limit-exceeded, attempt-provenance-unverified, head-repository-unverified]
         unverifiedLinks:
           type: array
           maxItems: 99
