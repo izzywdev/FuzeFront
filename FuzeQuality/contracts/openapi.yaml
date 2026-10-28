@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.84.25
+  version: 0.84.26
   license:
     name: UNLICENSED
 servers:
@@ -142,6 +142,51 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Problem'
+
+  /api/v1/requirements/freshness:
+    get:
+      operationId: getRequirementAnalysisFreshness
+      summary: Read tenant-scoped Jira and reviewed-analysis freshness
+      description: Returns only the synchronization cursor for the Security-verified active tenant.
+      tags: [requirements]
+      security: [{ platformBearer: [] }]
+      responses:
+        '200':
+          description: The active tenant's retained requirement-analysis state, or `unknown` before its first sync.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RequirementSyncCursor' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/v1/jira/sync:
+    post:
+      operationId: queueRequirementAnalysis
+      summary: Queue tenant-scoped Jira synchronization and reviewed LiteLLM analysis
+      description: >-
+        A portal caller queues only its Security-verified active tenant. The internal service token fans out to active identity-projected tenants. Queue state is persisted before publication; a publication failure is retained as REQUIREMENT_QUEUE_UNAVAILABLE and returned as 503 instead of leaving a false queued state.
+      tags: [requirements]
+      security: [{ platformBearer: [] }, { serviceToken: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RequirementSyncRequest' }
+      responses:
+        '202':
+          description: Requirement analysis was durably queued for the selected tenant or active service-token tenant set.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { $ref: '#/components/schemas/RequirementSyncQueued' }
+                  - { $ref: '#/components/schemas/RequirementSyncServiceQueued' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503':
+          description: Event delivery was unavailable; affected tenant cursors retain a retryable failed state.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
 
   /api/v1/internal/repository-flow-candidates:
     post:
@@ -2592,6 +2637,42 @@ components:
           description: >-
             Whether the OpenAPI document was found and parsed at boot.
             `unavailable` means /openapi.yaml and /openapi.json answer 503.
+    RequirementSyncCursor:
+      type: object
+      additionalProperties: false
+      required: [sourceType, sourceKey, freshnessStatus]
+      properties:
+        sourceType: { type: string, enum: [jira] }
+        sourceKey: { type: string, minLength: 1, maxLength: 200 }
+        cursor: { type: string }
+        lastSuccessAt: { type: string, format: date-time }
+        freshnessStatus: { type: string, enum: [unknown, queued, fresh, stale, failed] }
+        failureCode:
+          type: string
+          enum: [JIRA_UNAVAILABLE, REQUIREMENT_QUEUE_UNAVAILABLE, INTELLIGENCE_UNAVAILABLE, INTELLIGENCE_TIMEOUT, INTELLIGENCE_INVALID_RESPONSE, SEMANTIC_INDEX_UNAVAILABLE]
+    RequirementSyncRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        scopeId: { type: string, minLength: 1, maxLength: 200, default: default }
+        jql: { type: string, minLength: 1, maxLength: 10000 }
+    RequirementSyncQueued:
+      type: object
+      additionalProperties: false
+      required: [status, scopeId, sync]
+      properties:
+        status: { type: string, enum: [queued] }
+        scopeId: { type: string }
+        incrementalFrom: { type: string }
+        sync: { $ref: '#/components/schemas/RequirementSyncCursor' }
+    RequirementSyncServiceQueued:
+      type: object
+      additionalProperties: false
+      required: [status, scopeId, tenantsQueued]
+      properties:
+        status: { type: string, enum: [queued] }
+        scopeId: { type: string }
+        tenantsQueued: { type: integer, minimum: 0 }
     Problem:
       type: object
       required: [code, message]
@@ -2611,6 +2692,8 @@ tags:
     description: Tenant-authorized policy/gate governance and review history.
   - name: executions
     description: Tenant-authorized test evidence, performance aggregation, and controlled dispatch.
+  - name: requirements
+    description: Tenant-authorized Jira synchronization and reviewed FuzeInfra LiteLLM requirement analysis.
   - name: worker-intelligence
     description: Cluster-internal repository analysis worker operations.
   - name: worker-design-traceability

@@ -25,7 +25,7 @@ describe('Jira intelligence', () => {
       project: 'FUZE',
       updatedAt: '2026-07-19T00:00:00.000Z',
     }
-    const suggestions = suggestionsFromAnalysis(requirement, {
+    const analysis: Parameters<typeof suggestionsFromAnalysis>[1] = {
       title: 'Password reset',
       actors: ['anonymous user'],
       preconditions: [],
@@ -52,7 +52,8 @@ describe('Jira intelligence', () => {
         schemaVersion: FLOW_SCHEMA_VERSION,
         model: 'quality-analysis',
       },
-    })
+    }
+    const suggestions = suggestionsFromAnalysis(requirement, analysis, 'tenant-a')
     expect(suggestions).toHaveLength(3)
     expect(suggestions.every(item => item.state === 'proposed')).toBe(true)
     expect(suggestions[0].payload).toMatchObject({
@@ -66,6 +67,9 @@ describe('Jira intelligence', () => {
       confidence: 0.9,
       payload: { criterion: 'The reset link expiry is specified.' },
     })
+    const otherTenant = suggestionsFromAnalysis(requirement, analysis, 'tenant-b')
+    expect(otherTenant.map(item => item.id)).not.toEqual(suggestions.map(item => item.id))
+    expect(otherTenant[0].payload.id).not.toBe(suggestions[0].payload.id)
   })
 
   it('records local prompt provenance and validates structured recovery paths', async () => {

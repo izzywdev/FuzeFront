@@ -70,7 +70,7 @@ import { repositoryProcessingStatus } from './repository-processing-status'
 import { dispatchWebhookScans } from './webhook-scan-dispatch'
 import { testExecutionDetail } from './test-execution-detail'
 import { testSuiteDispatchLogicalId, testSuiteDispatchPage } from './test-suite-dispatch-pagination'
-import { queueRequirementSync } from './requirement-sync'
+import { activeRequirementSyncStatuses, queueRequirementSync, requirementSyncRequestSchema } from './requirement-sync'
 import { persistTerminalTestSuiteDispatch } from './test-suite-dispatch-audit'
 import {
   buildImplementationManifest,
@@ -314,7 +314,10 @@ app.get('/health/ready', async (_request, response) => {
 })
 app.get('/metrics', async (_request, response) => {
   const portfolio = await store.portfolio()
-  const jiraFreshness = await store.syncCursorStatuses('jira', 'default')
+  const jiraFreshness = await activeRequirementSyncStatuses(
+    await store.activeTenantIds(),
+    tenantId => store.syncCursor('jira', 'default', tenantId),
+  )
   response.type('text/plain').send(
     [
       '# HELP fuzequality_repositories Number of onboarded repositories',
@@ -1530,21 +1533,30 @@ app.post('/api/v1/internal/coverage/rebuild', async (_request, response) => {
 })
 
 app.post('/api/v1/jira/sync', maySyncRequirements, async (request, response) => {
+  const input = requirementSyncRequestSchema.safeParse(request.body ?? {})
+  if (!input.success) return response.status(400).json({ error: input.error.flatten() })
   const serviceRequest = isFuzeQualityServiceRequest(request)
   const tenantIds = serviceRequest
     ? await store.activeTenantIds()
     : [requestIdentity(request)!.tenantId]
-  const scopeId = request.body?.scopeId ?? 'default'
-  const queued = await queueRequirementSync(
-    tenantIds,
-    scopeId,
-    request.body?.jql ?? process.env.JIRA_JQL ?? 'project = FUZE',
-    {
-      syncCursor: tenantId => store.syncCursor('jira', scopeId, tenantId),
-      publish: (topic, payload) => events.publish(topic, payload),
-      markQueued: tenantId => store.markSyncQueued('jira', scopeId, tenantId),
-    },
-  )
+  const scopeId = input.data.scopeId
+  let queued: Awaited<ReturnType<typeof queueRequirementSync>>
+  try {
+    queued = await queueRequirementSync(
+      tenantIds,
+      scopeId,
+      input.data.jql ?? process.env.JIRA_JQL ?? 'project = FUZE',
+      {
+        syncCursor: tenantId => store.syncCursor('jira', scopeId, tenantId),
+        publish: (topic, payload) => events.publish(topic, payload),
+        markQueued: tenantId => store.markSyncQueued('jira', scopeId, tenantId),
+        markFailed: (tenantId, code) => store.markSyncFailed('jira', scopeId, tenantId, code),
+      },
+    )
+  } catch (error) {
+    console.error(JSON.stringify({ event: 'requirement_sync_enqueue_failed', scopeId, code: 'REQUIREMENT_QUEUE_UNAVAILABLE', retryable: true }))
+    return response.status(503).json({ error: 'Requirement analysis could not be queued', code: 'REQUIREMENT_QUEUE_UNAVAILABLE' })
+  }
   if (serviceRequest) {
     return response.status(202).json({ status: 'queued', scopeId, tenantsQueued: queued.length })
   }

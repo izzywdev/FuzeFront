@@ -32,6 +32,7 @@ import { buildApiExpectations, buildFindings, buildFrontendExpectations } from '
 import { buildQualityIntelligenceProjection, isQualityIntelligenceFinding } from './quality-projection'
 import { FLOW_COVERAGE_POLICY_VERSION } from './orphan-analysis'
 import { REQUIREMENT_REVIEW_POLICY_VERSION } from './requirement-analysis'
+import { tenantRequirementId } from './intelligence'
 import { executionOutcomeTrend, executionPerformance, filterTestExecutions, normalizeExecutionArtifactIdentities, qualityArtifactLogicalIdentity, type ExecutionEvidenceRequirement, type ExecutionOutcomeTrend, type PolicyGatePerformance } from './execution-performance'
 
 export const currentQualityArtifactsSql = `SELECT id, logical_id, repository_id, revision, kind, title, source_path, summary, evidence, execution_target
@@ -1118,7 +1119,12 @@ export class MemoryCatalogStore implements CatalogStore {
     sync?: Pick<SyncCursor, 'sourceType' | 'sourceKey' | 'cursor'> & { tenantId: string }
   ) {
     for (const result of results) {
-      const requirement = { ...result.requirement, tenantId: sync?.tenantId }
+      if (!sync?.tenantId) throw new Error('Tenant-scoped Jira intelligence is required')
+      const requirement = {
+        ...result.requirement,
+        id: tenantRequirementId(sync.tenantId, result.requirement.jiraKey),
+        tenantId: sync.tenantId,
+      }
       const existing = this.data.requirements.find(item => item.jiraKey === requirement.jiraKey && item.tenantId === requirement.tenantId)
       if (existing) Object.assign(existing, requirement)
       else this.data.requirements.push(requirement)

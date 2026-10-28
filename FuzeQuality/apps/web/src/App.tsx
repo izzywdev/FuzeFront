@@ -1838,6 +1838,7 @@ function Requirements({ data }: { data: Portfolio }) {
     freshnessStatus: 'unknown',
   })
   const [retrying, setRetrying] = useState(false)
+  const [retryError, setRetryError] = useState<string>()
   useEffect(() => {
     api
       .requirementFreshness()
@@ -1846,9 +1847,19 @@ function Requirements({ data }: { data: Portfolio }) {
   }, [])
   const retry = async () => {
     setRetrying(true)
+    setRetryError(undefined)
     try {
       const result = await api.syncRequirements()
       setFreshness(result.sync)
+    } catch (error) {
+      if (error instanceof CatalogApiError && error.code === 'REQUIREMENT_QUEUE_UNAVAILABLE') {
+        setFreshness(current => ({
+          ...current,
+          freshnessStatus: 'failed',
+          failureCode: 'REQUIREMENT_QUEUE_UNAVAILABLE',
+        }))
+      }
+      setRetryError(error instanceof Error ? error.message : 'Requirement analysis could not be queued.')
     } finally {
       setRetrying(false)
     }
@@ -1860,7 +1871,7 @@ function Requirements({ data }: { data: Portfolio }) {
         title="Requirements & inferred flows"
         detail="Jira stays authoritative. AI proposals remain visibly separate until reviewed."
         action={
-          <RequirementFreshnessStatus sync={freshness} onRetry={() => void retry()} retrying={retrying} />
+          <RequirementFreshnessStatus sync={freshness} onRetry={() => void retry()} retrying={retrying} retryError={retryError} />
         }
       />
       <div className="requirements-grid">

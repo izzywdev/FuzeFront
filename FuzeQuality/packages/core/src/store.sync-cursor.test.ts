@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { MemoryCatalogStore } from './store'
+import { tenantRequirementId } from './intelligence'
 
 describe('requirement sync cursors', () => {
   it('moves the cursor only with a successfully saved intelligence batch', async () => {
@@ -75,5 +76,33 @@ describe('requirement sync cursors', () => {
     await store.upsertTenant({ id: 'tenant-z', slug: 'z', name: 'Z', type: 'organization', active: false })
 
     await expect(store.activeTenantIds()).resolves.toEqual(['tenant-a', 'tenant-b'])
+  })
+
+  it('keeps identical Jira keys and their suggestions isolated between tenants', async () => {
+    const store = new MemoryCatalogStore()
+    const requirement = {
+      id: 'jira:FQ-203', jiraKey: 'FQ-203', issueType: 'Story' as const, summary: 'Reviewed analysis',
+      description: 'Analyze safely.', status: 'In Progress', project: 'FQ', updatedAt: '2026-10-28T00:00:00.000Z',
+    }
+    const result = (tenantId: string) => ({
+      requirement,
+      suggestions: [{
+        id: `suggestion-${tenantId}`, requirementId: tenantRequirementId(tenantId, requirement.jiraKey),
+        type: 'missing-criteria' as const, title: `Suggestion ${tenantId}`, confidence: 0.8,
+        evidence: ['reviewed'], payload: {}, state: 'proposed' as const, createdAt: '2026-10-28T00:00:00.000Z',
+      }],
+    })
+
+    await store.saveIntelligence([result('tenant-a')], { sourceType: 'jira', sourceKey: 'default', tenantId: 'tenant-a', cursor: 'a' })
+    await store.saveIntelligence([result('tenant-b')], { sourceType: 'jira', sourceKey: 'default', tenantId: 'tenant-b', cursor: 'b' })
+
+    await expect(store.portfolio('tenant-a')).resolves.toMatchObject({
+      requirements: [{ id: tenantRequirementId('tenant-a', 'FQ-203') }],
+      suggestions: [{ id: 'suggestion-tenant-a' }],
+    })
+    await expect(store.portfolio('tenant-b')).resolves.toMatchObject({
+      requirements: [{ id: tenantRequirementId('tenant-b', 'FQ-203') }],
+      suggestions: [{ id: 'suggestion-tenant-b' }],
+    })
   })
 })

@@ -288,6 +288,14 @@ describe('contract discovery', () => {
         .toContain('LiteLLM evidence IDs')
       expect(document.paths['/api/v1/internal/repository-flow-candidates'].post.description)
         .toContain('grounding counts')
+      expect(document.paths['/api/v1/requirements/freshness'].get.security)
+        .toEqual([{ platformBearer: [] }])
+      expect(document.paths['/api/v1/jira/sync'].post.description)
+        .toContain('Queue state is persisted before publication')
+      expect(document.paths['/api/v1/jira/sync'].post.responses).toHaveProperty('503')
+      expect(document.components.schemas.RequirementSyncRequest.additionalProperties).toBe(false)
+      expect(document.components.schemas.RequirementSyncCursor.properties.failureCode.enum)
+        .toContain('REQUIREMENT_QUEUE_UNAVAILABLE')
       expect(
         document.components.schemas.RepositoryFlowAnalysisProvenance.properties.grounding
           .properties.groundedArtifactCount.description
