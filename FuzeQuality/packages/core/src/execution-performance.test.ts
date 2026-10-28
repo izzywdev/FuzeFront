@@ -280,6 +280,22 @@ it('does not infer recovery from a passed retry without retained prior failure e
   expect(executionOutcomeTrend([passedRetry], [failedInitial, passedRetry])[0].recoveredRunCount).toBe(1)
 })
 
+it('groups offset execution timestamps into the same UTC day as PostgreSQL', () => {
+  const execution = (id: string, completedAt: string) => ({
+    id, repositoryId: 'repo', tenantId: 'org', provider: 'external' as const,
+    externalRunId: id, attempt: 1, revision: 'a', kind: 'ci' as const,
+    status: 'passed' as const, name: 'CI', completedAt, policyArtifactIds: [],
+    gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [],
+  })
+
+  expect(executionOutcomeTrend([
+    execution('offset', '2026-10-20T23:30:00-02:00'),
+    execution('utc', '2026-10-21T01:45:00.000Z'),
+  ])).toEqual([
+    expect.objectContaining({ date: '2026-10-21', total: 2, passed: 2 }),
+  ])
+})
+
 it('trends actionable evidence gaps without treating running executions as missing timing', () => {
   const base = {
     repositoryId: 'repo', tenantId: 'org', provider: 'github-actions' as const,

@@ -1184,7 +1184,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     render(<RepositoryIntelligence data={portfolio} />)
 
     const trend = await screen.findByLabelText('Execution outcome trend')
-    expect(trend).toHaveTextContent('2026-10-01')
+    expect(within(trend).getByText('2026-10-01 UTC')).toHaveAttribute('datetime', '2026-10-01')
     expect(screen.getByText(/Outcome-trend continuation retains the execution lifecycle state/)).toBeVisible()
     expect(screen.getByText(/fork runs are excluded even when branch names match/i)).toBeVisible()
     expect(trend).toHaveTextContent('7 passed')

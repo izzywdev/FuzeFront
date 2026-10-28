@@ -6749,7 +6749,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           <div className="execution-trend" aria-label="Execution outcome trend">
             {outcomeTrend.map(day => (
               <div key={day.date}>
-                <strong>{day.date}</strong>
+                <strong><time dateTime={day.date}>{day.date} UTC</time></strong>
                 <span>{day.passed} passed</span>
                 <span>{day.failed} failed</span>
                 <span>{day.cancelled} cancelled</span>

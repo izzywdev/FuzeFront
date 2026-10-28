@@ -375,8 +375,9 @@ export function executionOutcomeTrend(executions: TestExecution[], history: Test
   }
   for (const execution of executions) {
     const timestamp = execution.completedAt ?? execution.startedAt
-    if (!timestamp || Number.isNaN(Date.parse(timestamp))) continue
-    const date = timestamp.slice(0, 10)
+    const timestampMs = Date.parse(timestamp ?? '')
+    if (!Number.isFinite(timestampMs)) continue
+    const date = new Date(timestampMs).toISOString().slice(0, 10)
     const current = results.get(date) ?? {
       date,
       total: 0,
