@@ -3053,7 +3053,7 @@ function DispatchExecutionResult({ dispatch }: { dispatch: TestSuiteDispatch }) 
     )
   }
   return dispatch.status === 'accepted' ? (
-    <p className="performance-inventory-only">Awaiting an onboarded-repository execution for this exact revision and ref.</p>
+    <p className="performance-inventory-only">Awaiting an onboarded-repository execution started after this dispatch for the exact revision and ref.</p>
   ) : null
 }
 

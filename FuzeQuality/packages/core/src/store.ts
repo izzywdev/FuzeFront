@@ -219,7 +219,7 @@ export function withDispatchExecutionResult(
       item.tenantId === dispatch.tenantId &&
       item.provider === 'github-actions' &&
       Boolean(expectedHeadRepository) &&
-      item.headRepository?.toLowerCase() === expectedHeadRepository?.toLowerCase() &&
+      item.headRepository?.toLowerCase() === expectedHeadRepository?.toLowerCase() && Boolean(item.startedAt) && Date.parse(item.startedAt!) >= Date.parse(dispatch.requestedAt) &&
       item.kind === executionKindForDispatch[dispatch.artifactKind] &&
       item.branch === dispatch.ref &&
       item.revision.toLowerCase() === dispatch.sourceRevision.toLowerCase() &&
@@ -2522,7 +2522,7 @@ export class PostgresCatalogStore implements CatalogStore {
            AND candidate.repository_id=latest.repository_id
            AND candidate.tenant_id=latest.tenant_id
            AND candidate.provider='github-actions'
-           AND lower(candidate.head_repository)=lower(repository.owner || '/' || repository.name)
+           AND lower(candidate.head_repository)=lower(repository.owner || '/' || repository.name) AND candidate.started_at >= latest.requested_at
            AND candidate.kind=CASE latest.artifact_kind
              WHEN 'integration-test' THEN 'integration'
              WHEN 'post-production-test' THEN 'post-production'
@@ -2606,7 +2606,7 @@ export class PostgresCatalogStore implements CatalogStore {
            AND candidate.repository_id=dispatch.repository_id
            AND candidate.tenant_id=dispatch.tenant_id
            AND candidate.provider='github-actions'
-           AND lower(candidate.head_repository)=lower(repository.owner || '/' || repository.name)
+           AND lower(candidate.head_repository)=lower(repository.owner || '/' || repository.name) AND candidate.started_at >= dispatch.requested_at
            AND candidate.kind=CASE dispatch.artifact_kind
              WHEN 'integration-test' THEN 'integration'
              WHEN 'post-production-test' THEN 'post-production'

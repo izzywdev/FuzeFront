@@ -220,6 +220,14 @@ describe('test-suite dispatch audit', () => {
       },
     })
     await store.saveTestExecution({
+      id: 'pre-existing-result', repositoryId: accepted.repositoryId, tenantId: accepted.tenantId,
+      provider: 'github-actions', externalRunId: 'provider-run-before-dispatch', attempt: 1,
+      revision: accepted.sourceRevision, branch: accepted.ref, headRepository: 'acme/app',
+      kind: 'load', status: 'passed', name: 'Earlier load test', workflowPath: accepted.workflowPath,
+      startedAt: '2026-10-22T19:59:00.000Z', completedAt: '2026-10-22T20:05:00.000Z',
+      policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [],
+    })
+    await store.saveTestExecution({
       id: 'wrong-revision', repositoryId: accepted.repositoryId, tenantId: accepted.tenantId,
       provider: 'github-actions', externalRunId: 'provider-run-99', attempt: 1,
       revision: 'b'.repeat(40), branch: accepted.ref, kind: 'load', status: 'passed',
@@ -301,7 +309,7 @@ describe('test-suite dispatch audit', () => {
     expect(String(sql)).toContain("dispatch.status='accepted'")
     expect(String(sql)).toContain('candidate.branch=dispatch.source_ref')
     expect(String(sql)).toContain("candidate.provider='github-actions'")
-    expect(String(sql)).toContain("lower(candidate.head_repository)=lower(repository.owner || '/' || repository.name)")
+    expect(String(sql)).toContain("lower(candidate.head_repository)=lower(repository.owner || '/' || repository.name) AND candidate.started_at >= dispatch.requested_at")
     expect(String(sql)).toContain('lower(candidate.revision)=lower(dispatch.source_revision)')
     expect(String(sql)).toContain("split_part(candidate.workflow_path,'@',1)=dispatch.workflow_path")
     expect(parameters).toEqual([accepted.repositoryId, accepted.tenantId, accepted.artifactLogicalId, 50])
@@ -346,7 +354,7 @@ describe('test-suite dispatch audit', () => {
     expect(String(sql)).toContain("latest.status='accepted'")
     expect(String(sql)).toContain('candidate.branch=latest.source_ref')
     expect(String(sql)).toContain("candidate.provider='github-actions'")
-    expect(String(sql)).toContain("lower(candidate.head_repository)=lower(repository.owner || '/' || repository.name)")
+    expect(String(sql)).toContain("lower(candidate.head_repository)=lower(repository.owner || '/' || repository.name) AND candidate.started_at >= latest.requested_at")
     expect(String(sql)).toContain('lower(candidate.revision)=lower(latest.source_revision)')
     expect(String(sql)).toContain("split_part(candidate.workflow_path,'@',1)=latest.workflow_path")
     expect(parameters).toEqual([accepted.repositoryId, accepted.tenantId])

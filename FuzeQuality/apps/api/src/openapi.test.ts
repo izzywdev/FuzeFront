@@ -682,7 +682,10 @@ describe('contract discovery', () => {
       ).toContain('onboarded head repository')
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/test-suite-dispatches/latest'].get.description
-      ).toContain('Fork and missing-head executions are never attached')
+      ).toContain('Fork, missing-head, and pre-existing executions are never attached')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/test-suite-dispatches/latest'].get.description
+      ).toContain('started after the dispatch was requested')
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/test-suites/{artifactId}/dispatches'].get.responses['200'].content[
           'application/json'
@@ -698,6 +701,9 @@ describe('contract discovery', () => {
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/test-suites/{artifactId}/dispatches'].get.description
       ).toContain('onboarded head repository')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/test-suites/{artifactId}/dispatches'].get.description
+      ).toContain('pre-existing executions are never attached')
       expect(schemas.TestSuiteDispatchAuditPage.properties.page.$ref).toBe(
         '#/components/schemas/HistoryCursorPage'
       )

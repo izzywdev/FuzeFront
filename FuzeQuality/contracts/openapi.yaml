@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.84.29
+  version: 0.84.30
   license:
     name: UNLICENSED
 servers:
@@ -1364,7 +1364,8 @@ paths:
         enabling another dispatch so a large repository cannot skip duplicate-run evidence. An
         accepted receipt includes the newest retained GitHub Actions outcome only when repository,
         tenant, onboarded head repository, suite kind, workflow path, source revision, and dispatched
-        ref all match exactly. Fork and missing-head executions are never attached to a controlled receipt.
+        ref all match exactly and the execution started after the dispatch was requested. Fork, missing-head,
+        and pre-existing executions are never attached to a controlled receipt.
       tags: [executions]
       security: [{ platformBearer: [] }]
       parameters:
@@ -1449,7 +1450,8 @@ paths:
         resolved through a bounded tenant-scoped dispatch lookup. Input values are never persisted
         or returned. Accepted receipts include the newest retained execution only when its tenant,
         repository, onboarded head repository, suite kind, workflow, source revision, and dispatched
-        ref all match exactly. Fork and missing-head executions are never attached to a controlled receipt.
+        ref all match exactly and the execution started after the dispatch was requested. Fork, missing-head,
+        and pre-existing executions are never attached to a controlled receipt.
       tags: [executions]
       security: [{ platformBearer: [] }]
       parameters:

@@ -2656,7 +2656,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     render(<RepositoryIntelligence data={portfolio} />)
 
     expect(await screen.findByText(/Latest controlled dispatch · accepted/)).toBeVisible()
-    expect(screen.getByText(/Awaiting an onboarded-repository execution/)).toBeVisible()
+    expect(screen.getByText(/Awaiting an onboarded-repository execution started after this dispatch/)).toBeVisible()
     fireEvent.click(screen.getByText('Controlled dispatch history'))
     await waitFor(() => expect(api.testSuiteDispatchHistory).toHaveBeenCalledWith(
       repository.id,
