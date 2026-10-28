@@ -178,8 +178,11 @@ function matchesCurrentOrAcceptedDispatch(
     dispatch.repositoryId === execution.repositoryId &&
     dispatch.tenantId === execution.tenantId &&
     dispatch.status === 'accepted' &&
+    executionKindForDispatch[dispatch.artifactKind] === execution.kind &&
     dispatch.ref === execution.branch &&
     dispatch.sourceRevision.toLowerCase() === execution.revision.toLowerCase() &&
+    Boolean(execution.startedAt) &&
+    Date.parse(execution.startedAt!) >= Date.parse(dispatch.requestedAt) &&
     normalizeWorkflowPath(dispatch.workflowPath) === normalizeWorkflowPath(execution.workflowPath)
   )
 }
@@ -1921,6 +1924,13 @@ export class PostgresCatalogStore implements CatalogStore {
                WHERE dispatch.repository_id=execution.repository_id
                  AND dispatch.tenant_id=execution.tenant_id
                  AND dispatch.status='accepted'
+                 AND execution.started_at >= dispatch.requested_at
+                 AND execution.kind=CASE dispatch.artifact_kind
+                   WHEN 'integration-test' THEN 'integration'
+                   WHEN 'post-production-test' THEN 'post-production'
+                   WHEN 'load-test' THEN 'load'
+                   WHEN 'stress-test' THEN 'stress'
+                 END
                  AND dispatch.workflow_path=split_part(execution.workflow_path,'@',1)
                  AND lower(dispatch.source_revision)=lower(execution.revision)
                  AND dispatch.source_ref=execution.branch
@@ -1950,6 +1960,13 @@ export class PostgresCatalogStore implements CatalogStore {
                WHERE dispatch.repository_id=execution.repository_id
                  AND dispatch.tenant_id=execution.tenant_id
                  AND dispatch.status='accepted'
+                 AND execution.started_at >= dispatch.requested_at
+                 AND execution.kind=CASE dispatch.artifact_kind
+                   WHEN 'integration-test' THEN 'integration'
+                   WHEN 'post-production-test' THEN 'post-production'
+                   WHEN 'load-test' THEN 'load'
+                   WHEN 'stress-test' THEN 'stress'
+                 END
                  AND dispatch.workflow_path=split_part(execution.workflow_path,'@',1)
                  AND lower(dispatch.source_revision)=lower(execution.revision)
                  AND dispatch.source_ref=execution.branch
@@ -1979,6 +1996,13 @@ export class PostgresCatalogStore implements CatalogStore {
                WHERE dispatch.repository_id=execution.repository_id
                  AND dispatch.tenant_id=execution.tenant_id
                  AND dispatch.status='accepted'
+                 AND execution.started_at >= dispatch.requested_at
+                 AND execution.kind=CASE dispatch.artifact_kind
+                   WHEN 'integration-test' THEN 'integration'
+                   WHEN 'post-production-test' THEN 'post-production'
+                   WHEN 'load-test' THEN 'load'
+                   WHEN 'stress-test' THEN 'stress'
+                 END
                  AND dispatch.workflow_path=split_part(execution.workflow_path,'@',1)
                  AND lower(dispatch.source_revision)=lower(execution.revision)
                  AND dispatch.source_ref=execution.branch

@@ -111,6 +111,8 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain('DISTINCT ON (execution.workflow_path)')
     expect(String(sql)).toContain("dispatch.status='accepted'")
     expect(String(sql)).toContain('dispatch.source_ref=execution.branch')
+    expect(String(sql)).toContain('execution.started_at >= dispatch.requested_at')
+    expect(String(sql)).toContain("WHEN 'load-test' THEN 'load'")
     expect(String(sql)).toContain('COALESCE(execution.completed_at,execution.started_at,execution.created_at) DESC')
     expect(parameters).toEqual(['repo-1', 'org-1', ['.github/workflows/load.yml'], 'main', 'acme/app'])
   })
@@ -139,6 +141,8 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain('DISTINCT ON (execution.workflow_path)')
     expect(String(sql)).toContain("dispatch.status='accepted'")
     expect(String(sql)).toContain('dispatch.source_ref=execution.branch')
+    expect(String(sql)).toContain('execution.started_at >= dispatch.requested_at')
+    expect(String(sql)).toContain("WHEN 'post-production-test' THEN 'post-production'")
     expect(String(sql)).toContain('COALESCE(execution.completed_at,execution.started_at,execution.created_at) DESC')
     expect(parameters).toEqual(['repo-1', 'org-1', ['.github/workflows/post-prod.yml'], 'main', 'acme/app'])
   })
@@ -169,6 +173,8 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain("dispatch.status='accepted'")
     expect(String(sql)).toContain('dispatch.source_ref=execution.branch')
     expect(String(sql)).toContain('lower(dispatch.source_revision)=lower(execution.revision)')
+    expect(String(sql)).toContain('execution.started_at >= dispatch.requested_at')
+    expect(String(sql)).toContain("WHEN 'integration-test' THEN 'integration'")
     expect(String(sql)).toContain('COALESCE(execution.completed_at,execution.started_at,execution.created_at) DESC')
     expect(parameters).toEqual(['repo-1', 'org-1', ['.github/workflows/integration.yml'], 'main', 'acme/app'])
   })
@@ -194,6 +200,7 @@ describe('test execution evidence', () => {
       gateEvaluations: [],
       thresholds: [],
       evidenceLinks: [],
+      startedAt: '2026-10-25T06:58:00.000Z',
       completedAt: '2026-10-25T07:00:00.000Z',
     }
     await store.saveTestExecution({ id: 'pinned-run', externalRunId: 'pinned-run', ...base })
@@ -229,7 +236,19 @@ describe('test execution evidence', () => {
       [base.workflowPath],
       'main',
       base.headRepository,
-    )).resolves.toEqual([expect.objectContaining({ id: 'pinned-run', branch: ref })])
+    )).resolves.toEqual([])
+
+    await store.saveTestExecution({
+      id: 'dispatched-run', externalRunId: 'dispatched-run', ...base,
+      startedAt: '2026-10-25T07:00:01.000Z', completedAt: '2026-10-25T07:01:00.000Z',
+    })
+    await expect(store.latestIntegrationExecutions(
+      base.repositoryId,
+      base.tenantId,
+      [base.workflowPath],
+      'main',
+      base.headRepository,
+    )).resolves.toEqual([expect.objectContaining({ id: 'dispatched-run', branch: ref })])
   })
 
   it('uses ingestion time to select newly recorded running executions without provider timestamps', async () => {

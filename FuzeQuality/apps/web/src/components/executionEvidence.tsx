@@ -30,9 +30,12 @@ function currentExecutionScope(
   return dispatches.some(dispatch =>
     dispatch.repositoryId === artifact.repositoryId &&
     dispatch.artifactLogicalId === (artifact.logicalId ?? artifact.id) &&
+    dispatch.artifactKind === artifact.kind &&
     dispatch.status === 'accepted' &&
     dispatch.ref === execution.branch &&
     dispatch.sourceRevision.toLowerCase() === execution.revision.toLowerCase() &&
+    Boolean(execution.startedAt) &&
+    Date.parse(execution.startedAt!) >= Date.parse(dispatch.requestedAt) &&
     sameWorkflowPath(dispatch.workflowPath, execution.workflowPath)
   )
 }

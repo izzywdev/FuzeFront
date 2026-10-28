@@ -385,6 +385,7 @@ describe('ExecutionThresholdEvidence', () => {
       headRepository: 'acme/app',
       kind: 'integration' as const,
       workflowPath: artifact.sourcePath,
+      startedAt: '2026-10-25T07:00:00.000Z',
     }
     const dispatch: TestSuiteDispatch = {
       id: '77777777-7777-4777-8777-777777777777',
@@ -405,6 +406,13 @@ describe('ExecutionThresholdEvidence', () => {
 
     expect(latestIntegrationExecution(artifact, [pinned], 'main', 'acme/app')).toBeUndefined()
     expect(latestIntegrationExecution(artifact, [pinned], 'main', 'acme/app', [dispatch])).toBe(pinned)
+    expect(latestIntegrationExecution(
+      artifact,
+      [{ ...pinned, id: 'pre-existing', startedAt: '2026-10-25T06:58:00.000Z' }],
+      'main',
+      'acme/app',
+      [dispatch],
+    )).toBeUndefined()
     expect(latestIntegrationExecution(
       artifact,
       [pinned],
