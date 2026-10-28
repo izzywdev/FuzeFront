@@ -305,12 +305,12 @@ export function mergeTestExecutionEvidence(
     : incoming.provider === 'github-actions' && incoming.evidenceCollection?.status === 'complete'
     ? existing.evidenceLinks.filter(link => !/^https:\/\/github\.com\/[^/]+\/[^/]+\/actions\/runs\/\d+\/artifacts\/\d+$/i.test(link.url))
     : existing.evidenceLinks
-  const evidenceLinks = new Map(
-    [...retainedEvidence, ...(incomingEvidenceIsStale ? [] : incoming.evidenceLinks)].map(link => [
-      `${link.kind}:${link.url}`,
-      link,
-    ])
-  )
+  const evidenceLinks = new Map<string, TestExecution['evidenceLinks'][number]>()
+  for (const link of [
+    ...(incomingEvidenceIsStale ? [] : incoming.evidenceLinks), ...retainedEvidence]) {
+    const key = `${link.kind}:${link.url}`
+    if (!evidenceLinks.has(key)) evidenceLinks.set(key, link)
+  }
   const richerSummary = (incoming.summary?.length ?? 0) > (existing.summary?.length ?? 0)
     ? incoming.summary
     : existing.summary
@@ -2521,13 +2521,13 @@ export class PostgresCatalogStore implements CatalogStore {
              FROM (SELECT DISTINCT ON (link->>'kind',link->>'url') link,ordinal
                FROM jsonb_array_elements(
                  CASE WHEN EXCLUDED.provider='github-actions' AND EXCLUDED.evidence_collection->>'status'='complete'
-                   THEN (SELECT COALESCE(jsonb_agg(existing_link),'[]'::jsonb)
+                   THEN EXCLUDED.evidence_links || (SELECT COALESCE(jsonb_agg(existing_link),'[]'::jsonb)
                      FROM jsonb_array_elements(fuzequality.test_executions.evidence_links) AS retained(existing_link)
-                     WHERE existing_link->>'url' !~* '^https://github\\.com/[^/]+/[^/]+/actions/runs/[0-9]+/artifacts/[0-9]+$') || EXCLUDED.evidence_links
-                   ELSE fuzequality.test_executions.evidence_links || EXCLUDED.evidence_links
+                     WHERE existing_link->>'url' !~* '^https://github\\.com/[^/]+/[^/]+/actions/runs/[0-9]+/artifacts/[0-9]+$')
+                   ELSE EXCLUDED.evidence_links || fuzequality.test_executions.evidence_links
                  END
                ) WITH ORDINALITY AS evidence(link,ordinal)
-               ORDER BY link->>'kind',link->>'url',ordinal DESC
+               ORDER BY link->>'kind',link->>'url',ordinal ASC
              ) AS deduplicated_links ORDER BY ordinal LIMIT 100
            ) AS bounded_links)
          END,

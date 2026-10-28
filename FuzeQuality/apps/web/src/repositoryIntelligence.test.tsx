@@ -3026,6 +3026,11 @@ describe('RepositoryIntelligence flow inventory', () => {
     let evidenceRefreshed = false
     const incomplete = {
       ...loadExecution,
+      evidenceLinks: Array.from({ length: 99 }, (_, index) => ({
+        kind: 'report' as const,
+        name: `Previously retained report ${index}`,
+        url: `https://evidence.example/run/12345/report/${index}`,
+      })),
       evidenceCollection: {
         status: 'unavailable' as const,
         checkedAt: '2026-10-18T04:00:00.000Z',
@@ -3034,11 +3039,14 @@ describe('RepositoryIntelligence flow inventory', () => {
     }
     const refreshed: TestExecution = {
       ...incomplete,
-      evidenceLinks: [{
-        kind: 'video',
-        name: 'Playwright post-production recording',
-        url: 'https://github.com/fuze/front/actions/runs/12345/artifacts/99',
-      }],
+      evidenceLinks: [
+        {
+          kind: 'video',
+          name: 'Playwright post-production recording',
+          url: 'https://github.com/fuze/front/actions/runs/12345/artifacts/99',
+        },
+        ...incomplete.evidenceLinks,
+      ],
       evidenceCollection: { status: 'complete', checkedAt: '2026-10-18T05:00:00.000Z' },
     }
     vi.mocked(api.qualityArtifacts).mockResolvedValue([loadArtifact])

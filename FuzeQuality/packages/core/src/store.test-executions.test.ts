@@ -816,8 +816,8 @@ describe('test execution evidence', () => {
         gateEvaluations: [expect.objectContaining({ status: 'failed' })],
         thresholds: [expect.objectContaining({ metric: 'p95', passed: false })],
         evidenceLinks: [
-          expect.objectContaining({ kind: 'video' }),
           expect.objectContaining({ kind: 'report' }),
+          expect.objectContaining({ kind: 'video' }),
         ],
         summary: 'p95 exceeded the 500 ms release threshold',
       }),
@@ -864,6 +864,7 @@ describe('test execution evidence', () => {
     const [saved] = await store.testExecutions('repo-1', 'org-1')
     expect(saved.evidenceLinks).toHaveLength(100)
     expect(new Set(saved.evidenceLinks.map(link => `${link.kind}:${link.url}`)).size).toBe(100)
+    expect(saved.evidenceLinks).toEqual(secondDelivery)
   })
 
   it('does not downgrade a completed artifact lookup on a transient redelivery failure', async () => {
@@ -901,8 +902,8 @@ describe('test execution evidence', () => {
 
     const [saved] = await store.testExecutions('repo-1', 'org-1')
     expect(saved.evidenceLinks).toEqual([
-      expect.objectContaining({ name: 'External report' }),
       expect.objectContaining({ name: 'Current trace' }),
+      expect.objectContaining({ name: 'External report' }),
     ])
     expect(saved.evidenceLinks).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'Expired video' }),
@@ -995,6 +996,8 @@ describe('test execution evidence', () => {
     expect(sql).toContain('jsonb_array_length(EXCLUDED.thresholds)>0')
     expect(sql).toContain("evaluation->>'status'='running'")
     expect(sql).toContain("DISTINCT ON (link->>'kind',link->>'url')")
+    expect(sql).toContain('ELSE EXCLUDED.evidence_links || fuzequality.test_executions.evidence_links')
+    expect(sql).toContain("ORDER BY link->>'kind',link->>'url',ordinal ASC")
     expect(sql).toContain('ORDER BY ordinal LIMIT 100')
     expect(sql).toContain("length(COALESCE(EXCLUDED.summary,''))")
     expect(sql).toContain('branch=COALESCE(EXCLUDED.branch')
