@@ -439,6 +439,7 @@ export function ExecutionEvidenceCoverage({
   const resultLimited = collection?.errorCode === 'PROVIDER_RESULT_LIMIT_EXCEEDED' || collection?.issues?.includes('provider-result-limit-exceeded')
   const canRefresh = execution.provider === 'github-actions' &&
     execution.status !== 'running' &&
+    !headRepositoryUnverified &&
     Boolean(onRefresh)
   const refreshLabel = collection?.status === 'complete'
     ? 'Reconcile provider evidence'

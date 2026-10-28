@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.84.27
+  version: 0.84.28
   license:
     name: UNLICENSED
 servers:
@@ -1084,7 +1084,8 @@ paths:
         links and the explicit collection state are updated. This also repairs terminal attempts with no
         retained collection attempt; a successful empty lookup becomes an explicit `complete` result.
         Complete attempts may be reconciled again so expired or deleted GitHub artifacts are removed while
-        externally hosted evidence is preserved.
+        externally hosted evidence is preserved. Refresh is rejected when the retained GitHub head repository
+        is missing or does not match the onboarded repository, preventing fork evidence from being trusted.
       tags: [executions]
       security: [{ platformBearer: [] }]
       requestBody:
@@ -1103,7 +1104,9 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409':
-          description: The repository has no GitHub App installation or the execution is still running.
+          description: >-
+            The repository has no GitHub App installation, the execution is still running, or the retained
+            GitHub head repository does not match the onboarded repository.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }

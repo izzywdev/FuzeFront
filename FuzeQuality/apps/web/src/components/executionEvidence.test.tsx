@@ -138,11 +138,12 @@ describe('ExecutionThresholdEvidence', () => {
         checkedAt: '2026-10-16T08:00:00.000Z',
         issues: ['head-repository-unverified'],
       },
-    }} />)
+    }} onRefresh={vi.fn()} />)
 
     expect(screen.getByText(/head repository could not be verified/i)).toHaveTextContent(
       'Provider artifacts were withheld'
     )
+    expect(screen.queryByRole('button', { name: /provider evidence/i })).not.toBeInTheDocument()
     expect(screen.queryByText('Provider checked; no durable artifacts reported')).not.toBeInTheDocument()
 
     rerender(<ExecutionEvidenceCoverage execution={{

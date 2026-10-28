@@ -50,7 +50,7 @@ import { executionAttemptHistoryFilterSchema, executionPerformanceFilterSchema, 
 import { enrichPerformanceEvidence } from './execution-performance-evidence'
 import { decodeExecutionTrendCursor, executionTrendPage } from './execution-trend-pagination'
 import { decodePerformanceCursor, performancePage } from './execution-performance-pagination'
-import { executionRecord, linkExecutionToRevisionArtifacts, prepareExecutionEvidence, reconcileExecutionEvidenceForScan, refreshExecutionArtifactEvidence, unverifiedGithubHeadEvidenceCollection, webhookExecutionRecord } from './test-execution-ingestion'
+import { executionRecord, githubHeadRepositoryVerified, linkExecutionToRevisionArtifacts, prepareExecutionEvidence, reconcileExecutionEvidenceForScan, refreshExecutionArtifactEvidence, unverifiedGithubHeadEvidenceCollection, webhookExecutionRecord } from './test-execution-ingestion'
 import { candidateArtifactReferenceError, candidateOwnershipError, repositoryFlowCandidateIngestionSchema } from './repository-flow-ingestion'
 import { repositoryFlowFilterSchema } from './repository-flow-filter'
 import { repositoryFlowAnalysisProvenanceConflict, repositoryFlowArtifactReferenceConflict, repositoryFlowGroundingRationaleConflict, repositoryFlowReviewConflict, repositoryFlowReviewStateConflict, repositoryFlowWireframeConflict } from './repository-flow-review'
@@ -900,6 +900,12 @@ app.post('/api/v1/repositories/:id/test-executions/evidence/refresh', mayRunExec
   })
   const execution = candidates.find(item => item.attempt === parsed.data.attempt)
   if (!execution) return response.status(404).json({ error: 'Test execution attempt not found' })
+  if (!githubHeadRepositoryVerified(`${repository.owner}/${repository.name}`, execution.headRepository)) {
+    return response.status(409).json({
+      error: 'Provider artifacts cannot be refreshed until the GitHub head repository matches the onboarded repository',
+      code: 'EXECUTION_HEAD_REPOSITORY_UNVERIFIED',
+    })
+  }
   if (execution.status === 'running') {
     return response.status(409).json({
       error: 'Artifact evidence can only be refreshed after the execution reaches a terminal state',
