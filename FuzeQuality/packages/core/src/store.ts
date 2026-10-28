@@ -206,20 +206,46 @@ function safeDispatchEvidenceCollection(value: unknown) {
   return parsed.success ? { evidenceCollection: parsed.data } : {}
 }
 
-/** Links only an accepted receipt to the newest exact revision/ref/workflow execution. */
+function sameDispatchExecutionIdentity(left: TestSuiteDispatch, right: TestSuiteDispatch) {
+  return left.repositoryId === right.repositoryId &&
+    left.tenantId === right.tenantId &&
+    left.artifactLogicalId === right.artifactLogicalId &&
+    left.artifactKind === right.artifactKind &&
+    left.ref === right.ref &&
+    left.sourceRevision.toLowerCase() === right.sourceRevision.toLowerCase() &&
+    normalizeWorkflowPath(left.workflowPath) === normalizeWorkflowPath(right.workflowPath)
+}
+
+function nextAcceptedDispatchAt(dispatch: TestSuiteDispatch, dispatches: TestSuiteDispatch[]) {
+  return dispatches
+    .filter(candidate => {
+      if (candidate.status !== 'accepted' || !sameDispatchExecutionIdentity(dispatch, candidate)) return false
+      const candidateTime = Date.parse(candidate.requestedAt)
+      const dispatchTime = Date.parse(dispatch.requestedAt)
+      return candidateTime > dispatchTime || (candidateTime === dispatchTime && candidate.id > dispatch.id)
+    })
+    .sort((left, right) => Date.parse(left.requestedAt) - Date.parse(right.requestedAt) || left.id.localeCompare(right.id))[0]
+    ?.requestedAt
+}
+
+/** Links an accepted receipt only to an exact execution in its request window. */
 export function withDispatchExecutionResult(
   dispatch: TestSuiteDispatch,
   executions: TestExecution[],
   expectedHeadRepository?: string,
+  dispatches: TestSuiteDispatch[] = [],
 ): TestSuiteDispatch {
   if (dispatch.status !== 'accepted') return structuredClone(dispatch)
+  const nextRequestedAt = nextAcceptedDispatchAt(dispatch, dispatches)
   const execution = executions
     .filter(item =>
       item.repositoryId === dispatch.repositoryId &&
       item.tenantId === dispatch.tenantId &&
       item.provider === 'github-actions' &&
       Boolean(expectedHeadRepository) &&
-      item.headRepository?.toLowerCase() === expectedHeadRepository?.toLowerCase() && Boolean(item.startedAt) && Date.parse(item.startedAt!) >= Date.parse(dispatch.requestedAt) &&
+      item.headRepository?.toLowerCase() === expectedHeadRepository?.toLowerCase() && Boolean(item.startedAt) &&
+      Date.parse(item.startedAt!) >= Date.parse(dispatch.requestedAt) &&
+      (!nextRequestedAt || Date.parse(item.startedAt!) < Date.parse(nextRequestedAt)) &&
       item.kind === executionKindForDispatch[dispatch.artifactKind] &&
       item.branch === dispatch.ref &&
       item.revision.toLowerCase() === dispatch.sourceRevision.toLowerCase() &&
@@ -855,7 +881,7 @@ export class MemoryCatalogStore implements CatalogStore {
       item.id === repositoryId && item.tenantId === tenantId
     )
     const expectedHeadRepository = repository ? `${repository.owner}/${repository.name}` : undefined
-    return page.map(item => withDispatchExecutionResult(item, this.executions, expectedHeadRepository))
+    return page.map(item => withDispatchExecutionResult(item, this.executions, expectedHeadRepository, this.testSuiteDispatches))
   }
 
   async testSuiteDispatchHistory(
@@ -874,7 +900,7 @@ export class MemoryCatalogStore implements CatalogStore {
       .sort((left, right) => right.requestedAt.localeCompare(left.requestedAt) || right.id.localeCompare(left.id))
       .filter(item => !query.after || item.requestedAt < query.after.createdAt || (item.requestedAt === query.after.createdAt && item.id < query.after.id))
       .slice(0, limit)
-      .map(item => withDispatchExecutionResult(item, this.executions, expectedHeadRepository))
+      .map(item => withDispatchExecutionResult(item, this.executions, expectedHeadRepository, this.testSuiteDispatches))
   }
 
   async testSuiteDispatchLogicalId(
@@ -2560,6 +2586,19 @@ export class PostgresCatalogStore implements CatalogStore {
            AND candidate.branch=latest.source_ref
            AND lower(candidate.revision)=lower(latest.source_revision)
            AND split_part(candidate.workflow_path,'@',1)=latest.workflow_path
+           AND NOT EXISTS (
+             SELECT 1 FROM fuzequality.test_suite_dispatches AS next_dispatch
+             WHERE next_dispatch.repository_id=latest.repository_id
+               AND next_dispatch.tenant_id=latest.tenant_id
+               AND next_dispatch.artifact_logical_id=latest.artifact_logical_id
+               AND next_dispatch.artifact_kind=latest.artifact_kind
+               AND next_dispatch.status='accepted'
+               AND next_dispatch.source_ref=latest.source_ref
+               AND lower(next_dispatch.source_revision)=lower(latest.source_revision)
+               AND next_dispatch.workflow_path=latest.workflow_path
+               AND (next_dispatch.requested_at,next_dispatch.id) > (latest.requested_at,latest.id)
+               AND next_dispatch.requested_at <= candidate.started_at
+           )
          ORDER BY COALESCE(candidate.completed_at,candidate.started_at,candidate.created_at) DESC,candidate.id DESC
          LIMIT 1
        ) AS execution ON true
@@ -2644,6 +2683,19 @@ export class PostgresCatalogStore implements CatalogStore {
            AND candidate.branch=dispatch.source_ref
            AND lower(candidate.revision)=lower(dispatch.source_revision)
            AND split_part(candidate.workflow_path,'@',1)=dispatch.workflow_path
+           AND NOT EXISTS (
+             SELECT 1 FROM fuzequality.test_suite_dispatches AS next_dispatch
+             WHERE next_dispatch.repository_id=dispatch.repository_id
+               AND next_dispatch.tenant_id=dispatch.tenant_id
+               AND next_dispatch.artifact_logical_id=dispatch.artifact_logical_id
+               AND next_dispatch.artifact_kind=dispatch.artifact_kind
+               AND next_dispatch.status='accepted'
+               AND next_dispatch.source_ref=dispatch.source_ref
+               AND lower(next_dispatch.source_revision)=lower(dispatch.source_revision)
+               AND next_dispatch.workflow_path=dispatch.workflow_path
+               AND (next_dispatch.requested_at,next_dispatch.id) > (dispatch.requested_at,dispatch.id)
+               AND next_dispatch.requested_at <= candidate.started_at
+           )
          ORDER BY COALESCE(candidate.completed_at,candidate.started_at,candidate.created_at) DESC,candidate.id DESC
          LIMIT 1
        ) AS execution ON true

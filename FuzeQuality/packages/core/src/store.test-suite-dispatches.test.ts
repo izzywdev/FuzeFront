@@ -267,6 +267,39 @@ describe('test-suite dispatch audit', () => {
     })])
   })
 
+  it('assigns repeated exact dispatch executions to separate request windows', async () => {
+    const store = new MemoryCatalogStore({ repositories: [repository] })
+    const first = dispatch({
+      id: '44444444-4444-4444-8444-444444444444', status: 'accepted',
+      requestedAt: '2026-10-22T20:00:00.000Z', completedAt: '2026-10-22T20:00:01.000Z',
+    })
+    const second = dispatch({
+      id: '55555555-5555-4555-8555-555555555555', status: 'accepted',
+      requestedAt: '2026-10-22T20:02:00.000Z', completedAt: '2026-10-22T20:02:01.000Z',
+    })
+    await store.saveTestSuiteDispatch(first)
+    await store.saveTestSuiteDispatch(second)
+    for (const [id, externalRunId, startedAt] of [
+      ['first-result', 'provider-run-1', '2026-10-22T20:01:00.000Z'],
+      ['second-result', 'provider-run-2', '2026-10-22T20:03:00.000Z'],
+    ] as const) {
+      await store.saveTestExecution({
+        id, repositoryId: first.repositoryId, tenantId: first.tenantId,
+        provider: 'github-actions', externalRunId, attempt: 1, revision: first.sourceRevision,
+        branch: first.ref, headRepository: 'acme/app', kind: 'load', status: 'passed',
+        name: 'Repeated load test', workflowPath: first.workflowPath, startedAt,
+        completedAt: new Date(Date.parse(startedAt) + 30_000).toISOString(),
+        policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [],
+      })
+    }
+
+    const history = await store.testSuiteDispatchHistory(first.repositoryId, first.tenantId, first.artifactLogicalId)
+    expect(history.map(item => [item.id, item.executionResult?.id])).toEqual([
+      [second.id, 'second-result'],
+      [first.id, 'first-result'],
+    ])
+  })
+
   it('joins exact dispatch outcomes in the PostgreSQL history query', async () => {
     const accepted = dispatch({ status: 'accepted' })
     const query = vi.fn().mockResolvedValue({ rows: [{
@@ -312,6 +345,8 @@ describe('test-suite dispatch audit', () => {
     expect(String(sql)).toContain("lower(candidate.head_repository)=lower(repository.owner || '/' || repository.name) AND candidate.started_at >= dispatch.requested_at")
     expect(String(sql)).toContain('lower(candidate.revision)=lower(dispatch.source_revision)')
     expect(String(sql)).toContain("split_part(candidate.workflow_path,'@',1)=dispatch.workflow_path")
+    expect(String(sql)).toContain('next_dispatch.requested_at <= candidate.started_at')
+    expect(String(sql)).toContain('(next_dispatch.requested_at,next_dispatch.id) > (dispatch.requested_at,dispatch.id)')
     expect(parameters).toEqual([accepted.repositoryId, accepted.tenantId, accepted.artifactLogicalId, 50])
   })
 
@@ -357,6 +392,8 @@ describe('test-suite dispatch audit', () => {
     expect(String(sql)).toContain("lower(candidate.head_repository)=lower(repository.owner || '/' || repository.name) AND candidate.started_at >= latest.requested_at")
     expect(String(sql)).toContain('lower(candidate.revision)=lower(latest.source_revision)')
     expect(String(sql)).toContain("split_part(candidate.workflow_path,'@',1)=latest.workflow_path")
+    expect(String(sql)).toContain('next_dispatch.requested_at <= candidate.started_at')
+    expect(String(sql)).toContain('(next_dispatch.requested_at,next_dispatch.id) > (latest.requested_at,latest.id)')
     expect(parameters).toEqual([accepted.repositoryId, accepted.tenantId])
   })
 
