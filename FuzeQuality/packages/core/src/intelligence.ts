@@ -64,6 +64,11 @@ export type FlowAnalysis = z.infer<typeof flowAnalysisSchema> & {
   }
 }
 
+export type IntelligenceSuggestion = Suggestion & {
+  /** Pre-tenant identity used only to reconcile already-reviewed persisted suggestions. */
+  compatibilityIds?: string[]
+}
+
 export class LiteLlmFlowAnalyzer {
   private readonly timeoutMs: number
 
@@ -204,15 +209,17 @@ export function tenantRequirementId(tenantId: string, jiraKey: string): string {
   return `requirement:${tenantFingerprint}:${jiraKey}`
 }
 
-export function suggestionsFromAnalysis(requirement: Requirement, analysis: FlowAnalysis, tenantId: string): Suggestion[] {
-  const fingerprint = createHash('sha256')
-    .update(`${tenantId}\u0000${requirement.updatedAt}\u0000${requirement.description}\u0000${analysis.provenance.promptVersion}\u0000${analysis.provenance.schemaVersion}`)
+export function suggestionsFromAnalysis(requirement: Requirement, analysis: FlowAnalysis, tenantId: string): IntelligenceSuggestion[] {
+  const analysisFingerprint = (tenant?: string) => createHash('sha256')
+    .update(`${tenant ? `${tenant}\u0000` : ''}${requirement.updatedAt}\u0000${requirement.description}\u0000${analysis.provenance.promptVersion}\u0000${analysis.provenance.schemaVersion}`)
     .digest('hex')
+  const fingerprint = analysisFingerprint(tenantId)
+  const legacyFingerprint = analysisFingerprint()
   const tenantFingerprint = createHash('sha256').update(tenantId).digest('hex').slice(0, 12)
   const flowId = `flow:${tenantFingerprint}:${requirement.jiraKey}:${fingerprint.slice(0, 8)}`
   const requirementId = tenantRequirementId(tenantId, requirement.jiraKey)
-  const suggestionId = (suffix: string) => {
-    const value = createHash('sha256').update(`${fingerprint}:${suffix}`).digest('hex').slice(0, 32)
+  const suggestionId = (suffix: string, sourceFingerprint = fingerprint) => {
+    const value = createHash('sha256').update(`${sourceFingerprint}:${suffix}`).digest('hex').slice(0, 32)
     return `${value.slice(0, 8)}-${value.slice(8, 12)}-4${value.slice(13, 16)}-a${value.slice(17, 20)}-${value.slice(20)}`
   }
   const flow: Flow = {
@@ -247,6 +254,7 @@ export function suggestionsFromAnalysis(requirement: Requirement, analysis: Flow
       payload: { ...flow, analysis: analysis.provenance } as unknown as Record<string, unknown>,
       state: 'proposed',
       createdAt: new Date().toISOString(),
+      compatibilityIds: [suggestionId('flow', legacyFingerprint)],
     },
     ...analysis.suggestedTests.map((test, index) => ({
       id: suggestionId(`test:${index}`),
@@ -258,6 +266,7 @@ export function suggestionsFromAnalysis(requirement: Requirement, analysis: Flow
       payload: test,
       state: 'proposed' as const,
       createdAt: new Date().toISOString(),
+      compatibilityIds: [suggestionId(`test:${index}`, legacyFingerprint)],
     })),
     ...analysis.missingCriteria.map((criterion, index) => ({
       id: suggestionId(`missing-criteria:${index}:${criterion}`),
@@ -272,6 +281,7 @@ export function suggestionsFromAnalysis(requirement: Requirement, analysis: Flow
       },
       state: 'proposed' as const,
       createdAt: new Date().toISOString(),
+      compatibilityIds: [suggestionId(`missing-criteria:${index}:${criterion}`, legacyFingerprint)],
     })),
   ]
 }

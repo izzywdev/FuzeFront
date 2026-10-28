@@ -70,6 +70,7 @@ describe('Jira intelligence', () => {
     const otherTenant = suggestionsFromAnalysis(requirement, analysis, 'tenant-b')
     expect(otherTenant.map(item => item.id)).not.toEqual(suggestions.map(item => item.id))
     expect(otherTenant[0].payload.id).not.toBe(suggestions[0].payload.id)
+    expect(otherTenant.map(item => item.compatibilityIds)).toEqual(suggestions.map(item => item.compatibilityIds))
   })
 
   it('records local prompt provenance and validates structured recovery paths', async () => {

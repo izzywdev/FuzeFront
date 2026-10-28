@@ -32,7 +32,7 @@ import { buildApiExpectations, buildFindings, buildFrontendExpectations } from '
 import { buildQualityIntelligenceProjection, isQualityIntelligenceFinding } from './quality-projection'
 import { FLOW_COVERAGE_POLICY_VERSION } from './orphan-analysis'
 import { REQUIREMENT_REVIEW_POLICY_VERSION } from './requirement-analysis'
-import { tenantRequirementId } from './intelligence'
+import { tenantRequirementId, type IntelligenceSuggestion } from './intelligence'
 import { executionOutcomeTrend, executionPerformance, filterTestExecutions, normalizeExecutionArtifactIdentities, qualityArtifactLogicalIdentity, type ExecutionEvidenceRequirement, type ExecutionOutcomeTrend, type PolicyGatePerformance } from './execution-performance'
 
 export const currentQualityArtifactsSql = `SELECT id, logical_id, repository_id, revision, kind, title, source_path, summary, evidence, execution_target
@@ -369,7 +369,7 @@ export interface CatalogStore {
   markSyncQueued(sourceType: SyncCursor['sourceType'], sourceKey: string, tenantId: string): Promise<SyncCursor>
   markSyncFailed(sourceType: SyncCursor['sourceType'], sourceKey: string, tenantId: string, code: NonNullable<SyncCursor['failureCode']>): Promise<void>
   saveIntelligence(
-    results: Array<{ requirement: Requirement; suggestions: Suggestion[] }>,
+    results: Array<{ requirement: Requirement; suggestions: IntelligenceSuggestion[] }>,
     sync?: Pick<SyncCursor, 'sourceType' | 'sourceKey' | 'cursor'> & { tenantId: string }
   ): Promise<void>
   rebuildCoverage(): Promise<CoverageProjection>
@@ -1126,7 +1126,7 @@ export class MemoryCatalogStore implements CatalogStore {
   }
 
   async saveIntelligence(
-    results: Array<{ requirement: Requirement; suggestions: Suggestion[] }>,
+    results: Array<{ requirement: Requirement; suggestions: IntelligenceSuggestion[] }>,
     sync?: Pick<SyncCursor, 'sourceType' | 'sourceKey' | 'cursor'> & { tenantId: string }
   ) {
     for (const result of results) {
@@ -1137,11 +1137,39 @@ export class MemoryCatalogStore implements CatalogStore {
         tenantId: sync.tenantId,
       }
       const existing = this.data.requirements.find(item => item.jiraKey === requirement.jiraKey && item.tenantId === requirement.tenantId)
-      if (existing) Object.assign(existing, requirement)
+      const previousRequirementId = existing?.id
+      if (existing) {
+        Object.assign(existing, requirement)
+        if (previousRequirementId && previousRequirementId !== requirement.id) {
+          this.data.suggestions.forEach(item => {
+            if (item.requirementId === previousRequirementId) item.requirementId = requirement.id
+          })
+          this.data.flows.forEach(item => {
+            if (item.requirementId === previousRequirementId) item.requirementId = requirement.id
+          })
+        }
+      }
       else this.data.requirements.push(requirement)
+      const preservedIds = new Set<string>()
+      const incoming: Suggestion[] = []
+      for (const { compatibilityIds = [], ...suggestion } of result.suggestions) {
+        const current = this.data.suggestions.find(item => item.requirementId === requirement.id && item.id === suggestion.id)
+        if (current?.state !== undefined && current.state !== 'proposed') {
+          preservedIds.add(current.id)
+          continue
+        }
+        const compatible = this.data.suggestions.find(item =>
+          item.requirementId === requirement.id && compatibilityIds.includes(item.id)
+        )
+        if (compatible) {
+          preservedIds.add(compatible.id)
+          continue
+        }
+        incoming.push(suggestion)
+      }
       this.data.suggestions = [
-        ...this.data.suggestions.filter(item => item.requirementId !== requirement.id || item.state !== 'proposed'),
-        ...result.suggestions,
+        ...this.data.suggestions.filter(item => item.requirementId !== requirement.id || item.state !== 'proposed' || preservedIds.has(item.id)),
+        ...incoming,
       ]
     }
     if (sync) {
@@ -3232,7 +3260,7 @@ export class PostgresCatalogStore implements CatalogStore {
   }
 
   async saveIntelligence(
-    results: Array<{ requirement: Requirement; suggestions: Suggestion[] }>,
+    results: Array<{ requirement: Requirement; suggestions: IntelligenceSuggestion[] }>,
     sync?: Pick<SyncCursor, 'sourceType' | 'sourceKey' | 'cursor'> & { tenantId: string }
   ) {
     const client = await this.pool.connect()
@@ -3252,7 +3280,16 @@ export class PostgresCatalogStore implements CatalogStore {
             [requirementId, criterion.fingerprint, criterion.position, criterion.text],
           )
         }
-        for (const suggestion of suggestions) await client.query(`INSERT INTO fuzequality.suggestions (id,requirement_id,type,title,confidence,evidence,payload,state,source_fingerprint) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (id) DO NOTHING`, [suggestion.id,requirementId,suggestion.type,suggestion.title,suggestion.confidence,JSON.stringify(suggestion.evidence),JSON.stringify(suggestion.payload),suggestion.state,requirement.updatedAt])
+        for (const { compatibilityIds = [], ...suggestion } of suggestions) {
+          if (compatibilityIds.length) {
+            const compatible = await client.query(
+              'SELECT id FROM fuzequality.suggestions WHERE requirement_id=$1 AND id = ANY($2::uuid[]) LIMIT 1',
+              [requirementId, compatibilityIds],
+            )
+            if (compatible.rowCount) continue
+          }
+          await client.query(`INSERT INTO fuzequality.suggestions (id,requirement_id,type,title,confidence,evidence,payload,state,source_fingerprint) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (id) DO NOTHING`, [suggestion.id,requirementId,suggestion.type,suggestion.title,suggestion.confidence,JSON.stringify(suggestion.evidence),JSON.stringify(suggestion.payload),suggestion.state,requirement.updatedAt])
+        }
       }
       if (sync) {
         await client.query(
