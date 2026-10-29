@@ -140,6 +140,20 @@ describe('FlowInspector', () => {
     expect(screen.queryByText('Deterministic analysis; no model invocation.')).not.toBeInTheDocument()
   })
 
+  it('blocks reviewer trust when a legacy flow has no interaction steps', () => {
+    render(
+      <FlowInspector
+        open
+        flow={{ ...flow, steps: [] }}
+        artifacts={[artifact]}
+        onClose={vi.fn()}
+      />
+    )
+
+    expect(screen.getByRole('alert')).toHaveTextContent('No reviewable interaction steps are stored')
+    expect(screen.getByRole('alert')).toHaveTextContent('Do not confirm it')
+  })
+
   it('blocks reviewer trust when retained LiteLLM provenance is incomplete', () => {
     render(
       <FlowInspector

@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.84.35
+  version: 0.84.36
   license:
     name: UNLICENSED
 servers:
@@ -423,8 +423,8 @@ paths:
           schema: { type: string, minLength: 1, maxLength: 100 }
         - name: analysisRisk
           in: query
-          description: Isolate flow candidates requiring additional review because FuzeInfra LiteLLM grounding was rejected or absent, the repository prompt was bounded, artifacts were omitted, source content was truncated, legacy model provenance is missing or incomplete, or the candidate has no reviewable wireframe. The aggregate prompt-truncated risk derives from exact omission and content-truncation provenance as well as the backward-compatible flag.
-          schema: { type: string, enum: [grounding-gaps, prompt-truncated, artifacts-omitted, content-truncated, provenance-missing, wireframe-missing] }
+          description: Isolate flow candidates requiring additional review because FuzeInfra LiteLLM grounding was rejected or absent, the repository prompt was bounded, artifacts were omitted, source content was truncated, legacy model provenance is missing or incomplete, or the candidate has no reviewable wireframe or interaction steps. The aggregate prompt-truncated risk derives from exact omission and content-truncation provenance as well as the backward-compatible flag.
+          schema: { type: string, enum: [grounding-gaps, prompt-truncated, artifacts-omitted, content-truncated, provenance-missing, wireframe-missing, steps-missing] }
         - name: minConfidence
           in: query
           description: Inclusive lower detector-confidence bound.

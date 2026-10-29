@@ -1,7 +1,7 @@
 import type { Repository, RepositoryFlowCandidate } from '@fuzequality/contracts'
 
 export type FlowRevisionScope = 'all' | 'current'
-export type FlowAnalysisRisk = 'grounding-gaps' | 'prompt-truncated' | 'artifacts-omitted' | 'content-truncated' | 'provenance-missing' | 'wireframe-missing'
+export type FlowAnalysisRisk = 'grounding-gaps' | 'prompt-truncated' | 'artifacts-omitted' | 'content-truncated' | 'provenance-missing' | 'wireframe-missing' | 'steps-missing'
 
 export function FlowInventoryFilters({
   repositories,
@@ -117,6 +117,7 @@ export function FlowInventoryFilters({
           <option value="content-truncated">Repository source content truncated</option>
           <option value="provenance-missing">Missing or incomplete model provenance</option>
           <option value="wireframe-missing">Missing review wireframe</option>
+          <option value="steps-missing">Missing interaction steps</option>
         </select>
       </label>
       <label>

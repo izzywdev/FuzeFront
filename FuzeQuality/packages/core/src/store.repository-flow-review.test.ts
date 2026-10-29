@@ -118,6 +118,7 @@ describe('repository flow review lifecycle', () => {
       { ...candidate, id: 'legacy-content-truncated', analysis: { ...analysis, inputArtifactCount: 10, promptArtifactCount: 10, promptOmittedArtifactCount: 0, promptContentTruncated: true } },
       { ...candidate, id: 'grounding-gap', analysis: { ...analysis, grounding: { referencedArtifactCount: 2, groundedArtifactCount: 1, rejectedArtifactCount: 1, ungroundedStepCount: 1 } } },
       { ...candidate, id: 'missing-wireframe', wireframe: { kind: 'sequence', nodes: [] } },
+      { ...candidate, id: 'missing-steps', steps: [] },
       { ...candidate, id: 'other-tenant-risk', tenantId: 'tenant-2', analysis: undefined },
     ])
 
@@ -133,6 +134,8 @@ describe('repository flow review lifecycle', () => {
       .resolves.toEqual([expect.objectContaining({ id: 'grounding-gap' })])
     await expect(store.repositoryFlowCandidates(candidate.repositoryId, candidate.tenantId, { analysisRisk: 'wireframe-missing' }))
       .resolves.toEqual([expect.objectContaining({ id: 'missing-wireframe' })])
+    await expect(store.repositoryFlowCandidates(candidate.repositoryId, candidate.tenantId, { analysisRisk: 'steps-missing' }))
+      .resolves.toEqual([expect.objectContaining({ id: 'missing-steps' })])
   })
 
   it('binds confidence filters before the stable Postgres continuation cursor', async () => {
@@ -162,6 +165,8 @@ describe('repository flow review lifecycle', () => {
     expect(String(statement)).toContain("$12='provenance-missing'")
     expect(String(statement)).toContain("$12='wireframe-missing'")
     expect(String(statement)).toContain("jsonb_array_length(COALESCE(wireframe->'nodes','[]'::jsonb))=0")
+    expect(String(statement)).toContain("$12='steps-missing'")
+    expect(String(statement)).toContain("jsonb_array_length(COALESCE(steps,'[]'::jsonb))=0")
     expect(String(statement)).toContain("NULLIF(BTRIM(analysis_provenance->>'model'),'') IS NULL")
     expect(String(statement)).toContain("analysis_provenance->>'provider' IS DISTINCT FROM 'fuzeinfra-litellm'")
     expect(String(statement)).toContain("jsonb_array_elements_text(COALESCE(evidence, '[]'::jsonb))")

@@ -3203,6 +3203,7 @@ export function FlowReviewControls({
   const analysisRationaleMissing = (hasGroundingGaps || hasPromptCoverageGaps) && reason.trim().length < 3
   const analysisProvenanceMissing = !repositoryFlowHasCompleteAnalysisProvenance(flow)
   const wireframeMissing = flow.wireframe.nodes.length === 0
+  const stepsMissing = flow.steps.length === 0
   const unavailableTargetIds = evidenceVerification !== 'loading' && evidenceVerification !== 'unavailable'
     ? unavailableFlowArtifactTargetIds(flow, knownArtifactIds)
     : []
@@ -3288,6 +3289,11 @@ export function FlowReviewControls({
             Confirmation is blocked because this flow has no reviewable wireframe. Reject this proposal or regenerate repository analysis.
           </p>
         )}
+        {stepsMissing && (
+          <p className="form-error" role="alert">
+            Confirmation is blocked because this flow has no reviewable interaction steps. Reject this proposal or regenerate repository analysis.
+          </p>
+        )}
         {evidenceVerification === 'loading' && (
           <p className="performance-inventory-only" role="status">
             Verifying UX-flow evidence for this exact repository revision before confirmation.
@@ -3306,7 +3312,7 @@ export function FlowReviewControls({
         <div className="row-actions">
           <QualityAction
             intent="secondary"
-            disabled={busy || !isReviewable || analysisRationaleMissing || analysisProvenanceMissing || wireframeMissing || evidenceVerificationBlocked || unavailableTargetIds.length > 0}
+            disabled={busy || !isReviewable || analysisRationaleMissing || analysisProvenanceMissing || wireframeMissing || stepsMissing || evidenceVerificationBlocked || unavailableTargetIds.length > 0}
             onClick={() => void submit('confirmed')}
           >
             <Check size={14} /> Confirm
@@ -3860,6 +3866,7 @@ export function flowCandidateMatchesInventory(
     flow.source === 'litellm' && !repositoryFlowHasCompleteAnalysisProvenance(flow)
   )) return false
   if (selection.analysisRisk === 'wireframe-missing' && flow.wireframe.nodes.length > 0) return false
+  if (selection.analysisRisk === 'steps-missing' && flow.steps.length > 0) return false
   if (selection.minimumConfidencePercent !== '' && flow.confidence < Number(selection.minimumConfidencePercent) / 100) return false
   if (selection.maximumConfidencePercent !== '' && flow.confidence > Number(selection.maximumConfidencePercent) / 100) return false
   if (selection.revisionScope === 'current') {

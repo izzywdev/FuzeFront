@@ -185,6 +185,11 @@ export function FlowInspector({
                 </li>
               ))}
             </ol>
+            {flow.steps.length === 0 && (
+              <div className="flow-inspector-state form-error" role="alert">
+                <AlertTriangle size={16} /> No reviewable interaction steps are stored for this flow. Do not confirm it until repository analysis is regenerated.
+              </div>
+            )}
           </section>
 
           <section className="flow-inspector-section" aria-label="Flow provenance">

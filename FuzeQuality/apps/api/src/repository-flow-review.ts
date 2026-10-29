@@ -93,6 +93,20 @@ export function repositoryFlowWireframeConflict(
   } as const
 }
 
+export function repositoryFlowStepsConflict(
+  candidate: RepositoryFlowCandidate,
+  status: 'confirmed' | 'rejected',
+) {
+  if (status !== 'confirmed' || candidate.steps.length > 0) return undefined
+
+  return {
+    error: 'This UX-flow candidate has no reviewable interaction steps. Regenerate the repository analysis before confirming it.',
+    code: 'FLOW_STEPS_REQUIRED',
+    candidateId: candidate.id,
+    revision: candidate.revision,
+  } as const
+}
+
 export function repositoryFlowArtifactReferenceConflict(
   candidate: RepositoryFlowCandidate,
   artifacts: QualityArtifact[],

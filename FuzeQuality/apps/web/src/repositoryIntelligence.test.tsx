@@ -1692,6 +1692,24 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled()
   })
 
+  it('blocks confirmation for a legacy flow without interaction steps while keeping rejection available', () => {
+    const onReview = vi.fn().mockResolvedValue(undefined)
+    const invalid = { ...candidate, steps: [] }
+
+    render(
+      <FlowReviewControls
+        flow={invalid}
+        currentRevision={candidate.revision}
+        knownArtifactIds={candidate.evidence}
+        onReview={onReview}
+      />
+    )
+
+    expect(screen.getByRole('alert')).toHaveTextContent('no reviewable interaction steps')
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled()
+  })
+
   it('blocks confirmation for a legacy LiteLLM flow without analysis provenance while keeping rejection available', () => {
     const onReview = vi.fn().mockResolvedValue(undefined)
     const invalid = { ...candidate, analysis: undefined }
@@ -2057,6 +2075,13 @@ describe('RepositoryIntelligence flow inventory', () => {
     await waitFor(() => expect(flowRequest).toHaveBeenLastCalledWith(repository.id, {
       analysisRisk: 'wireframe-missing',
     }))
+
+    fireEvent.change(screen.getByLabelText('Analysis review risk'), {
+      target: { value: 'steps-missing' },
+    })
+    await waitFor(() => expect(flowRequest).toHaveBeenLastCalledWith(repository.id, {
+      analysisRisk: 'steps-missing',
+    }))
   })
 
   it('retains legacy exact bounded-prompt provenance in the aggregate risk filter', () => {
@@ -2107,6 +2132,14 @@ describe('RepositoryIntelligence flow inventory', () => {
 
     expect(flowCandidateMatchesInventory(missingWireframe, [repository], {
       repositoryId: '', source: '', status: '', revisionScope: 'all', targetId: '', model: '', promptVersion: '', schemaVersion: '', analysisRisk: 'wireframe-missing', minimumConfidencePercent: '', maximumConfidencePercent: '',
+    })).toBe(true)
+  })
+
+  it('retains legacy candidates without interaction steps in the remediation filter', () => {
+    const missingSteps = { ...candidate, steps: [] }
+
+    expect(flowCandidateMatchesInventory(missingSteps, [repository], {
+      repositoryId: '', source: '', status: '', revisionScope: 'all', targetId: '', model: '', promptVersion: '', schemaVersion: '', analysisRisk: 'steps-missing', minimumConfidencePercent: '', maximumConfidencePercent: '',
     })).toBe(true)
   })
 
