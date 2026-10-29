@@ -4429,6 +4429,37 @@ describe('RepositoryIntelligence flow inventory', () => {
     }))
   })
 
+  it('filters all anomalies and retains the classification during continuation', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    vi.mocked(api.policyGateEvaluations).mockImplementation(async (_repositoryId, filter) =>
+      filter?.cursor
+        ? { items: [], page: { nextCursor: null, hasMore: false } }
+        : { items: [governanceEvaluation], page: { nextCursor: 'policy-page-2', hasMore: true } }
+    )
+    render(<RepositoryIntelligence data={portfolio} />)
+    await screen.findByText(governanceEvaluation.title)
+
+    fireEvent.change(screen.getByLabelText('Finding type'), { target: { value: 'anomaly' } })
+    await waitFor(() => expect(api.policyGateEvaluations).toHaveBeenLastCalledWith(repository.id, {
+      revision: repository.lastScanRevision,
+      findingType: 'anomaly',
+    }))
+    expect(policyGateEvaluationMatchesInventory(governanceEvaluation, [repository], {
+      findingType: 'anomaly', kind: '', remediationAction: '', severity: '', reviewStatus: '', revisionScope: 'current', subject: '', sourcePath: '', policyArtifactId: '', gateArtifactId: '', minimumConfidencePercent: '', maximumConfidencePercent: '',
+    })).toBe(true)
+    expect(policyGateEvaluationMatchesInventory({ ...governanceEvaluation, kind: 'guarded-policy' }, [repository], {
+      findingType: 'anomaly', kind: '', remediationAction: '', severity: '', reviewStatus: '', revisionScope: 'current', subject: '', sourcePath: '', policyArtifactId: '', gateArtifactId: '', minimumConfidencePercent: '', maximumConfidencePercent: '',
+    })).toBe(false)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more policy and gate history' }))
+    await waitFor(() => expect(api.policyGateEvaluations).toHaveBeenLastCalledWith(repository.id, {
+      revision: repository.lastScanRevision,
+      findingType: 'anomaly',
+      cursor: 'policy-page-2',
+    }))
+  })
+
   it('filters governance by exact subject and retains it during continuation', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])

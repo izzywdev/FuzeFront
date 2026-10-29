@@ -3581,6 +3581,7 @@ type FlowInventorySelection = {
 }
 
 type PolicyGateInventorySelection = {
+  findingType?: 'relationship' | 'anomaly' | ''
   kind: PolicyGateEvaluation['kind'] | ''
   remediationAction: PolicyGateEvaluation['remediationAction'] | ''
   severity: PolicyGateEvaluation['severity'] | ''
@@ -3759,6 +3760,7 @@ export function policyGateEvaluationMatchesInventory(
   selection: PolicyGateInventorySelection
 ) {
   const normalizedSubject = selection.subject.toLowerCase()
+  if (selection.findingType && (selection.findingType === 'relationship' ? evaluation.kind !== 'guarded-policy' : evaluation.kind === 'guarded-policy')) return false
   if (selection.kind && evaluation.kind !== selection.kind) return false
   if (selection.remediationAction && evaluation.remediationAction !== selection.remediationAction) return false
   if (selection.severity && evaluation.severity !== selection.severity)
@@ -4023,6 +4025,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [policyGateKind, setPolicyGateKind] = useState<
     PolicyGateEvaluation['kind'] | ''
   >('')
+  const [policyGateFindingType, setPolicyGateFindingType] = useState<'relationship' | 'anomaly' | ''>('')
   const [policyGateSeverity, setPolicyGateSeverity] = useState<
     PolicyGateEvaluation['severity'] | ''
   >('')
@@ -4046,6 +4049,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     Number(policyGateMinimumConfidencePercent) > Number(policyGateMaximumConfidencePercent)
   )
   const policyGateSelection: PolicyGateInventorySelection = {
+    findingType: policyGateFindingType,
     kind: policyGateKind,
     remediationAction: policyGateRemediationAction,
     severity: policyGateSeverity,
@@ -4478,6 +4482,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 repository.id,
                 Object.fromEntries(
                   Object.entries({
+                    findingType: policyGateFindingType,
                     kind: policyGateKind,
                     remediationAction: policyGateRemediationAction,
                     severity: policyGateSeverity,
@@ -4548,6 +4553,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   }, [
     data.repositories,
     policyGateKind,
+    policyGateFindingType,
     policyGateRemediationAction,
     policyGateRevisionScope,
     policyGateReviewStatus,
@@ -5201,6 +5207,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         const page = normalizeHistoryPage(await api.policyGateEvaluations(
           repositoryId,
           Object.fromEntries(Object.entries({
+            findingType: policyGateFindingType,
             kind: policyGateKind,
             remediationAction: policyGateRemediationAction,
             severity: policyGateSeverity,
@@ -5299,6 +5306,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       data.repositories,
       policyGateEvaluations,
       policyGateKind,
+      policyGateFindingType,
       policyGateRemediationAction,
       policyGateSeverity,
       policyGateReviewStatus,
@@ -5556,6 +5564,17 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             className="catalog-filters"
             aria-label="Policy and gate finding filters"
           >
+            <label>
+              Finding type
+              <select
+                value={policyGateFindingType}
+                onChange={event => setPolicyGateFindingType(event.target.value as 'relationship' | 'anomaly' | '')}
+              >
+                <option value="">Relationships and anomalies</option>
+                <option value="anomaly">Anomalies requiring review</option>
+                <option value="relationship">Guarded relationships</option>
+              </select>
+            </label>
             <label>
               Relationship or anomaly
               <select

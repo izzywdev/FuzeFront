@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.84.30
+  version: 0.84.31
   license:
     name: UNLICENSED
 servers:
@@ -632,6 +632,10 @@ paths:
       tags: [worker-intelligence]
       security: [{ serviceToken: [] }]
       parameters:
+        - name: findingType
+          in: query
+          description: Aggregate healthy guarded relationships or reviewable policy/gate anomalies.
+          schema: { type: string, enum: [relationship, anomaly] }
         - name: kind
           in: query
           schema: { $ref: '#/components/schemas/PolicyGateFindingKind' }
@@ -735,6 +739,10 @@ paths:
       tags: [policy-gates]
       security: [{ platformBearer: [] }]
       parameters:
+        - name: findingType
+          in: query
+          description: Aggregate healthy guarded relationships or reviewable policy/gate anomalies.
+          schema: { type: string, enum: [relationship, anomaly] }
         - name: kind
           in: query
           schema:

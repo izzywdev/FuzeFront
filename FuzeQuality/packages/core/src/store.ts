@@ -78,7 +78,7 @@ export type PolicyGateReview = {
   expectedReviewedAt?: string | null
 }
 export type PolicyGateEvaluationQuery = {
-  id?: string
+  id?: string; findingType?: 'relationship' | 'anomaly'
   kind?: PolicyGateEvaluation['kind']
   remediationAction?: PolicyGateEvaluation['remediationAction']
   severity?: PolicyGateEvaluation['severity']
@@ -653,7 +653,7 @@ export class MemoryCatalogStore implements CatalogStore {
       .filter(item =>
         item.repositoryId === repositoryId && item.tenantId === tenantId &&
         (!query.id || item.id === query.id) &&
-        (!query.kind || item.kind === query.kind) &&
+        (!query.kind || item.kind === query.kind) && (!query.findingType || (query.findingType === 'relationship' ? item.kind === 'guarded-policy' : item.kind !== 'guarded-policy')) &&
         (!query.remediationAction || item.remediationAction === query.remediationAction) &&
         (!query.severity || item.severity === query.severity) &&
         (!query.reviewStatus || item.reviewStatus === query.reviewStatus) &&
@@ -1667,7 +1667,7 @@ export class PostgresCatalogStore implements CatalogStore {
       `SELECT * FROM fuzequality.policy_gate_evaluations
        WHERE repository_id=$1 AND tenant_id=$2
          AND ($3::text IS NULL OR id=$3)
-         AND ($4::text IS NULL OR kind=$4)
+         AND ($4::text IS NULL OR kind=$4) AND ($18::text IS NULL OR ($18='relationship' AND kind='guarded-policy') OR ($18='anomaly' AND kind<>'guarded-policy'))
          AND ($5::text IS NULL OR severity=$5)
          AND ($6::text IS NULL OR review_status=$6)
          AND ($7::text IS NULL OR revision=$7)
@@ -1693,7 +1693,7 @@ export class PostgresCatalogStore implements CatalogStore {
          ))
        ORDER BY created_at DESC,id DESC
        LIMIT COALESCE($12::integer, 2147483647)`,
-      [repositoryId, tenantId, query.id ?? null, query.kind ?? null, query.severity ?? null, query.reviewStatus ?? null, query.revision ?? null, query.minConfidence ?? null, query.maxConfidence ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null, query.subject ?? null, query.remediationAction ?? null, query.policyArtifactId ?? null, query.gateArtifactId ?? null, query.sourcePath ?? null],
+      [repositoryId, tenantId, query.id ?? null, query.kind ?? null, query.severity ?? null, query.reviewStatus ?? null, query.revision ?? null, query.minConfidence ?? null, query.maxConfidence ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null, query.subject ?? null, query.remediationAction ?? null, query.policyArtifactId ?? null, query.gateArtifactId ?? null, query.sourcePath ?? null, query.findingType ?? null],
     )
     return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, kind: row.kind, severity: row.severity, title: row.title, detail: row.detail, policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, confidence: Number(row.confidence), scope: row.scope, evidencePassages: row.evidence_passages ?? [], remediationAction: row.remediation_action, recommendation: row.recommendation, reviewStatus: row.review_status, reviewedAt: row.reviewed_at?.toISOString(), reviewedBy: row.reviewed_by ?? undefined, reviewReason: row.review_reason ?? undefined, createdAt: row.created_at.toISOString() }))
   }
