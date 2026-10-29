@@ -56,8 +56,9 @@ export function PolicyGateEvidence({
   evaluation: PolicyGateEvaluation
   artifacts: QualityArtifact[]
 }) {
-  const revisionArtifacts = artifacts.filter(
-    artifact => !artifact.revision || artifact.revision === evaluation.revision
+  const revisionArtifacts = artifacts.filter(artifact =>
+    artifact.repositoryId === evaluation.repositoryId &&
+    (!artifact.revision || artifact.revision === evaluation.revision)
   )
   const artifactsById = new Map(revisionArtifacts.flatMap(artifact => [
     [artifact.id, artifact] as const,

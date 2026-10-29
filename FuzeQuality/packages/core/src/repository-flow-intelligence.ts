@@ -131,6 +131,8 @@ function promptArtifacts(artifacts: QualityArtifact[]) {
   }
   return {
     artifacts: prompt,
+    omittedArtifactCount: Math.max(artifacts.length - prompt.length, 0),
+    contentTruncated: sourceTruncated,
     truncated: sourceTruncated || prompt.length < artifacts.length,
   }
 }
@@ -236,6 +238,8 @@ export class LiteLlmRepositoryFlowAnalyzer {
           schemaVersion: REPOSITORY_FLOW_SCHEMA_VERSION,
           inputArtifactCount: artifacts.length,
           promptArtifactCount: safeArtifacts.length,
+          promptOmittedArtifactCount: prompt.omittedArtifactCount,
+          promptContentTruncated: prompt.contentTruncated,
           promptTruncated: prompt.truncated,
           grounding: {
             referencedArtifactCount: referencedIds.size,

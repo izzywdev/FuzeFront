@@ -58,6 +58,23 @@ export async function linkExecutionToRevisionArtifacts(
 
 type RevisionArtifactLinks = Awaited<ReturnType<typeof linkExecutionToRevisionArtifacts>>
 
+/** Provider artifacts are trusted only when the run came from the onboarded repository itself. */
+export function githubHeadRepositoryVerified(
+  expectedRepository: string,
+  headRepository?: string,
+) {
+  return Boolean(headRepository && headRepository.toLowerCase() === expectedRepository.toLowerCase())
+}
+
+export function unverifiedGithubHeadEvidenceCollection(
+  expectedRepository: string,
+  headRepository: string | undefined,
+  checkedAt: string,
+): NonNullable<TestExecution['evidenceCollection']> | undefined {
+  if (githubHeadRepositoryVerified(expectedRepository, headRepository)) return undefined
+  return { status: 'partial', checkedAt, issues: ['head-repository-unverified'] }
+}
+
 export function mergeExecutionEvidenceLinks(
   existing: WorkflowExecutionCommand['evidenceLinks'],
   discovered: WorkflowExecutionCommand['evidenceLinks'],

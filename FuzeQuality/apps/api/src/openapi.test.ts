@@ -138,6 +138,8 @@ describe('contract discovery', () => {
         maxLength: 255,
         pattern: '^[^/\\s]+/[^/\\s]+$',
       })
+      expect(schemas.TestExecutionEvidenceCollection.properties.issues.items.enum)
+        .toContain('head-repository-unverified')
       expect(schemas.TestExecutionEvidenceCollection.oneOf).toEqual(expect.arrayContaining([
         expect.objectContaining({
           title: 'Complete evidence collection',
@@ -274,12 +276,18 @@ describe('contract discovery', () => {
       expect(document.components.parameters.ExecutionEvidenceRequirement).toMatchObject({
         name: 'evidenceRequirement',
         in: 'query',
-        schema: { type: 'string', enum: ['evidence-url-invalid', 'provider-collection-failure', 'github-run-provenance-missing', 'attempt-provenance-unverified', 'policy-gate-outcome-missing', 'post-production-video-missing', 'performance-threshold-missing', 'terminal-timing-missing'] },
+        schema: { type: 'string', enum: ['evidence-url-invalid', 'provider-collection-failure', 'github-run-provenance-missing', 'head-repository-unverified', 'provider-result-limited', 'attempt-provenance-unverified', 'policy-gate-outcome-missing', 'post-production-video-missing', 'performance-threshold-missing', 'terminal-timing-missing'] },
       })
       expect(document.components.parameters.ExecutionEvidenceRequirement.description)
         .toContain('Provider collection failure')
       expect(document.components.parameters.ExecutionEvidenceRequirement.description)
+        .toContain('partial result truncation is selected separately')
+      expect(document.components.parameters.ExecutionEvidenceRequirement.description)
         .toContain('GitHub run provenance')
+      expect(document.components.parameters.ExecutionEvidenceRequirement.description)
+        .toContain('repository ownership')
+      expect(document.components.parameters.ExecutionEvidenceRequirement.description)
+        .toContain('result-limit error code or retained issue')
       expect(document.components.parameters.ExecutionEvidenceRequirement.description)
         .toContain('exact retry attempt')
       expect(document.paths['/api/v1/internal/repository-flow-candidates'].post.description)
@@ -288,6 +296,14 @@ describe('contract discovery', () => {
         .toContain('LiteLLM evidence IDs')
       expect(document.paths['/api/v1/internal/repository-flow-candidates'].post.description)
         .toContain('grounding counts')
+      expect(document.paths['/api/v1/requirements/freshness'].get.security)
+        .toEqual([{ platformBearer: [] }])
+      expect(document.paths['/api/v1/jira/sync'].post.description)
+        .toContain('Queue state is persisted before publication')
+      expect(document.paths['/api/v1/jira/sync'].post.responses).toHaveProperty('503')
+      expect(document.components.schemas.RequirementSyncRequest.additionalProperties).toBe(false)
+      expect(document.components.schemas.RequirementSyncCursor.properties.failureCode.enum)
+        .toContain('REQUIREMENT_QUEUE_UNAVAILABLE')
       expect(
         document.components.schemas.RepositoryFlowAnalysisProvenance.properties.grounding
           .properties.groundedArtifactCount.description
@@ -298,6 +314,10 @@ describe('contract discovery', () => {
         .toContain('no retained collection attempt')
       expect(document.paths['/api/v1/repositories/{repositoryId}/test-executions/evidence/refresh'].post.description)
         .toContain('Complete attempts may be reconciled again')
+      expect(document.paths['/api/v1/repositories/{repositoryId}/test-executions/evidence/refresh'].post.description)
+        .toContain('preventing fork evidence from being trusted')
+      expect(document.paths['/api/v1/repositories/{repositoryId}/test-executions/evidence/refresh'].post.responses['409'].description)
+        .toContain('does not match the onboarded repository')
       expect(document.paths['/api/v1/repositories/{repositoryId}/test-executions/evidence/refresh'].post.responses['502'].description)
         .toContain('previously retained evidence remains unchanged')
       expect(document.paths['/api/v1/repositories/{repositoryId}/test-executions/evidence/refresh'].post.responses['504'].description)
@@ -371,7 +391,7 @@ describe('contract discovery', () => {
         ].schema
       ).toMatchObject({ type: 'object', required: ['items', 'page'] })
       expect(schemas.ExecutionOutcomeTrend.required).toEqual(
-        ['date', 'total', 'passed', 'failed', 'cancelled', 'running', 'passRate', 'durationSampleCount', 'averageDurationMs', 'maximumDurationMs', 'retryAttemptCount', 'successfulRetryCount', 'recoveredRunCount', 'evidenceCompleteCount', 'evidencePartialCount', 'evidenceUnavailableCount', 'evidenceNotCollectedCount', 'evidenceCollectionFailureCount', 'invalidEvidenceUrlCount', 'githubRunProvenanceMissingCount', 'attemptProvenanceUnverifiedCount', 'postProductionVideoMissingCount', 'terminalTimingMissingCount', 'gateEvaluationCount', 'gatePassedCount', 'gateFailedCount', 'gateCancelledCount', 'gateRunningCount', 'gateUnevaluatedExecutionCount', 'thresholdEvaluationCount', 'thresholdPassedCount', 'thresholdFailedCount', 'performanceExecutionWithoutThresholdCount']
+        ['date', 'total', 'passed', 'failed', 'cancelled', 'running', 'passRate', 'durationSampleCount', 'averageDurationMs', 'maximumDurationMs', 'retryAttemptCount', 'successfulRetryCount', 'recoveredRunCount', 'evidenceCompleteCount', 'evidencePartialCount', 'evidenceUnavailableCount', 'evidenceNotCollectedCount', 'evidenceCollectionFailureCount', 'invalidEvidenceUrlCount', 'githubRunProvenanceMissingCount', 'attemptProvenanceUnverifiedCount', 'providerResultLimitedCount', 'headRepositoryUnverifiedCount', 'postProductionVideoMissingCount', 'terminalTimingMissingCount', 'gateEvaluationCount', 'gatePassedCount', 'gateFailedCount', 'gateCancelledCount', 'gateRunningCount', 'gateUnevaluatedExecutionCount', 'thresholdEvaluationCount', 'thresholdPassedCount', 'thresholdFailedCount', 'performanceExecutionWithoutThresholdCount']
       )
       expect(schemas.ExecutionOutcomeTrend.properties.passRate).toMatchObject({
         type: 'number', format: 'double', minimum: 0, maximum: 1,
@@ -382,7 +402,7 @@ describe('contract discovery', () => {
       expect(schemas.ExecutionOutcomeTrend.properties.maximumDurationMs).toMatchObject({
         type: 'integer', minimum: 0,
       })
-      for (const property of ['evidenceCompleteCount', 'evidencePartialCount', 'evidenceUnavailableCount', 'evidenceNotCollectedCount', 'evidenceCollectionFailureCount', 'invalidEvidenceUrlCount', 'githubRunProvenanceMissingCount', 'attemptProvenanceUnverifiedCount', 'postProductionVideoMissingCount', 'terminalTimingMissingCount']) {
+      for (const property of ['evidenceCompleteCount', 'evidencePartialCount', 'evidenceUnavailableCount', 'evidenceNotCollectedCount', 'evidenceCollectionFailureCount', 'invalidEvidenceUrlCount', 'githubRunProvenanceMissingCount', 'attemptProvenanceUnverifiedCount', 'providerResultLimitedCount', 'headRepositoryUnverifiedCount', 'postProductionVideoMissingCount', 'terminalTimingMissingCount']) {
         expect(schemas.ExecutionOutcomeTrend.properties[property]).toMatchObject({ type: 'integer', minimum: 0 })
       }
       for (const property of ['gateEvaluationCount', 'gatePassedCount', 'gateFailedCount', 'gateCancelledCount', 'gateRunningCount', 'gateUnevaluatedExecutionCount']) {
@@ -473,7 +493,7 @@ describe('contract discovery', () => {
       })
       const analysisRisk = document.paths['/api/v1/repositories/{repositoryId}/flow-candidates'].get.parameters
         .find((parameter: { name: string }) => parameter.name === 'analysisRisk')
-      expect(analysisRisk.schema.enum).toEqual(['grounding-gaps', 'prompt-truncated', 'provenance-missing'])
+      expect(analysisRisk.schema.enum).toEqual(['grounding-gaps', 'prompt-truncated', 'artifacts-omitted', 'content-truncated', 'provenance-missing', 'wireframe-missing', 'steps-missing'])
       expect(analysisRisk.description).toContain('FuzeInfra LiteLLM')
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}'].get.responses['200'].content[
@@ -551,7 +571,7 @@ describe('contract discovery', () => {
         document.paths['/api/v1/repositories/{repositoryId}/policy-gate-evaluations'].get.parameters.map(
           (parameter: { name: string }) => parameter.name
         )
-      ).toEqual(['kind', 'remediationAction', 'severity', 'reviewStatus', 'revision', 'subject', 'sourcePath', 'policyArtifactId', 'gateArtifactId', 'minConfidence', 'maxConfidence', 'limit', 'cursor'])
+      ).toEqual(['findingType', 'kind', 'remediationAction', 'severity', 'reviewStatus', 'revision', 'subject', 'sourcePath', 'policyArtifactId', 'gateArtifactId', 'minConfidence', 'maxConfidence', 'limit', 'cursor'])
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/policy-gate-evaluations'].get.responses['200'].content[
           'application/json'
@@ -569,7 +589,7 @@ describe('contract discovery', () => {
       expect(
         document.paths['/api/v1/internal/repositories/{repositoryId}/policy-gate-evaluations'].get.parameters
           .map((parameter: { name: string }) => parameter.name)
-      ).toEqual(['kind', 'remediationAction', 'severity', 'reviewStatus', 'revision', 'subject', 'sourcePath', 'policyArtifactId', 'gateArtifactId', 'minConfidence', 'maxConfidence', 'limit', 'cursor'])
+      ).toEqual(['findingType', 'kind', 'remediationAction', 'severity', 'reviewStatus', 'revision', 'subject', 'sourcePath', 'policyArtifactId', 'gateArtifactId', 'minConfidence', 'maxConfidence', 'limit', 'cursor'])
       expect(
         document.paths['/api/v1/internal/repositories/{repositoryId}/policy-gate-evaluations'].get.responses['200'].content[
           'application/json'
@@ -665,7 +685,13 @@ describe('contract discovery', () => {
       ).toEqual(['limit', 'cursor'])
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/test-suite-dispatches/latest'].get.description
-      ).toContain('source revision, and dispatched ref all match exactly')
+      ).toContain('onboarded head repository')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/test-suite-dispatches/latest'].get.description
+      ).toContain('Fork, missing-head, and pre-existing executions are never attached')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/test-suite-dispatches/latest'].get.description
+      ).toContain('started after the dispatch was requested')
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/test-suites/{artifactId}/dispatches'].get.responses['200'].content[
           'application/json'
@@ -680,7 +706,10 @@ describe('contract discovery', () => {
       ).toContain('bounded tenant-scoped dispatch lookup')
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/test-suites/{artifactId}/dispatches'].get.description
-      ).toContain('source revision, and dispatched ref all match exactly')
+      ).toContain('onboarded head repository')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/test-suites/{artifactId}/dispatches'].get.description
+      ).toContain('pre-existing executions are never attached')
       expect(schemas.TestSuiteDispatchAuditPage.properties.page.$ref).toBe(
         '#/components/schemas/HistoryCursorPage'
       )

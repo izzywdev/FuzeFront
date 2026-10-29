@@ -147,12 +147,26 @@ describe('policy-gate review lifecycle', () => {
     })).resolves.toEqual([expect.objectContaining({ id: 'target' })])
   })
 
+  it('separates guarded relationships from policy and gate anomalies', async () => {
+    const store = new MemoryCatalogStore()
+    const base = { repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abc', severity: 'high' as const, detail: 'Governance evidence', confidence: 0.9, scope: { sourcePaths: ['governance/deployment.md'], subjects: ['deployment'] }, recommendation: 'Review governance evidence', reviewStatus: 'proposed' as const, createdAt: '2026-10-09T00:00:00.000Z' }
+    await store.savePolicyGateEvaluations([
+      { ...base, id: 'relationship', kind: 'guarded-policy', severity: 'low', title: 'Guarded', policyArtifactIds: ['policy-1'], gateArtifactIds: ['gate-1'], remediationAction: 'align-policy-gate' },
+      { ...base, id: 'unguarded', kind: 'unguarded-policy', title: 'Unguarded', policyArtifactIds: ['policy-2'], gateArtifactIds: [], remediationAction: 'build-gate' },
+      { ...base, id: 'ambiguous', kind: 'ambiguous-policy', title: 'Ambiguous', policyArtifactIds: ['policy-3'], gateArtifactIds: [], remediationAction: 'disambiguate-policy' },
+    ])
+
+    await expect(store.policyGateEvaluations('repo-1', 'tenant-1', { findingType: 'relationship' })).resolves.toEqual([expect.objectContaining({ id: 'relationship' })])
+    await expect(store.policyGateEvaluations('repo-1', 'tenant-1', { findingType: 'anomaly' })).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ id: 'unguarded' }), expect.objectContaining({ id: 'ambiguous' })]))
+  })
+
   it('binds policy confidence before the stable Postgres continuation cursor', async () => {
     const query = vi.fn().mockResolvedValue({ rows: [] })
     const store = new PostgresCatalogStore('postgres://unused')
     ;(store as unknown as { pool: unknown }).pool = { query }
 
     await store.policyGateEvaluations('repo-1', 'tenant-1', {
+      findingType: 'anomaly',
       remediationAction: 'build-gate',
       minConfidence: 0.7,
       maxConfidence: 0.9,
@@ -177,10 +191,12 @@ describe('policy-gate review lifecycle', () => {
     expect(String(statement)).toContain('gate_artifact.value=$16')
     expect(String(statement)).toContain("jsonb_array_elements_text(COALESCE(scope->'sourcePaths', '[]'::jsonb))")
     expect(String(statement)).toContain('source_path.value=$17')
+    expect(String(statement)).toContain("$18='anomaly'")
     expect(parameters).toEqual([
       'repo-1', 'tenant-1', null, null, null, null, null,
       0.7, 0.9, '2026-10-09T00:00:00.000Z', 'evaluation-1', 25, 'Deployment', 'build-gate', 'policy-1', 'gate-1',
       'governance/deployment.md',
+      'anomaly',
     ])
   })
 

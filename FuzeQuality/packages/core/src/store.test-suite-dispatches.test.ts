@@ -2,6 +2,22 @@ import { describe, expect, it, vi } from 'vitest'
 import type { TestSuiteDispatch } from '@fuzequality/contracts'
 import { MemoryCatalogStore, PostgresCatalogStore } from './store'
 
+const repository = {
+  id: '11111111-1111-4111-8111-111111111111',
+  tenantId: '22222222-2222-4222-8222-222222222222',
+  owner: 'acme',
+  name: 'app',
+  canonicalUrl: 'https://github.com/acme/app',
+  defaultBranch: 'main',
+  kind: 'service' as const,
+  enabled: true,
+  includeGlobs: [],
+  excludeGlobs: [],
+  jiraProjects: [],
+  jiraBindings: [],
+  lastScanStatus: 'complete' as const,
+}
+
 function dispatch(overrides: Partial<TestSuiteDispatch> = {}): TestSuiteDispatch {
   return {
     id: crypto.randomUUID(),
@@ -172,7 +188,7 @@ describe('test-suite dispatch audit', () => {
   })
 
   it('links an accepted dispatch only to its exact retained execution outcome', async () => {
-    const store = new MemoryCatalogStore()
+    const store = new MemoryCatalogStore({ repositories: [repository] })
     const accepted = dispatch({
       status: 'accepted',
       ref: `fuzequality-revision-${'a'.repeat(40)}`,
@@ -191,6 +207,25 @@ describe('test-suite dispatch audit', () => {
         kind: 'video', name: 'Playwright video', url: 'https://evidence.example/run-42/video.webm',
       }],
       evidenceCollection: { status: 'complete', checkedAt: '2026-10-22T20:03:00.000Z' },
+    })
+    await store.saveTestExecution({
+      id: 'fork-result', repositoryId: accepted.repositoryId, tenantId: accepted.tenantId,
+      provider: 'github-actions', externalRunId: 'provider-run-fork', attempt: 1,
+      revision: accepted.sourceRevision, branch: accepted.ref, headRepository: 'contributor/app',
+      kind: 'load', status: 'passed', name: 'Fork load test', workflowPath: accepted.workflowPath,
+      completedAt: '2026-10-22T20:04:00.000Z',
+      policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [],
+      evidenceCollection: {
+        status: 'partial', checkedAt: '2026-10-22T20:04:00.000Z', issues: ['head-repository-unverified'],
+      },
+    })
+    await store.saveTestExecution({
+      id: 'pre-existing-result', repositoryId: accepted.repositoryId, tenantId: accepted.tenantId,
+      provider: 'github-actions', externalRunId: 'provider-run-before-dispatch', attempt: 1,
+      revision: accepted.sourceRevision, branch: accepted.ref, headRepository: 'acme/app',
+      kind: 'load', status: 'passed', name: 'Earlier load test', workflowPath: accepted.workflowPath,
+      startedAt: '2026-10-22T19:59:00.000Z', completedAt: '2026-10-22T20:05:00.000Z',
+      policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [],
     })
     await store.saveTestExecution({
       id: 'wrong-revision', repositoryId: accepted.repositoryId, tenantId: accepted.tenantId,
@@ -230,6 +265,39 @@ describe('test-suite dispatch audit', () => {
         id: 'execution-result', externalRunId: 'provider-run-42', status: 'failed',
       }),
     })])
+  })
+
+  it('assigns repeated exact dispatch executions to separate request windows', async () => {
+    const store = new MemoryCatalogStore({ repositories: [repository] })
+    const first = dispatch({
+      id: '44444444-4444-4444-8444-444444444444', status: 'accepted',
+      requestedAt: '2026-10-22T20:00:00.000Z', completedAt: '2026-10-22T20:00:01.000Z',
+    })
+    const second = dispatch({
+      id: '55555555-5555-4555-8555-555555555555', status: 'accepted',
+      requestedAt: '2026-10-22T20:02:00.000Z', completedAt: '2026-10-22T20:02:01.000Z',
+    })
+    await store.saveTestSuiteDispatch(first)
+    await store.saveTestSuiteDispatch(second)
+    for (const [id, externalRunId, startedAt] of [
+      ['first-result', 'provider-run-1', '2026-10-22T20:01:00.000Z'],
+      ['second-result', 'provider-run-2', '2026-10-22T20:03:00.000Z'],
+    ] as const) {
+      await store.saveTestExecution({
+        id, repositoryId: first.repositoryId, tenantId: first.tenantId,
+        provider: 'github-actions', externalRunId, attempt: 1, revision: first.sourceRevision,
+        branch: first.ref, headRepository: 'acme/app', kind: 'load', status: 'passed',
+        name: 'Repeated load test', workflowPath: first.workflowPath, startedAt,
+        completedAt: new Date(Date.parse(startedAt) + 30_000).toISOString(),
+        policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [],
+      })
+    }
+
+    const history = await store.testSuiteDispatchHistory(first.repositoryId, first.tenantId, first.artifactLogicalId)
+    expect(history.map(item => [item.id, item.executionResult?.id])).toEqual([
+      [second.id, 'second-result'],
+      [first.id, 'first-result'],
+    ])
   })
 
   it('joins exact dispatch outcomes in the PostgreSQL history query', async () => {
@@ -274,8 +342,11 @@ describe('test-suite dispatch audit', () => {
     expect(String(sql)).toContain("dispatch.status='accepted'")
     expect(String(sql)).toContain('candidate.branch=dispatch.source_ref')
     expect(String(sql)).toContain("candidate.provider='github-actions'")
+    expect(String(sql)).toContain("lower(candidate.head_repository)=lower(repository.owner || '/' || repository.name) AND candidate.started_at >= dispatch.requested_at")
     expect(String(sql)).toContain('lower(candidate.revision)=lower(dispatch.source_revision)')
     expect(String(sql)).toContain("split_part(candidate.workflow_path,'@',1)=dispatch.workflow_path")
+    expect(String(sql)).toContain('next_dispatch.requested_at <= candidate.started_at')
+    expect(String(sql)).toContain('(next_dispatch.requested_at,next_dispatch.id) > (dispatch.requested_at,dispatch.id)')
     expect(parameters).toEqual([accepted.repositoryId, accepted.tenantId, accepted.artifactLogicalId, 50])
   })
 
@@ -318,8 +389,11 @@ describe('test-suite dispatch audit', () => {
     expect(String(sql)).toContain("latest.status='accepted'")
     expect(String(sql)).toContain('candidate.branch=latest.source_ref')
     expect(String(sql)).toContain("candidate.provider='github-actions'")
+    expect(String(sql)).toContain("lower(candidate.head_repository)=lower(repository.owner || '/' || repository.name) AND candidate.started_at >= latest.requested_at")
     expect(String(sql)).toContain('lower(candidate.revision)=lower(latest.source_revision)')
     expect(String(sql)).toContain("split_part(candidate.workflow_path,'@',1)=latest.workflow_path")
+    expect(String(sql)).toContain('next_dispatch.requested_at <= candidate.started_at')
+    expect(String(sql)).toContain('(next_dispatch.requested_at,next_dispatch.id) > (latest.requested_at,latest.id)')
     expect(parameters).toEqual([accepted.repositoryId, accepted.tenantId])
   })
 

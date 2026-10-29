@@ -30,19 +30,19 @@
 # explicit so a source move requires deliberate review rather than silently
 # broadening the exception.
 src FuzeQuality/apps/api/src/test-implementation.ts:103     # FuzeQuality test-implementation entity
-src FuzeQuality/apps/api/src/index.ts:504                   # FuzeQuality test-execution entity
-src FuzeQuality/apps/api/src/index.ts:1089                  # FuzeQuality controlled test-suite dispatch audit entity
-src FuzeQuality/apps/api/src/index.ts:1156                  # FuzeQuality legacy performance dispatch audit entity
-src FuzeQuality/packages/core/src/store.ts:605              # FuzeQuality repository-flow review audit entity
-src FuzeQuality/packages/core/src/store.ts:667              # FuzeQuality policy-gate review audit entity
-src FuzeQuality/packages/core/src/store.ts:899              # FuzeQuality repository entity
-src FuzeQuality/packages/core/src/store.ts:954              # FuzeQuality analysis-completed outbox entity
-src FuzeQuality/packages/core/src/store.ts:968              # FuzeQuality repository-inventory retry outbox entity
-src FuzeQuality/packages/core/src/store.ts:1023             # FuzeQuality repository-scan revision entity
-src FuzeQuality/packages/core/src/store.ts:1024             # FuzeQuality repository-inventory outbox entity
-src FuzeQuality/packages/core/src/store.ts:1041             # FuzeQuality suggestion-decision entity
-src FuzeQuality/packages/core/src/store.ts:1052             # FuzeQuality expected-test suggestion-decision entity
-src FuzeQuality/packages/core/src/store.ts:1165             # FuzeQuality admin-context audit entity
-src FuzeQuality/packages/core/src/store.ts:1267             # FuzeQuality identity-event outbox entity
-src FuzeQuality/packages/core/src/store.ts:1278             # FuzeQuality design-test-link outbox entity
-src FuzeQuality/packages/core/src/store.ts:3392             # FuzeQuality admin-context audit entity
+src FuzeQuality/apps/api/src/index.ts:507                   # FuzeQuality test-execution entity
+src FuzeQuality/apps/api/src/index.ts:1098                  # FuzeQuality controlled test-suite dispatch audit entity
+src FuzeQuality/apps/api/src/index.ts:1165                  # FuzeQuality legacy performance dispatch audit entity
+src FuzeQuality/packages/core/src/store.ts:638              # FuzeQuality repository-flow review audit entity
+src FuzeQuality/packages/core/src/store.ts:700              # FuzeQuality policy-gate review audit entity
+src FuzeQuality/packages/core/src/store.ts:940              # FuzeQuality repository entity
+src FuzeQuality/packages/core/src/store.ts:995              # FuzeQuality analysis-completed outbox entity
+src FuzeQuality/packages/core/src/store.ts:1009             # FuzeQuality repository-inventory retry outbox entity
+src FuzeQuality/packages/core/src/store.ts:1064             # FuzeQuality repository-scan revision entity
+src FuzeQuality/packages/core/src/store.ts:1065             # FuzeQuality repository-inventory outbox entity
+src FuzeQuality/packages/core/src/store.ts:1082             # FuzeQuality suggestion-decision entity
+src FuzeQuality/packages/core/src/store.ts:1093             # FuzeQuality expected-test suggestion-decision entity
+src FuzeQuality/packages/core/src/store.ts:1239             # FuzeQuality admin-context audit entity
+src FuzeQuality/packages/core/src/store.ts:1341             # FuzeQuality identity-event outbox entity
+src FuzeQuality/packages/core/src/store.ts:1352             # FuzeQuality design-test-link outbox entity
+src FuzeQuality/packages/core/src/store.ts:3528             # FuzeQuality admin-context audit entity

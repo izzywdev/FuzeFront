@@ -1,4 +1,5 @@
 import type { QualityArtifact, Repository, RepositoryFlowCandidate } from '@fuzequality/contracts'
+import { repositoryFlowHasBoundedPromptEvidence, repositoryFlowHasCompleteAnalysisProvenance } from '@fuzequality/contracts/repository-flow'
 
 export function repositoryFlowReviewConflict(
   repository: Repository,
@@ -48,12 +49,19 @@ export function repositoryFlowGroundingRationaleConflict(
     grounding &&
     (grounding.rejectedArtifactCount > 0 || grounding.ungroundedStepCount > 0)
   )
-  if (status !== 'confirmed' || !hasGroundingGaps || (reason?.trim().length ?? 0) >= 3) return undefined
+  const hasPromptCoverageGaps = repositoryFlowHasBoundedPromptEvidence(candidate)
+  if (status !== 'confirmed' || (!hasGroundingGaps && !hasPromptCoverageGaps) || (reason?.trim().length ?? 0) >= 3) return undefined
 
   return {
-    error: 'A reviewer rationale is required to confirm a LiteLLM flow with unverified repository grounding.',
-    code: 'FLOW_GROUNDING_RATIONALE_REQUIRED',
+    error: hasGroundingGaps
+      ? 'A reviewer rationale is required to confirm a LiteLLM flow with unverified repository grounding or bounded prompt evidence.'
+      : 'A reviewer rationale is required to confirm a LiteLLM flow produced from bounded prompt evidence.',
+    code: hasGroundingGaps ? 'FLOW_GROUNDING_RATIONALE_REQUIRED' : 'FLOW_PROMPT_COVERAGE_RATIONALE_REQUIRED',
     grounding,
+    promptCoverage: hasPromptCoverageGaps ? {
+      omittedArtifactCount: candidate.analysis?.promptOmittedArtifactCount,
+      contentTruncated: candidate.analysis?.promptContentTruncated,
+    } : undefined,
   } as const
 }
 
@@ -61,7 +69,7 @@ export function repositoryFlowAnalysisProvenanceConflict(
   candidate: RepositoryFlowCandidate,
   status: 'confirmed' | 'rejected',
 ) {
-  if (status !== 'confirmed' || candidate.source !== 'litellm' || candidate.analysis) return undefined
+  if (status !== 'confirmed' || repositoryFlowHasCompleteAnalysisProvenance(candidate)) return undefined
 
   return {
     error: 'This FuzeInfra LiteLLM flow has no stored model, prompt, and schema provenance. Regenerate the repository analysis before confirming it.',
@@ -80,6 +88,20 @@ export function repositoryFlowWireframeConflict(
   return {
     error: 'This UX-flow candidate has no reviewable wireframe. Regenerate the repository analysis before confirming it.',
     code: 'FLOW_WIREFRAME_REQUIRED',
+    candidateId: candidate.id,
+    revision: candidate.revision,
+  } as const
+}
+
+export function repositoryFlowStepsConflict(
+  candidate: RepositoryFlowCandidate,
+  status: 'confirmed' | 'rejected',
+) {
+  if (status !== 'confirmed' || candidate.steps.length > 0) return undefined
+
+  return {
+    error: 'This UX-flow candidate has no reviewable interaction steps. Regenerate the repository analysis before confirming it.',
+    code: 'FLOW_STEPS_REQUIRED',
     candidateId: candidate.id,
     revision: candidate.revision,
   } as const

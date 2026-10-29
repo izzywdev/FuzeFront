@@ -27,11 +27,12 @@ import type {
   QualityMembership,
 } from '@fuzequality/contracts'
 import { normalizeWorkflowPath, testExecutionEvidenceCollectionSchema, testExecutionEvidenceLinkSchema, TOPICS } from '@fuzequality/contracts'
-import { safeExecutionEvidenceUrl } from '@fuzequality/contracts/workflow-execution'
+import { safeExecutionEvidenceUrl } from '@fuzequality/contracts/workflow-execution'; import { repositoryFlowHasCompleteAnalysisProvenance } from '@fuzequality/contracts/repository-flow'
 import { buildApiExpectations, buildFindings, buildFrontendExpectations } from './coverage'
 import { buildQualityIntelligenceProjection, isQualityIntelligenceFinding } from './quality-projection'
 import { FLOW_COVERAGE_POLICY_VERSION } from './orphan-analysis'
 import { REQUIREMENT_REVIEW_POLICY_VERSION } from './requirement-analysis'
+import { tenantRequirementId, type IntelligenceSuggestion } from './intelligence'
 import { executionOutcomeTrend, executionPerformance, filterTestExecutions, normalizeExecutionArtifactIdentities, qualityArtifactLogicalIdentity, type ExecutionEvidenceRequirement, type ExecutionOutcomeTrend, type PolicyGatePerformance } from './execution-performance'
 
 export const currentQualityArtifactsSql = `SELECT id, logical_id, repository_id, revision, kind, title, source_path, summary, evidence, execution_target
@@ -55,7 +56,7 @@ export type RepositoryFlowCandidateQuery = {
   model?: string
   promptVersion?: string
   schemaVersion?: string
-  analysisRisk?: 'grounding-gaps' | 'prompt-truncated' | 'provenance-missing'
+  analysisRisk?: 'grounding-gaps' | 'prompt-truncated' | 'artifacts-omitted' | 'content-truncated' | 'provenance-missing' | 'wireframe-missing' | 'steps-missing'
   minConfidence?: number
   maxConfidence?: number
   after?: HistoryCursor
@@ -77,7 +78,7 @@ export type PolicyGateReview = {
   expectedReviewedAt?: string | null
 }
 export type PolicyGateEvaluationQuery = {
-  id?: string
+  id?: string; findingType?: 'relationship' | 'anomaly'
   kind?: PolicyGateEvaluation['kind']
   remediationAction?: PolicyGateEvaluation['remediationAction']
   severity?: PolicyGateEvaluation['severity']
@@ -177,8 +178,11 @@ function matchesCurrentOrAcceptedDispatch(
     dispatch.repositoryId === execution.repositoryId &&
     dispatch.tenantId === execution.tenantId &&
     dispatch.status === 'accepted' &&
+    executionKindForDispatch[dispatch.artifactKind] === execution.kind &&
     dispatch.ref === execution.branch &&
     dispatch.sourceRevision.toLowerCase() === execution.revision.toLowerCase() &&
+    Boolean(execution.startedAt) &&
+    Date.parse(execution.startedAt!) >= Date.parse(dispatch.requestedAt) &&
     normalizeWorkflowPath(dispatch.workflowPath) === normalizeWorkflowPath(execution.workflowPath)
   )
 }
@@ -205,17 +209,46 @@ function safeDispatchEvidenceCollection(value: unknown) {
   return parsed.success ? { evidenceCollection: parsed.data } : {}
 }
 
-/** Links only an accepted receipt to the newest exact revision/ref/workflow execution. */
+function sameDispatchExecutionIdentity(left: TestSuiteDispatch, right: TestSuiteDispatch) {
+  return left.repositoryId === right.repositoryId &&
+    left.tenantId === right.tenantId &&
+    left.artifactLogicalId === right.artifactLogicalId &&
+    left.artifactKind === right.artifactKind &&
+    left.ref === right.ref &&
+    left.sourceRevision.toLowerCase() === right.sourceRevision.toLowerCase() &&
+    normalizeWorkflowPath(left.workflowPath) === normalizeWorkflowPath(right.workflowPath)
+}
+
+function nextAcceptedDispatchAt(dispatch: TestSuiteDispatch, dispatches: TestSuiteDispatch[]) {
+  return dispatches
+    .filter(candidate => {
+      if (candidate.status !== 'accepted' || !sameDispatchExecutionIdentity(dispatch, candidate)) return false
+      const candidateTime = Date.parse(candidate.requestedAt)
+      const dispatchTime = Date.parse(dispatch.requestedAt)
+      return candidateTime > dispatchTime || (candidateTime === dispatchTime && candidate.id > dispatch.id)
+    })
+    .sort((left, right) => Date.parse(left.requestedAt) - Date.parse(right.requestedAt) || left.id.localeCompare(right.id))[0]
+    ?.requestedAt
+}
+
+/** Links an accepted receipt only to an exact execution in its request window. */
 export function withDispatchExecutionResult(
   dispatch: TestSuiteDispatch,
   executions: TestExecution[],
+  expectedHeadRepository?: string,
+  dispatches: TestSuiteDispatch[] = [],
 ): TestSuiteDispatch {
   if (dispatch.status !== 'accepted') return structuredClone(dispatch)
+  const nextRequestedAt = nextAcceptedDispatchAt(dispatch, dispatches)
   const execution = executions
     .filter(item =>
       item.repositoryId === dispatch.repositoryId &&
       item.tenantId === dispatch.tenantId &&
       item.provider === 'github-actions' &&
+      Boolean(expectedHeadRepository) &&
+      item.headRepository?.toLowerCase() === expectedHeadRepository?.toLowerCase() && Boolean(item.startedAt) &&
+      Date.parse(item.startedAt!) >= Date.parse(dispatch.requestedAt) &&
+      (!nextRequestedAt || Date.parse(item.startedAt!) < Date.parse(nextRequestedAt)) &&
       item.kind === executionKindForDispatch[dispatch.artifactKind] &&
       item.branch === dispatch.ref &&
       item.revision.toLowerCase() === dispatch.sourceRevision.toLowerCase() &&
@@ -272,12 +305,12 @@ export function mergeTestExecutionEvidence(
     : incoming.provider === 'github-actions' && incoming.evidenceCollection?.status === 'complete'
     ? existing.evidenceLinks.filter(link => !/^https:\/\/github\.com\/[^/]+\/[^/]+\/actions\/runs\/\d+\/artifacts\/\d+$/i.test(link.url))
     : existing.evidenceLinks
-  const evidenceLinks = new Map(
-    [...retainedEvidence, ...(incomingEvidenceIsStale ? [] : incoming.evidenceLinks)].map(link => [
-      `${link.kind}:${link.url}`,
-      link,
-    ])
-  )
+  const evidenceLinks = new Map<string, TestExecution['evidenceLinks'][number]>()
+  for (const link of [
+    ...(incomingEvidenceIsStale ? [] : incoming.evidenceLinks), ...retainedEvidence]) {
+    const key = `${link.kind}:${link.url}`
+    if (!evidenceLinks.has(key)) evidenceLinks.set(key, link)
+  }
   const richerSummary = (incoming.summary?.length ?? 0) > (existing.summary?.length ?? 0)
     ? incoming.summary
     : existing.summary
@@ -365,7 +398,7 @@ export interface CatalogStore {
   markSyncQueued(sourceType: SyncCursor['sourceType'], sourceKey: string, tenantId: string): Promise<SyncCursor>
   markSyncFailed(sourceType: SyncCursor['sourceType'], sourceKey: string, tenantId: string, code: NonNullable<SyncCursor['failureCode']>): Promise<void>
   saveIntelligence(
-    results: Array<{ requirement: Requirement; suggestions: Suggestion[] }>,
+    results: Array<{ requirement: Requirement; suggestions: IntelligenceSuggestion[] }>,
     sync?: Pick<SyncCursor, 'sourceType' | 'sourceKey' | 'cursor'> & { tenantId: string }
   ): Promise<void>
   rebuildCoverage(): Promise<CoverageProjection>
@@ -559,8 +592,8 @@ export class MemoryCatalogStore implements CatalogStore {
                 item.analysis.grounding.ungroundedStepCount > 0
               ))
             : query.analysisRisk === 'prompt-truncated'
-              ? item.source === 'litellm' && item.analysis?.promptTruncated === true
-              : item.source === 'litellm' && !item.analysis
+              ? item.source === 'litellm' && Boolean(item.analysis && (item.analysis.promptTruncated === true || (item.analysis.promptOmittedArtifactCount ?? 0) > 0 || item.analysis.promptContentTruncated === true || (item.analysis.inputArtifactCount !== undefined && item.analysis.promptArtifactCount !== undefined && item.analysis.promptArtifactCount < item.analysis.inputArtifactCount)))
+              : query.analysisRisk === 'artifacts-omitted' ? item.source === 'litellm' && Boolean(item.analysis && (item.analysis.promptOmittedArtifactCount ?? Math.max((item.analysis.inputArtifactCount ?? 0) - (item.analysis.promptArtifactCount ?? 0), 0)) > 0) : query.analysisRisk === 'content-truncated' ? item.source === 'litellm' && item.analysis?.promptContentTruncated === true : query.analysisRisk === 'provenance-missing' ? item.source === 'litellm' && !repositoryFlowHasCompleteAnalysisProvenance(item) : query.analysisRisk === 'wireframe-missing' ? item.wireframe.nodes.length === 0 : item.steps.length === 0
         )) &&
         (query.minConfidence === undefined || item.confidence >= query.minConfidence) &&
         (query.maxConfidence === undefined || item.confidence <= query.maxConfidence)
@@ -620,7 +653,7 @@ export class MemoryCatalogStore implements CatalogStore {
       .filter(item =>
         item.repositoryId === repositoryId && item.tenantId === tenantId &&
         (!query.id || item.id === query.id) &&
-        (!query.kind || item.kind === query.kind) &&
+        (!query.kind || item.kind === query.kind) && (!query.findingType || (query.findingType === 'relationship' ? item.kind === 'guarded-policy' : item.kind !== 'guarded-policy')) &&
         (!query.remediationAction || item.remediationAction === query.remediationAction) &&
         (!query.severity || item.severity === query.severity) &&
         (!query.reviewStatus || item.reviewStatus === query.reviewStatus) &&
@@ -754,7 +787,7 @@ export class MemoryCatalogStore implements CatalogStore {
   async policyGatePerformance(repositoryId: string, tenantId: string, query: PolicyGatePerformanceQuery = {}) {
     const snapshot = this.executionSnapshot(query.snapshotAt)
       .filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId)
-      .sort((left, right) => testExecutionOccurredAtMillis(right) - testExecutionOccurredAtMillis(left) || right.id.localeCompare(left.id))
+      .sort((left, right) => testExecutionOccurredAtMillis(right) - testExecutionOccurredAtMillis(left) || right.revision.localeCompare(left.revision) || right.id.localeCompare(left.id))
     const artifacts = this.artifacts.filter(item => item.repositoryId === repositoryId)
     const selectedPolicyArtifactId = qualityArtifactLogicalIdentity(repositoryId, query.policyArtifactId, artifacts)
     const selectedGateArtifactId = qualityArtifactLogicalIdentity(repositoryId, query.gateArtifactId, artifacts)
@@ -847,7 +880,11 @@ export class MemoryCatalogStore implements CatalogStore {
     const page = query.limit === undefined
       ? result
       : result.slice(0, Math.min(Math.max(query.limit, 1), 101))
-    return page.map(item => withDispatchExecutionResult(item, this.executions))
+    const repository = this.data.repositories.find(item =>
+      item.id === repositoryId && item.tenantId === tenantId
+    )
+    const expectedHeadRepository = repository ? `${repository.owner}/${repository.name}` : undefined
+    return page.map(item => withDispatchExecutionResult(item, this.executions, expectedHeadRepository, this.testSuiteDispatches))
   }
 
   async testSuiteDispatchHistory(
@@ -857,12 +894,16 @@ export class MemoryCatalogStore implements CatalogStore {
     query: TestSuiteDispatchHistoryQuery = {},
   ) {
     const limit = Math.min(Math.max(query.limit ?? 50, 1), 101)
+    const repository = this.data.repositories.find(item =>
+      item.id === repositoryId && item.tenantId === tenantId
+    )
+    const expectedHeadRepository = repository ? `${repository.owner}/${repository.name}` : undefined
     return this.testSuiteDispatches
       .filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId && item.artifactLogicalId === artifactLogicalId)
       .sort((left, right) => right.requestedAt.localeCompare(left.requestedAt) || right.id.localeCompare(left.id))
       .filter(item => !query.after || item.requestedAt < query.after.createdAt || (item.requestedAt === query.after.createdAt && item.id < query.after.id))
       .slice(0, limit)
-      .map(item => withDispatchExecutionResult(item, this.executions))
+      .map(item => withDispatchExecutionResult(item, this.executions, expectedHeadRepository, this.testSuiteDispatches))
   }
 
   async testSuiteDispatchLogicalId(
@@ -1114,17 +1155,50 @@ export class MemoryCatalogStore implements CatalogStore {
   }
 
   async saveIntelligence(
-    results: Array<{ requirement: Requirement; suggestions: Suggestion[] }>,
+    results: Array<{ requirement: Requirement; suggestions: IntelligenceSuggestion[] }>,
     sync?: Pick<SyncCursor, 'sourceType' | 'sourceKey' | 'cursor'> & { tenantId: string }
   ) {
     for (const result of results) {
-      const requirement = { ...result.requirement, tenantId: sync?.tenantId }
+      if (!sync?.tenantId) throw new Error('Tenant-scoped Jira intelligence is required')
+      const requirement = {
+        ...result.requirement,
+        id: tenantRequirementId(sync.tenantId, result.requirement.jiraKey),
+        tenantId: sync.tenantId,
+      }
       const existing = this.data.requirements.find(item => item.jiraKey === requirement.jiraKey && item.tenantId === requirement.tenantId)
-      if (existing) Object.assign(existing, requirement)
+      const previousRequirementId = existing?.id
+      if (existing) {
+        Object.assign(existing, requirement)
+        if (previousRequirementId && previousRequirementId !== requirement.id) {
+          this.data.suggestions.forEach(item => {
+            if (item.requirementId === previousRequirementId) item.requirementId = requirement.id
+          })
+          this.data.flows.forEach(item => {
+            if (item.requirementId === previousRequirementId) item.requirementId = requirement.id
+          })
+        }
+      }
       else this.data.requirements.push(requirement)
+      const preservedIds = new Set<string>()
+      const incoming: Suggestion[] = []
+      for (const { compatibilityIds = [], ...suggestion } of result.suggestions) {
+        const current = this.data.suggestions.find(item => item.requirementId === requirement.id && item.id === suggestion.id)
+        if (current?.state !== undefined && current.state !== 'proposed') {
+          preservedIds.add(current.id)
+          continue
+        }
+        const compatible = this.data.suggestions.find(item =>
+          item.requirementId === requirement.id && compatibilityIds.includes(item.id)
+        )
+        if (compatible) {
+          preservedIds.add(compatible.id)
+          continue
+        }
+        incoming.push(suggestion)
+      }
       this.data.suggestions = [
-        ...this.data.suggestions.filter(item => item.requirementId !== requirement.id || item.state !== 'proposed'),
-        ...result.suggestions,
+        ...this.data.suggestions.filter(item => item.requirementId !== requirement.id || item.state !== 'proposed' || preservedIds.has(item.id)),
+        ...incoming,
       ]
     }
     if (sync) {
@@ -1494,8 +1568,8 @@ export class PostgresCatalogStore implements CatalogStore {
            OR ($12='grounding-gaps' AND source='litellm' AND (
              COALESCE((analysis_provenance->'grounding'->>'rejectedArtifactCount')::integer,0)>0
              OR COALESCE((analysis_provenance->'grounding'->>'ungroundedStepCount')::integer,0)>0))
-           OR ($12='prompt-truncated' AND source='litellm' AND analysis_provenance->>'promptTruncated'='true')
-           OR ($12='provenance-missing' AND source='litellm' AND analysis_provenance IS NULL))
+           OR ($12='prompt-truncated' AND source='litellm' AND (analysis_provenance->>'promptTruncated'='true' OR COALESCE((analysis_provenance->>'promptOmittedArtifactCount')::integer,(analysis_provenance->>'inputArtifactCount')::integer-(analysis_provenance->>'promptArtifactCount')::integer,0)>0 OR analysis_provenance->>'promptContentTruncated'='true'))
+           OR ($12='artifacts-omitted' AND source='litellm' AND COALESCE((analysis_provenance->>'promptOmittedArtifactCount')::integer,(analysis_provenance->>'inputArtifactCount')::integer-(analysis_provenance->>'promptArtifactCount')::integer,0)>0) OR ($12='content-truncated' AND source='litellm' AND analysis_provenance->>'promptContentTruncated'='true') OR ($12='provenance-missing' AND source='litellm' AND (analysis_provenance IS NULL OR analysis_provenance->>'provider' IS DISTINCT FROM 'fuzeinfra-litellm' OR NULLIF(BTRIM(analysis_provenance->>'model'),'') IS NULL OR NULLIF(BTRIM(analysis_provenance->>'promptVersion'),'') IS NULL OR NULLIF(BTRIM(analysis_provenance->>'schemaVersion'),'') IS NULL)) OR ($12='wireframe-missing' AND jsonb_array_length(COALESCE(wireframe->'nodes','[]'::jsonb))=0) OR ($12='steps-missing' AND jsonb_array_length(COALESCE(steps,'[]'::jsonb))=0))
          AND ($16::text IS NULL
            OR EXISTS (
              SELECT 1 FROM jsonb_array_elements_text(COALESCE(evidence, '[]'::jsonb)) AS evidence_target(value)
@@ -1593,7 +1667,7 @@ export class PostgresCatalogStore implements CatalogStore {
       `SELECT * FROM fuzequality.policy_gate_evaluations
        WHERE repository_id=$1 AND tenant_id=$2
          AND ($3::text IS NULL OR id=$3)
-         AND ($4::text IS NULL OR kind=$4)
+         AND ($4::text IS NULL OR kind=$4) AND ($18::text IS NULL OR ($18='relationship' AND kind='guarded-policy') OR ($18='anomaly' AND kind<>'guarded-policy'))
          AND ($5::text IS NULL OR severity=$5)
          AND ($6::text IS NULL OR review_status=$6)
          AND ($7::text IS NULL OR revision=$7)
@@ -1619,7 +1693,7 @@ export class PostgresCatalogStore implements CatalogStore {
          ))
        ORDER BY created_at DESC,id DESC
        LIMIT COALESCE($12::integer, 2147483647)`,
-      [repositoryId, tenantId, query.id ?? null, query.kind ?? null, query.severity ?? null, query.reviewStatus ?? null, query.revision ?? null, query.minConfidence ?? null, query.maxConfidence ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null, query.subject ?? null, query.remediationAction ?? null, query.policyArtifactId ?? null, query.gateArtifactId ?? null, query.sourcePath ?? null],
+      [repositoryId, tenantId, query.id ?? null, query.kind ?? null, query.severity ?? null, query.reviewStatus ?? null, query.revision ?? null, query.minConfidence ?? null, query.maxConfidence ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null, query.subject ?? null, query.remediationAction ?? null, query.policyArtifactId ?? null, query.gateArtifactId ?? null, query.sourcePath ?? null, query.findingType ?? null],
     )
     return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, kind: row.kind, severity: row.severity, title: row.title, detail: row.detail, policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, confidence: Number(row.confidence), scope: row.scope, evidencePassages: row.evidence_passages ?? [], remediationAction: row.remediation_action, recommendation: row.recommendation, reviewStatus: row.review_status, reviewedAt: row.reviewed_at?.toISOString(), reviewedBy: row.reviewed_by ?? undefined, reviewReason: row.review_reason ?? undefined, createdAt: row.created_at.toISOString() }))
   }
@@ -1791,7 +1865,7 @@ export class PostgresCatalogStore implements CatalogStore {
                WHERE COALESCE(invalid_evidence.value->>'url','') !~* '^https://[^/?#[:space:]]+'
              ))
            OR ($25='provider-collection-failure'
-             AND executions.evidence_collection->>'errorCode' IS NOT NULL)
+             AND executions.evidence_collection->>'status'='unavailable')
            OR ($25='github-run-provenance-missing'
              AND executions.provider='github-actions'
              AND (executions.head_repository IS NULL
@@ -1799,7 +1873,7 @@ export class PostgresCatalogStore implements CatalogStore {
                OR executions.source_url IS NULL
                OR executions.source_url !~* '^https://[^/?#[:space:]]+'))
            OR ($25='attempt-provenance-unverified'
-             AND COALESCE(executions.evidence_collection->'issues','[]'::jsonb) ? 'attempt-provenance-unverified')
+             AND COALESCE(executions.evidence_collection->'issues','[]'::jsonb) ? 'attempt-provenance-unverified') OR ($25='head-repository-unverified' AND COALESCE(executions.evidence_collection->'issues','[]'::jsonb) ? 'head-repository-unverified') OR ($25='provider-result-limited' AND (executions.evidence_collection->>'errorCode'='PROVIDER_RESULT_LIMIT_EXCEEDED' OR COALESCE(executions.evidence_collection->'issues','[]'::jsonb) ? 'provider-result-limit-exceeded'))
            OR ($25='post-production-video-missing'
              AND executions.kind='post-production'
              AND NOT EXISTS (
@@ -1809,7 +1883,7 @@ export class PostgresCatalogStore implements CatalogStore {
              ))
            OR ($25='terminal-timing-missing'
              AND executions.status<>'running'
-             AND (executions.started_at IS NULL OR executions.completed_at IS NULL))
+             AND (executions.started_at IS NULL OR executions.completed_at IS NULL OR executions.completed_at < executions.started_at))
            OR ($25='performance-threshold-missing'
              AND executions.kind IN ('load','stress')
              AND jsonb_array_length(COALESCE(executions.thresholds,'[]'::jsonb))=0)
@@ -1850,6 +1924,13 @@ export class PostgresCatalogStore implements CatalogStore {
                WHERE dispatch.repository_id=execution.repository_id
                  AND dispatch.tenant_id=execution.tenant_id
                  AND dispatch.status='accepted'
+                 AND execution.started_at >= dispatch.requested_at
+                 AND execution.kind=CASE dispatch.artifact_kind
+                   WHEN 'integration-test' THEN 'integration'
+                   WHEN 'post-production-test' THEN 'post-production'
+                   WHEN 'load-test' THEN 'load'
+                   WHEN 'stress-test' THEN 'stress'
+                 END
                  AND dispatch.workflow_path=split_part(execution.workflow_path,'@',1)
                  AND lower(dispatch.source_revision)=lower(execution.revision)
                  AND dispatch.source_ref=execution.branch
@@ -1879,6 +1960,13 @@ export class PostgresCatalogStore implements CatalogStore {
                WHERE dispatch.repository_id=execution.repository_id
                  AND dispatch.tenant_id=execution.tenant_id
                  AND dispatch.status='accepted'
+                 AND execution.started_at >= dispatch.requested_at
+                 AND execution.kind=CASE dispatch.artifact_kind
+                   WHEN 'integration-test' THEN 'integration'
+                   WHEN 'post-production-test' THEN 'post-production'
+                   WHEN 'load-test' THEN 'load'
+                   WHEN 'stress-test' THEN 'stress'
+                 END
                  AND dispatch.workflow_path=split_part(execution.workflow_path,'@',1)
                  AND lower(dispatch.source_revision)=lower(execution.revision)
                  AND dispatch.source_ref=execution.branch
@@ -1908,6 +1996,13 @@ export class PostgresCatalogStore implements CatalogStore {
                WHERE dispatch.repository_id=execution.repository_id
                  AND dispatch.tenant_id=execution.tenant_id
                  AND dispatch.status='accepted'
+                 AND execution.started_at >= dispatch.requested_at
+                 AND execution.kind=CASE dispatch.artifact_kind
+                   WHEN 'integration-test' THEN 'integration'
+                   WHEN 'post-production-test' THEN 'post-production'
+                   WHEN 'load-test' THEN 'load'
+                   WHEN 'stress-test' THEN 'stress'
+                 END
                  AND dispatch.workflow_path=split_part(execution.workflow_path,'@',1)
                  AND lower(dispatch.source_revision)=lower(execution.revision)
                  AND dispatch.source_ref=execution.branch
@@ -1983,7 +2078,7 @@ export class PostgresCatalogStore implements CatalogStore {
               count(*) FILTER (WHERE evidence_collection->>'status'='partial')::integer AS evidence_partial_count,
               count(*) FILTER (WHERE evidence_collection->>'status'='unavailable')::integer AS evidence_unavailable_count,
               count(*) FILTER (WHERE evidence_collection IS NULL)::integer AS evidence_not_collected_count,
-              count(*) FILTER (WHERE evidence_collection->>'errorCode' IS NOT NULL)::integer AS evidence_collection_failure_count,
+              count(*) FILTER (WHERE evidence_collection->>'status'='unavailable')::integer AS evidence_collection_failure_count,
               count(*) FILTER (WHERE EXISTS (
                 SELECT 1 FROM jsonb_array_elements(COALESCE(evidence_links,'[]'::jsonb)) AS evidence(value)
                 WHERE COALESCE(evidence.value->>'url','') !~* '^https://[^/?#[:space:]]+'
@@ -1995,7 +2090,7 @@ export class PostgresCatalogStore implements CatalogStore {
               )::integer AS github_run_provenance_missing_count,
               count(*) FILTER (
                 WHERE COALESCE(evidence_collection->'issues','[]'::jsonb) ? 'attempt-provenance-unverified'
-              )::integer AS attempt_provenance_unverified_count,
+              )::integer AS attempt_provenance_unverified_count, count(*) FILTER (WHERE evidence_collection->>'errorCode'='PROVIDER_RESULT_LIMIT_EXCEEDED' OR COALESCE(evidence_collection->'issues','[]'::jsonb) ? 'provider-result-limit-exceeded')::integer AS provider_result_limited_count, count(*) FILTER (WHERE COALESCE(evidence_collection->'issues','[]'::jsonb) ? 'head-repository-unverified')::integer AS head_repository_unverified_count,
               count(*) FILTER (
                 WHERE kind='post-production' AND NOT EXISTS (
                   SELECT 1 FROM jsonb_array_elements(COALESCE(evidence_links,'[]'::jsonb)) AS evidence(value)
@@ -2146,7 +2241,7 @@ export class PostgresCatalogStore implements CatalogStore {
                WHERE COALESCE(invalid_evidence.value->>'url','') !~* '^https://[^/?#[:space:]]+'
              ))
            OR ($25='provider-collection-failure'
-             AND executions.evidence_collection->>'errorCode' IS NOT NULL)
+             AND executions.evidence_collection->>'status'='unavailable')
            OR ($25='github-run-provenance-missing'
              AND executions.provider='github-actions'
              AND (executions.head_repository IS NULL
@@ -2154,7 +2249,7 @@ export class PostgresCatalogStore implements CatalogStore {
                OR executions.source_url IS NULL
                OR executions.source_url !~* '^https://[^/?#[:space:]]+'))
            OR ($25='attempt-provenance-unverified'
-             AND COALESCE(executions.evidence_collection->'issues','[]'::jsonb) ? 'attempt-provenance-unverified')
+             AND COALESCE(executions.evidence_collection->'issues','[]'::jsonb) ? 'attempt-provenance-unverified') OR ($25='head-repository-unverified' AND COALESCE(executions.evidence_collection->'issues','[]'::jsonb) ? 'head-repository-unverified') OR ($25='provider-result-limited' AND (executions.evidence_collection->>'errorCode'='PROVIDER_RESULT_LIMIT_EXCEEDED' OR COALESCE(executions.evidence_collection->'issues','[]'::jsonb) ? 'provider-result-limit-exceeded'))
            OR ($25='post-production-video-missing'
              AND executions.kind='post-production'
              AND NOT EXISTS (
@@ -2164,7 +2259,7 @@ export class PostgresCatalogStore implements CatalogStore {
              ))
            OR ($25='terminal-timing-missing'
              AND executions.status<>'running'
-             AND (executions.started_at IS NULL OR executions.completed_at IS NULL))
+             AND (executions.started_at IS NULL OR executions.completed_at IS NULL OR executions.completed_at < executions.started_at))
            OR ($25='performance-threshold-missing'
              AND executions.kind IN ('load','stress')
              AND jsonb_array_length(COALESCE(executions.thresholds,'[]'::jsonb))=0)
@@ -2204,7 +2299,7 @@ export class PostgresCatalogStore implements CatalogStore {
       evidenceCollectionFailureCount: row.evidence_collection_failure_count,
       invalidEvidenceUrlCount: row.invalid_evidence_url_count,
       githubRunProvenanceMissingCount: row.github_run_provenance_missing_count,
-      attemptProvenanceUnverifiedCount: row.attempt_provenance_unverified_count,
+      attemptProvenanceUnverifiedCount: row.attempt_provenance_unverified_count, providerResultLimitedCount: row.provider_result_limited_count, headRepositoryUnverifiedCount: row.head_repository_unverified_count,
       postProductionVideoMissingCount: row.post_production_video_missing_count,
       terminalTimingMissingCount: row.terminal_timing_missing_count,
       gateEvaluationCount: row.gate_evaluation_count,
@@ -2284,7 +2379,7 @@ export class PostgresCatalogStore implements CatalogStore {
                  WHERE COALESCE(invalid_evidence.value->>'url','') !~* '^https://[^/?#[:space:]]+'
                ))
              OR ($28='provider-collection-failure'
-               AND executions.evidence_collection->>'errorCode' IS NOT NULL)
+               AND executions.evidence_collection->>'status'='unavailable')
              OR ($28='github-run-provenance-missing'
                AND executions.provider='github-actions'
                AND (executions.head_repository IS NULL
@@ -2292,7 +2387,7 @@ export class PostgresCatalogStore implements CatalogStore {
                  OR executions.source_url IS NULL
                  OR executions.source_url !~* '^https://[^/?#[:space:]]+'))
              OR ($28='attempt-provenance-unverified'
-               AND COALESCE(executions.evidence_collection->'issues','[]'::jsonb) ? 'attempt-provenance-unverified')
+               AND COALESCE(executions.evidence_collection->'issues','[]'::jsonb) ? 'attempt-provenance-unverified') OR ($28='head-repository-unverified' AND COALESCE(executions.evidence_collection->'issues','[]'::jsonb) ? 'head-repository-unverified') OR ($28='provider-result-limited' AND (executions.evidence_collection->>'errorCode'='PROVIDER_RESULT_LIMIT_EXCEEDED' OR COALESCE(executions.evidence_collection->'issues','[]'::jsonb) ? 'provider-result-limit-exceeded'))
              OR ($28='post-production-video-missing'
                AND executions.kind='post-production'
                AND NOT EXISTS (
@@ -2302,7 +2397,7 @@ export class PostgresCatalogStore implements CatalogStore {
                ))
              OR ($28='terminal-timing-missing'
                AND executions.status<>'running'
-               AND (executions.started_at IS NULL OR executions.completed_at IS NULL))
+               AND (executions.started_at IS NULL OR executions.completed_at IS NULL OR executions.completed_at < executions.started_at))
              OR ($28='performance-threshold-missing'
                AND executions.kind IN ('load','stress')
                AND jsonb_array_length(COALESCE(executions.thresholds,'[]'::jsonb))=0)
@@ -2426,13 +2521,13 @@ export class PostgresCatalogStore implements CatalogStore {
              FROM (SELECT DISTINCT ON (link->>'kind',link->>'url') link,ordinal
                FROM jsonb_array_elements(
                  CASE WHEN EXCLUDED.provider='github-actions' AND EXCLUDED.evidence_collection->>'status'='complete'
-                   THEN (SELECT COALESCE(jsonb_agg(existing_link),'[]'::jsonb)
+                   THEN EXCLUDED.evidence_links || (SELECT COALESCE(jsonb_agg(existing_link),'[]'::jsonb)
                      FROM jsonb_array_elements(fuzequality.test_executions.evidence_links) AS retained(existing_link)
-                     WHERE existing_link->>'url' !~* '^https://github\\.com/[^/]+/[^/]+/actions/runs/[0-9]+/artifacts/[0-9]+$') || EXCLUDED.evidence_links
-                   ELSE fuzequality.test_executions.evidence_links || EXCLUDED.evidence_links
+                     WHERE existing_link->>'url' !~* '^https://github\\.com/[^/]+/[^/]+/actions/runs/[0-9]+/artifacts/[0-9]+$')
+                   ELSE EXCLUDED.evidence_links || fuzequality.test_executions.evidence_links
                  END
                ) WITH ORDINALITY AS evidence(link,ordinal)
-               ORDER BY link->>'kind',link->>'url',ordinal DESC
+               ORDER BY link->>'kind',link->>'url',ordinal ASC
              ) AS deduplicated_links ORDER BY ordinal LIMIT 100
            ) AS bounded_links)
          END,
@@ -2495,6 +2590,8 @@ export class PostgresCatalogStore implements CatalogStore {
               execution.evidence_collection AS result_evidence_collection,
               execution.started_at AS result_started_at,execution.completed_at AS result_completed_at
        FROM latest
+       JOIN fuzequality.repositories AS repository
+         ON repository.id=latest.repository_id AND repository.tenant_id=latest.tenant_id
        LEFT JOIN LATERAL (
          SELECT candidate.id,candidate.provider,candidate.external_run_id,candidate.attempt,candidate.status,
                 candidate.source_url,candidate.evidence_links,candidate.evidence_collection,candidate.started_at,candidate.completed_at
@@ -2503,6 +2600,7 @@ export class PostgresCatalogStore implements CatalogStore {
            AND candidate.repository_id=latest.repository_id
            AND candidate.tenant_id=latest.tenant_id
            AND candidate.provider='github-actions'
+           AND lower(candidate.head_repository)=lower(repository.owner || '/' || repository.name) AND candidate.started_at >= latest.requested_at
            AND candidate.kind=CASE latest.artifact_kind
              WHEN 'integration-test' THEN 'integration'
              WHEN 'post-production-test' THEN 'post-production'
@@ -2512,6 +2610,19 @@ export class PostgresCatalogStore implements CatalogStore {
            AND candidate.branch=latest.source_ref
            AND lower(candidate.revision)=lower(latest.source_revision)
            AND split_part(candidate.workflow_path,'@',1)=latest.workflow_path
+           AND NOT EXISTS (
+             SELECT 1 FROM fuzequality.test_suite_dispatches AS next_dispatch
+             WHERE next_dispatch.repository_id=latest.repository_id
+               AND next_dispatch.tenant_id=latest.tenant_id
+               AND next_dispatch.artifact_logical_id=latest.artifact_logical_id
+               AND next_dispatch.artifact_kind=latest.artifact_kind
+               AND next_dispatch.status='accepted'
+               AND next_dispatch.source_ref=latest.source_ref
+               AND lower(next_dispatch.source_revision)=lower(latest.source_revision)
+               AND next_dispatch.workflow_path=latest.workflow_path
+               AND (next_dispatch.requested_at,next_dispatch.id) > (latest.requested_at,latest.id)
+               AND next_dispatch.requested_at <= candidate.started_at
+           )
          ORDER BY COALESCE(candidate.completed_at,candidate.started_at,candidate.created_at) DESC,candidate.id DESC
          LIMIT 1
        ) AS execution ON true
@@ -2576,6 +2687,8 @@ export class PostgresCatalogStore implements CatalogStore {
          execution.evidence_collection AS result_evidence_collection,
          execution.started_at AS result_started_at,execution.completed_at AS result_completed_at
        FROM fuzequality.test_suite_dispatches AS dispatch
+       JOIN fuzequality.repositories AS repository
+         ON repository.id=dispatch.repository_id AND repository.tenant_id=dispatch.tenant_id
        LEFT JOIN LATERAL (
          SELECT candidate.id,candidate.provider,candidate.external_run_id,candidate.attempt,candidate.status,
                 candidate.source_url,candidate.evidence_links,candidate.evidence_collection,candidate.started_at,candidate.completed_at
@@ -2584,6 +2697,7 @@ export class PostgresCatalogStore implements CatalogStore {
            AND candidate.repository_id=dispatch.repository_id
            AND candidate.tenant_id=dispatch.tenant_id
            AND candidate.provider='github-actions'
+           AND lower(candidate.head_repository)=lower(repository.owner || '/' || repository.name) AND candidate.started_at >= dispatch.requested_at
            AND candidate.kind=CASE dispatch.artifact_kind
              WHEN 'integration-test' THEN 'integration'
              WHEN 'post-production-test' THEN 'post-production'
@@ -2593,6 +2707,19 @@ export class PostgresCatalogStore implements CatalogStore {
            AND candidate.branch=dispatch.source_ref
            AND lower(candidate.revision)=lower(dispatch.source_revision)
            AND split_part(candidate.workflow_path,'@',1)=dispatch.workflow_path
+           AND NOT EXISTS (
+             SELECT 1 FROM fuzequality.test_suite_dispatches AS next_dispatch
+             WHERE next_dispatch.repository_id=dispatch.repository_id
+               AND next_dispatch.tenant_id=dispatch.tenant_id
+               AND next_dispatch.artifact_logical_id=dispatch.artifact_logical_id
+               AND next_dispatch.artifact_kind=dispatch.artifact_kind
+               AND next_dispatch.status='accepted'
+               AND next_dispatch.source_ref=dispatch.source_ref
+               AND lower(next_dispatch.source_revision)=lower(dispatch.source_revision)
+               AND next_dispatch.workflow_path=dispatch.workflow_path
+               AND (next_dispatch.requested_at,next_dispatch.id) > (dispatch.requested_at,dispatch.id)
+               AND next_dispatch.requested_at <= candidate.started_at
+           )
          ORDER BY COALESCE(candidate.completed_at,candidate.started_at,candidate.created_at) DESC,candidate.id DESC
          LIMIT 1
        ) AS execution ON true
@@ -3209,7 +3336,7 @@ export class PostgresCatalogStore implements CatalogStore {
   }
 
   async saveIntelligence(
-    results: Array<{ requirement: Requirement; suggestions: Suggestion[] }>,
+    results: Array<{ requirement: Requirement; suggestions: IntelligenceSuggestion[] }>,
     sync?: Pick<SyncCursor, 'sourceType' | 'sourceKey' | 'cursor'> & { tenantId: string }
   ) {
     const client = await this.pool.connect()
@@ -3229,7 +3356,16 @@ export class PostgresCatalogStore implements CatalogStore {
             [requirementId, criterion.fingerprint, criterion.position, criterion.text],
           )
         }
-        for (const suggestion of suggestions) await client.query(`INSERT INTO fuzequality.suggestions (id,requirement_id,type,title,confidence,evidence,payload,state,source_fingerprint) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (id) DO NOTHING`, [suggestion.id,requirementId,suggestion.type,suggestion.title,suggestion.confidence,JSON.stringify(suggestion.evidence),JSON.stringify(suggestion.payload),suggestion.state,requirement.updatedAt])
+        for (const { compatibilityIds = [], ...suggestion } of suggestions) {
+          if (compatibilityIds.length) {
+            const compatible = await client.query(
+              'SELECT id FROM fuzequality.suggestions WHERE requirement_id=$1 AND id = ANY($2::uuid[]) LIMIT 1',
+              [requirementId, compatibilityIds],
+            )
+            if (compatible.rowCount) continue
+          }
+          await client.query(`INSERT INTO fuzequality.suggestions (id,requirement_id,type,title,confidence,evidence,payload,state,source_fingerprint) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (id) DO NOTHING`, [suggestion.id,requirementId,suggestion.type,suggestion.title,suggestion.confidence,JSON.stringify(suggestion.evidence),JSON.stringify(suggestion.payload),suggestion.state,requirement.updatedAt])
+        }
       }
       if (sync) {
         await client.query(

@@ -81,6 +81,15 @@ describe('policy-gate inventory filter', () => {
     expect(filterPolicyGateEvaluations([evaluation(), guarded], filter)).toEqual([guarded])
   })
 
+  it('classifies guarded relationships separately from reviewable anomalies', () => {
+    const anomaly = evaluation()
+    const relationship = evaluation({ id: 'guarded', kind: 'guarded-policy', severity: 'low' })
+
+    expect(filterPolicyGateEvaluations([anomaly, relationship], policyGateFilterSchema.parse({ findingType: 'anomaly' }))).toEqual([anomaly])
+    expect(filterPolicyGateEvaluations([anomaly, relationship], policyGateFilterSchema.parse({ findingType: 'relationship' }))).toEqual([relationship])
+    expect(policyGateFilterSchema.safeParse({ findingType: 'finding' }).success).toBe(false)
+  })
+
   it('rejects unknown query keys and invalid filter values', () => {
     expect(
       policyGateFilterSchema.safeParse({ kind: 'missing-owner' }).success
@@ -131,6 +140,7 @@ describe('policy-gate inventory filter', () => {
 
   it('forwards every validated internal filter, including exact source path, with lookahead pagination', () => {
     const filter = policyGateFilterSchema.parse({
+      findingType: 'anomaly',
       sourcePath: 'governance/deployment.md',
       subject: 'deployment',
       cursor: 'opaque',
@@ -139,6 +149,7 @@ describe('policy-gate inventory filter', () => {
     const after = { createdAt: '2026-10-10T00:00:00.000Z', id: 'evaluation-1' }
 
     expect(policyGateStoreQuery(filter, after)).toEqual({
+      findingType: 'anomaly',
       sourcePath: 'governance/deployment.md',
       subject: 'deployment',
       after,

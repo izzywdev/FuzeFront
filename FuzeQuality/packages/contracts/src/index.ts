@@ -360,7 +360,7 @@ export type SyncCursor = {
   cursor?: string
   lastSuccessAt?: string
   freshnessStatus: 'unknown' | 'queued' | 'fresh' | 'stale' | 'failed'
-  failureCode?: 'JIRA_UNAVAILABLE' | 'INTELLIGENCE_UNAVAILABLE' | 'INTELLIGENCE_TIMEOUT' | 'INTELLIGENCE_INVALID_RESPONSE' | 'SEMANTIC_INDEX_UNAVAILABLE'
+  failureCode?: 'JIRA_UNAVAILABLE' | 'REQUIREMENT_QUEUE_UNAVAILABLE' | 'INTELLIGENCE_UNAVAILABLE' | 'INTELLIGENCE_TIMEOUT' | 'INTELLIGENCE_INVALID_RESPONSE' | 'SEMANTIC_INDEX_UNAVAILABLE'
 }
 
 export type RequirementSyncResult = {
@@ -509,7 +509,11 @@ export type RepositoryFlowCandidate = {
     inputArtifactCount?: number
     /** Repository artifacts whose IDs and bounded content were sent to LiteLLM. */
     promptArtifactCount?: number
-    /** True when artifact selection or source-byte limits omitted input evidence. */
+    /** Exact number of repository artifacts omitted from the LiteLLM prompt. */
+    promptOmittedArtifactCount?: number
+    /** True when content from a supplied artifact was shortened by source-byte limits. */
+    promptContentTruncated?: boolean
+    /** Backward-compatible aggregate: artifact selection or source-byte limits omitted input evidence. */
     promptTruncated?: boolean
     /** Review telemetry for repository artifact references returned by the model. */
     grounding?: {
@@ -657,7 +661,7 @@ export type TestExecutionEvidenceCollection = {
   status: 'complete' | 'partial' | 'unavailable'
   checkedAt: string
   errorCode?: 'PROVIDER_TIMEOUT' | 'PROVIDER_UNAVAILABLE' | 'PROVIDER_RESPONSE_INVALID' | 'PROVIDER_RESULT_LIMIT_EXCEEDED'
-  issues?: Array<'provider-result-limit-exceeded' | 'attempt-provenance-unverified'>
+  issues?: Array<'provider-result-limit-exceeded' | 'attempt-provenance-unverified' | 'head-repository-unverified'>
   /** Run-level artifacts withheld from exact-attempt evidence. */
   unverifiedLinks?: TestExecutionEvidenceLink[]
 }
@@ -677,7 +681,7 @@ export const testExecutionEvidenceCollectionSchema = z.object({
   status: z.enum(['complete', 'partial', 'unavailable']),
   checkedAt: z.string().datetime(),
   errorCode: z.enum(['PROVIDER_TIMEOUT', 'PROVIDER_UNAVAILABLE', 'PROVIDER_RESPONSE_INVALID', 'PROVIDER_RESULT_LIMIT_EXCEEDED']).optional(),
-  issues: z.array(z.enum(['provider-result-limit-exceeded', 'attempt-provenance-unverified'])).max(2).optional(),
+  issues: z.array(z.enum(['provider-result-limit-exceeded', 'attempt-provenance-unverified', 'head-repository-unverified'])).max(3).optional(),
   /** Run-level artifacts that could not be proven to belong to this exact retry attempt. */
   unverifiedLinks: z.array(z.object(testExecutionEvidenceLinkFields).strict()).max(99).optional(),
 }).strict().superRefine((collection, context) => {

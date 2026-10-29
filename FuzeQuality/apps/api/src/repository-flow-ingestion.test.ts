@@ -16,7 +16,8 @@ const candidate: RepositoryFlowCandidate = {
   source: 'litellm',
   analysis: {
     provider: 'fuzeinfra-litellm', model: 'quality-analysis', promptVersion: 'fuzequality-repository-flow-v1', schemaVersion: '1.0',
-    inputArtifactCount: 140, promptArtifactCount: 100, promptTruncated: true,
+    inputArtifactCount: 140, promptArtifactCount: 100, promptOmittedArtifactCount: 40,
+    promptContentTruncated: false, promptTruncated: true,
     grounding: { referencedArtifactCount: 1, groundedArtifactCount: 1, rejectedArtifactCount: 0, ungroundedStepCount: 0 },
   },
   createdAt: '2026-10-09T08:00:00.000Z',
@@ -54,6 +55,27 @@ describe('repository flow candidate ingestion', () => {
       candidates: [{
         ...candidate,
         analysis: { ...candidate.analysis!, promptTruncated: false },
+      }],
+    }).success).toBe(false)
+    expect(repositoryFlowCandidateIngestionSchema.safeParse({
+      candidates: [{
+        ...candidate,
+        analysis: { ...candidate.analysis!, promptOmittedArtifactCount: 39 },
+      }],
+    }).success).toBe(false)
+    expect(repositoryFlowCandidateIngestionSchema.safeParse({
+      candidates: [{
+        ...candidate,
+        analysis: { ...candidate.analysis!, promptTruncated: undefined },
+      }],
+    }).success).toBe(false)
+    expect(repositoryFlowCandidateIngestionSchema.safeParse({
+      candidates: [{
+        ...candidate,
+        analysis: {
+          ...candidate.analysis!, inputArtifactCount: 140, promptArtifactCount: 140,
+          promptOmittedArtifactCount: 0, promptContentTruncated: true, promptTruncated: undefined,
+        },
       }],
     }).success).toBe(false)
     expect(repositoryFlowCandidateIngestionSchema.safeParse({

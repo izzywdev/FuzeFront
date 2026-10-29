@@ -9,6 +9,7 @@ afterEach(cleanup)
 describe('RequirementFreshnessStatus', () => {
   it.each([
     ['JIRA_UNAVAILABLE', 'Jira requirements are temporarily unavailable.'],
+    ['REQUIREMENT_QUEUE_UNAVAILABLE', 'Requirement analysis could not be queued. Retry when event delivery is available.'],
     ['INTELLIGENCE_UNAVAILABLE', 'FuzeInfra LiteLLM analysis is temporarily unavailable.'],
     ['INTELLIGENCE_TIMEOUT', 'FuzeInfra LiteLLM analysis timed out and will be retried.'],
     ['INTELLIGENCE_INVALID_RESPONSE', 'FuzeInfra LiteLLM returned an invalid analysis response.'],
@@ -45,5 +46,14 @@ describe('RequirementFreshnessStatus', () => {
     }} onRetry={onRetry} />)
     expect(screen.getByLabelText('Requirement analysis freshness')).toHaveTextContent('Jira queued')
     expect(screen.queryByRole('button', { name: 'Retry requirement analysis' })).not.toBeInTheDocument()
+  })
+
+  it('announces a failed retry while keeping the retained failure actionable', () => {
+    render(<RequirementFreshnessStatus sync={{
+      sourceType: 'jira', sourceKey: 'default', freshnessStatus: 'failed', failureCode: 'INTELLIGENCE_TIMEOUT',
+    }} onRetry={vi.fn()} retryError="Requirement analysis could not be queued" />)
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Requirement analysis could not be queued')
+    expect(screen.getByRole('button', { name: 'Retry requirement analysis' })).toBeEnabled()
   })
 })

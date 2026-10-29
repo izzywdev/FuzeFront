@@ -5,6 +5,7 @@ import { historyPageQueryFields } from './history-pagination'
 
 export const policyGateFilterSchema = z
   .object({
+    findingType: z.enum(['relationship', 'anomaly']).optional(),
     kind: z
       .enum([
         'guarded-policy',
@@ -48,6 +49,7 @@ export function filterPolicyGateEvaluations(
   const normalizedSubject = filter.subject?.toLowerCase()
   return evaluations.filter(
     evaluation =>
+      (!filter.findingType || (filter.findingType === 'relationship' ? evaluation.kind === 'guarded-policy' : evaluation.kind !== 'guarded-policy')) &&
       (!filter.kind || evaluation.kind === filter.kind) &&
       (!filter.remediationAction || evaluation.remediationAction === filter.remediationAction) &&
       (!filter.severity || evaluation.severity === filter.severity) &&

@@ -50,10 +50,10 @@ import { executionAttemptHistoryFilterSchema, executionPerformanceFilterSchema, 
 import { enrichPerformanceEvidence } from './execution-performance-evidence'
 import { decodeExecutionTrendCursor, executionTrendPage } from './execution-trend-pagination'
 import { decodePerformanceCursor, performancePage } from './execution-performance-pagination'
-import { executionRecord, linkExecutionToRevisionArtifacts, prepareExecutionEvidence, reconcileExecutionEvidenceForScan, refreshExecutionArtifactEvidence, webhookExecutionRecord } from './test-execution-ingestion'
+import { executionRecord, githubHeadRepositoryVerified, linkExecutionToRevisionArtifacts, prepareExecutionEvidence, reconcileExecutionEvidenceForScan, refreshExecutionArtifactEvidence, unverifiedGithubHeadEvidenceCollection, webhookExecutionRecord } from './test-execution-ingestion'
 import { candidateArtifactReferenceError, candidateOwnershipError, repositoryFlowCandidateIngestionSchema } from './repository-flow-ingestion'
 import { repositoryFlowFilterSchema } from './repository-flow-filter'
-import { repositoryFlowAnalysisProvenanceConflict, repositoryFlowArtifactReferenceConflict, repositoryFlowGroundingRationaleConflict, repositoryFlowReviewConflict, repositoryFlowReviewStateConflict, repositoryFlowWireframeConflict } from './repository-flow-review'
+import { repositoryFlowAnalysisProvenanceConflict, repositoryFlowArtifactReferenceConflict, repositoryFlowGroundingRationaleConflict, repositoryFlowReviewConflict, repositoryFlowReviewStateConflict, repositoryFlowStepsConflict, repositoryFlowWireframeConflict } from './repository-flow-review'
 import { repositoryFlowCandidateById, repositoryFlowDetail } from './repository-flow-detail'
 import { policyGateArtifactReferenceConflict, policyGateArtifactReferenceError, policyGateEvaluationIngestionSchema, policyGateOwnershipError } from './policy-gate-ingestion'
 import { policyGateFilterSchema, policyGateStoreQuery } from './policy-gate-filter'
@@ -70,7 +70,7 @@ import { repositoryProcessingStatus } from './repository-processing-status'
 import { dispatchWebhookScans } from './webhook-scan-dispatch'
 import { testExecutionDetail } from './test-execution-detail'
 import { testSuiteDispatchLogicalId, testSuiteDispatchPage } from './test-suite-dispatch-pagination'
-import { queueRequirementSync } from './requirement-sync'
+import { activeRequirementSyncStatuses, queueRequirementSync, requirementSyncRequestSchema } from './requirement-sync'
 import { persistTerminalTestSuiteDispatch } from './test-suite-dispatch-audit'
 import {
   buildImplementationManifest,
@@ -314,7 +314,10 @@ app.get('/health/ready', async (_request, response) => {
 })
 app.get('/metrics', async (_request, response) => {
   const portfolio = await store.portfolio()
-  const jiraFreshness = await store.syncCursorStatuses('jira', 'default')
+  const jiraFreshness = await activeRequirementSyncStatuses(
+    await store.activeTenantIds(),
+    tenantId => store.syncCursor('jira', 'default', tenantId),
+  )
   response.type('text/plain').send(
     [
       '# HELP fuzequality_repositories Number of onboarded repositories',
@@ -683,8 +686,8 @@ app.post('/api/v1/repositories/:id/flow-candidates/:candidateId/review', mayRevi
   if (provenanceConflict) return response.status(422).json(provenanceConflict)
   const groundingConflict = repositoryFlowGroundingRationaleConflict(existingCandidate, parsed.data.status, parsed.data.reason)
   if (groundingConflict) return response.status(422).json(groundingConflict)
-  const wireframeConflict = repositoryFlowWireframeConflict(existingCandidate, parsed.data.status)
-  if (wireframeConflict) return response.status(422).json(wireframeConflict)
+  const wireframeConflict = repositoryFlowWireframeConflict(existingCandidate, parsed.data.status); if (wireframeConflict) return response.status(422).json(wireframeConflict)
+  const stepsConflict = repositoryFlowStepsConflict(existingCandidate, parsed.data.status); if (stepsConflict) return response.status(422).json(stepsConflict)
   const artifactConflict = repositoryFlowArtifactReferenceConflict(
     existingCandidate,
     parsed.data.status === 'confirmed'
@@ -897,6 +900,12 @@ app.post('/api/v1/repositories/:id/test-executions/evidence/refresh', mayRunExec
   })
   const execution = candidates.find(item => item.attempt === parsed.data.attempt)
   if (!execution) return response.status(404).json({ error: 'Test execution attempt not found' })
+  if (!githubHeadRepositoryVerified(`${repository.owner}/${repository.name}`, execution.headRepository)) {
+    return response.status(409).json({
+      error: 'Provider artifacts cannot be refreshed until the GitHub head repository matches the onboarded repository',
+      code: 'EXECUTION_HEAD_REPOSITORY_UNVERIFIED',
+    })
+  }
   if (execution.status === 'running') {
     return response.status(409).json({
       error: 'Artifact evidence can only be refreshed after the execution reaches a terminal state',
@@ -1530,21 +1539,30 @@ app.post('/api/v1/internal/coverage/rebuild', async (_request, response) => {
 })
 
 app.post('/api/v1/jira/sync', maySyncRequirements, async (request, response) => {
+  const input = requirementSyncRequestSchema.safeParse(request.body ?? {})
+  if (!input.success) return response.status(400).json({ error: input.error.flatten() })
   const serviceRequest = isFuzeQualityServiceRequest(request)
   const tenantIds = serviceRequest
     ? await store.activeTenantIds()
     : [requestIdentity(request)!.tenantId]
-  const scopeId = request.body?.scopeId ?? 'default'
-  const queued = await queueRequirementSync(
-    tenantIds,
-    scopeId,
-    request.body?.jql ?? process.env.JIRA_JQL ?? 'project = FUZE',
-    {
-      syncCursor: tenantId => store.syncCursor('jira', scopeId, tenantId),
-      publish: (topic, payload) => events.publish(topic, payload),
-      markQueued: tenantId => store.markSyncQueued('jira', scopeId, tenantId),
-    },
-  )
+  const scopeId = input.data.scopeId
+  let queued: Awaited<ReturnType<typeof queueRequirementSync>>
+  try {
+    queued = await queueRequirementSync(
+      tenantIds,
+      scopeId,
+      input.data.jql ?? process.env.JIRA_JQL ?? 'project = FUZE',
+      {
+        syncCursor: tenantId => store.syncCursor('jira', scopeId, tenantId),
+        publish: (topic, payload) => events.publish(topic, payload),
+        markQueued: tenantId => store.markSyncQueued('jira', scopeId, tenantId),
+        markFailed: (tenantId, code) => store.markSyncFailed('jira', scopeId, tenantId, code),
+      },
+    )
+  } catch (error) {
+    console.error(JSON.stringify({ event: 'requirement_sync_enqueue_failed', scopeId, code: 'REQUIREMENT_QUEUE_UNAVAILABLE', retryable: true }))
+    return response.status(503).json({ error: 'Requirement analysis could not be queued', code: 'REQUIREMENT_QUEUE_UNAVAILABLE' })
+  }
   if (serviceRequest) {
     return response.status(202).json({ status: 'queued', scopeId, tenantsQueued: queued.length })
   }
@@ -1573,8 +1591,18 @@ app.post('/api/v1/webhooks/github', async (request, response) => {
     let executionWithEvidence: typeof execution & {
       evidenceCollection?: TestExecution['evidenceCollection']
     } = execution
-    if (execution.status !== 'running' && repository.installationId) {
-      const checkedAt = new Date().toISOString()
+    const checkedAt = new Date().toISOString()
+    const headEvidenceIssue = unverifiedGithubHeadEvidenceCollection(
+      `${repository.owner}/${repository.name}`,
+      execution.headRepository,
+      checkedAt,
+    )
+    if (execution.status !== 'running' && headEvidenceIssue) {
+      executionWithEvidence = {
+        ...execution,
+        evidenceCollection: headEvidenceIssue,
+      }
+    } else if (execution.status !== 'running' && repository.installationId) {
       const installationId = repository.installationId
       executionWithEvidence = await refreshExecutionArtifactEvidence(
         execution,

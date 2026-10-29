@@ -27,6 +27,7 @@ export default defineConfig(({ command, mode }) => {
     // Keep the production federation build on the same implementation now
     // that the web app consumes runtime eligibility guards as well as types.
     alias: {
+      '@fuzequality/contracts/repository-flow': resolve(appRoot, '../../packages/contracts/src/repository-flow.ts'),
       '@fuzequality/contracts/workflow-execution': resolve(appRoot, '../../packages/contracts/src/workflow-execution.ts'),
     },
   },

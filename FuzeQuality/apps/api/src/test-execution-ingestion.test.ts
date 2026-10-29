@@ -1,8 +1,45 @@
 import { describe, expect, it, vi } from 'vitest'
 import { testExecutionInputSchema, type ScanResult } from '@fuzequality/contracts'
-import { executionRecord, linkExecutionToRevisionArtifacts, mergeExecutionEvidenceLinks, prepareExecutionEvidence, reconcileCompleteExecutionEvidenceLinks, reconcileExecutionEvidenceForScan, refreshExecutionArtifactEvidence, webhookExecutionRecord } from './test-execution-ingestion'
+import { executionRecord, githubHeadRepositoryVerified, linkExecutionToRevisionArtifacts, mergeExecutionEvidenceLinks, prepareExecutionEvidence, reconcileCompleteExecutionEvidenceLinks, reconcileExecutionEvidenceForScan, refreshExecutionArtifactEvidence, unverifiedGithubHeadEvidenceCollection, webhookExecutionRecord } from './test-execution-ingestion'
 
 describe('internal execution ingestion compatibility', () => {
+  it('requires exact onboarded head-repository provenance before provider artifact discovery', () => {
+    expect(githubHeadRepositoryVerified('Acme/App', 'acme/app')).toBe(true)
+    expect(githubHeadRepositoryVerified('acme/app', 'contributor/app')).toBe(false)
+    expect(githubHeadRepositoryVerified('acme/app')).toBe(false)
+    expect(unverifiedGithubHeadEvidenceCollection(
+      'acme/app',
+      'contributor/app',
+      '2026-10-28T08:00:00.000Z',
+    )).toEqual({
+      status: 'partial',
+      checkedAt: '2026-10-28T08:00:00.000Z',
+      issues: ['head-repository-unverified'],
+    })
+    expect(unverifiedGithubHeadEvidenceCollection(
+      'acme/app',
+      'ACME/App',
+      '2026-10-28T08:00:00.000Z',
+    )).toBeUndefined()
+
+    expect(testExecutionInputSchema.parse({
+      repositoryId: '123e4567-e89b-12d3-a456-426614174000',
+      tenantId: 'org-1',
+      revision: 'abc123',
+      kind: 'post-production',
+      status: 'passed',
+      name: 'Fork validation',
+      evidenceCollection: {
+        status: 'partial',
+        checkedAt: '2026-10-28T08:00:00.000Z',
+        issues: ['head-repository-unverified'],
+      },
+    }).evidenceCollection).toMatchObject({
+      status: 'partial',
+      issues: ['head-repository-unverified'],
+    })
+  })
+
   it('canonicalizes provider-qualified workflow paths before persistence', () => {
     expect(testExecutionInputSchema.parse({
       repositoryId: '123e4567-e89b-12d3-a456-426614174000',

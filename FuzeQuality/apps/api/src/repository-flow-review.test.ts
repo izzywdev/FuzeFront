@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Repository, RepositoryFlowCandidate } from '@fuzequality/contracts'
-import { repositoryFlowAnalysisProvenanceConflict, repositoryFlowArtifactReferenceConflict, repositoryFlowGroundingRationaleConflict, repositoryFlowReviewConflict, repositoryFlowReviewStateConflict, repositoryFlowWireframeConflict } from './repository-flow-review'
+import { repositoryFlowAnalysisProvenanceConflict, repositoryFlowArtifactReferenceConflict, repositoryFlowGroundingRationaleConflict, repositoryFlowReviewConflict, repositoryFlowReviewStateConflict, repositoryFlowStepsConflict, repositoryFlowWireframeConflict } from './repository-flow-review'
 
 const repository = {
   id: 'repo-1',
@@ -125,6 +125,49 @@ describe('repository UX-flow review revision guard', () => {
     expect(repositoryFlowGroundingRationaleConflict(candidate, 'confirmed')).toBeUndefined()
   })
 
+  it('requires a reviewer rationale before confirming a proposal produced from bounded prompt evidence', () => {
+    const bounded = {
+      ...candidate,
+      analysis: {
+        provider: 'fuzeinfra-litellm' as const,
+        model: 'quality-analysis', promptVersion: 'v3', schemaVersion: '1.0',
+        inputArtifactCount: 20, promptArtifactCount: 19, promptOmittedArtifactCount: 1,
+        promptContentTruncated: false, promptTruncated: true,
+      },
+    }
+
+    expect(repositoryFlowGroundingRationaleConflict(bounded, 'confirmed')).toMatchObject({
+      code: 'FLOW_PROMPT_COVERAGE_RATIONALE_REQUIRED',
+      promptCoverage: { omittedArtifactCount: 1, contentTruncated: false },
+    })
+    expect(repositoryFlowGroundingRationaleConflict(bounded, 'confirmed', 'Reviewed the omitted repository evidence manually.')).toBeUndefined()
+    expect(repositoryFlowGroundingRationaleConflict(bounded, 'rejected')).toBeUndefined()
+  })
+
+  it('derives bounded prompt review risk when legacy aggregate provenance is absent', () => {
+    const omitted = {
+      ...candidate,
+      analysis: {
+        provider: 'fuzeinfra-litellm' as const,
+        model: 'quality-analysis', promptVersion: 'v3', schemaVersion: '1.0',
+        inputArtifactCount: 20, promptArtifactCount: 19, promptOmittedArtifactCount: 1,
+        promptContentTruncated: false,
+      },
+    }
+    const contentTruncated = {
+      ...candidate,
+      analysis: {
+        provider: 'fuzeinfra-litellm' as const,
+        model: 'quality-analysis', promptVersion: 'v3', schemaVersion: '1.0',
+        inputArtifactCount: 20, promptArtifactCount: 20, promptOmittedArtifactCount: 0,
+        promptContentTruncated: true,
+      },
+    }
+
+    expect(repositoryFlowGroundingRationaleConflict(omitted, 'confirmed')).toMatchObject({ code: 'FLOW_PROMPT_COVERAGE_RATIONALE_REQUIRED' })
+    expect(repositoryFlowGroundingRationaleConflict(contentTruncated, 'confirmed')).toMatchObject({ code: 'FLOW_PROMPT_COVERAGE_RATIONALE_REQUIRED' })
+  })
+
   it('blocks confirmation when a legacy LiteLLM candidate has no analysis provenance', () => {
     const withoutProvenance = { ...candidate, analysis: undefined }
 
@@ -135,6 +178,10 @@ describe('repository UX-flow review revision guard', () => {
       revision: candidate.revision,
     })
     expect(repositoryFlowAnalysisProvenanceConflict(withoutProvenance, 'rejected')).toBeUndefined()
+    expect(repositoryFlowAnalysisProvenanceConflict({
+      ...candidate,
+      analysis: { ...candidate.analysis, promptVersion: ' ' },
+    }, 'confirmed')).toMatchObject({ code: 'FLOW_ANALYSIS_PROVENANCE_REQUIRED' })
     expect(repositoryFlowAnalysisProvenanceConflict(candidate, 'confirmed')).toBeUndefined()
     expect(repositoryFlowAnalysisProvenanceConflict({
       ...withoutProvenance,
@@ -156,6 +203,19 @@ describe('repository UX-flow review revision guard', () => {
     })
     expect(repositoryFlowWireframeConflict(withoutWireframe, 'rejected')).toBeUndefined()
     expect(repositoryFlowWireframeConflict(candidate, 'confirmed')).toBeUndefined()
+  })
+
+  it('blocks confirmation when a legacy candidate has no reviewable interaction steps', () => {
+    const withoutSteps = { ...candidate, steps: [] }
+
+    expect(repositoryFlowStepsConflict(withoutSteps, 'confirmed')).toEqual({
+      error: 'This UX-flow candidate has no reviewable interaction steps. Regenerate the repository analysis before confirming it.',
+      code: 'FLOW_STEPS_REQUIRED',
+      candidateId: candidate.id,
+      revision: candidate.revision,
+    })
+    expect(repositoryFlowStepsConflict(withoutSteps, 'rejected')).toBeUndefined()
+    expect(repositoryFlowStepsConflict(candidate, 'confirmed')).toBeUndefined()
   })
 
   it('blocks confirmation when an exact-revision target is unavailable but preserves rejection', () => {

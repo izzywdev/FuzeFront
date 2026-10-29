@@ -33,16 +33,47 @@ describe('repository flow inventory filter', () => {
       },
     })
     const boundedPrompt = candidate({
-      id: 'bounded-prompt', source: 'litellm', analysis: {
+      id: 'artifacts-omitted', source: 'litellm', analysis: {
         provider: 'fuzeinfra-litellm', model: 'quality-analysis', promptVersion: 'flow-v3', schemaVersion: '1.0',
-        inputArtifactCount: 140, promptArtifactCount: 100, promptTruncated: true,
+        inputArtifactCount: 140, promptArtifactCount: 100, promptOmittedArtifactCount: 40,
+        promptContentTruncated: false, promptTruncated: true,
+      },
+    })
+    const contentTruncated = candidate({
+      id: 'content-truncated', source: 'litellm', analysis: {
+        provider: 'fuzeinfra-litellm', model: 'quality-analysis', promptVersion: 'flow-v3', schemaVersion: '1.0',
+        inputArtifactCount: 100, promptArtifactCount: 100, promptOmittedArtifactCount: 0,
+        promptContentTruncated: true, promptTruncated: true,
+      },
+    })
+    const legacyOmitted = candidate({
+      id: 'legacy-artifacts-omitted', source: 'litellm', analysis: {
+        provider: 'fuzeinfra-litellm', model: 'quality-analysis', promptVersion: 'flow-v2', schemaVersion: '1.0',
+        inputArtifactCount: 10, promptArtifactCount: 9, promptOmittedArtifactCount: 1,
+        promptContentTruncated: false,
+      },
+    })
+    const legacyContentTruncated = candidate({
+      id: 'legacy-content-truncated', source: 'litellm', analysis: {
+        provider: 'fuzeinfra-litellm', model: 'quality-analysis', promptVersion: 'flow-v2', schemaVersion: '1.0',
+        inputArtifactCount: 10, promptArtifactCount: 10, promptOmittedArtifactCount: 0,
+        promptContentTruncated: true,
       },
     })
     const missingProvenance = candidate({ id: 'missing-provenance', source: 'litellm', analysis: undefined })
-    const candidates = [candidate(), groundingGap, boundedPrompt, missingProvenance]
+    const incompleteProvenance = candidate({ id: 'incomplete-provenance', source: 'litellm', analysis: {
+      provider: 'fuzeinfra-litellm', model: ' ', promptVersion: 'flow-v2', schemaVersion: '1.0',
+    } })
+    const missingWireframe = candidate({ id: 'missing-wireframe', wireframe: { kind: 'sequence', nodes: [] } })
+    const missingSteps = candidate({ id: 'missing-steps', steps: [] })
+    const candidates = [candidate(), groundingGap, boundedPrompt, contentTruncated, legacyOmitted, legacyContentTruncated, missingProvenance, incompleteProvenance, missingWireframe, missingSteps]
     expect(filterRepositoryFlowCandidates(candidates, repositoryFlowFilterSchema.parse({ analysisRisk: 'grounding-gaps' }))).toEqual([groundingGap])
-    expect(filterRepositoryFlowCandidates(candidates, repositoryFlowFilterSchema.parse({ analysisRisk: 'prompt-truncated' }))).toEqual([boundedPrompt])
-    expect(filterRepositoryFlowCandidates(candidates, repositoryFlowFilterSchema.parse({ analysisRisk: 'provenance-missing' }))).toEqual([missingProvenance])
+    expect(filterRepositoryFlowCandidates(candidates, repositoryFlowFilterSchema.parse({ analysisRisk: 'prompt-truncated' }))).toEqual([boundedPrompt, contentTruncated, legacyOmitted, legacyContentTruncated])
+    expect(filterRepositoryFlowCandidates(candidates, repositoryFlowFilterSchema.parse({ analysisRisk: 'artifacts-omitted' }))).toEqual([boundedPrompt, legacyOmitted])
+    expect(filterRepositoryFlowCandidates(candidates, repositoryFlowFilterSchema.parse({ analysisRisk: 'content-truncated' }))).toEqual([contentTruncated, legacyContentTruncated])
+    expect(filterRepositoryFlowCandidates(candidates, repositoryFlowFilterSchema.parse({ analysisRisk: 'provenance-missing' }))).toEqual([missingProvenance, incompleteProvenance])
+    expect(filterRepositoryFlowCandidates(candidates, repositoryFlowFilterSchema.parse({ analysisRisk: 'wireframe-missing' }))).toEqual([missingWireframe])
+    expect(filterRepositoryFlowCandidates(candidates, repositoryFlowFilterSchema.parse({ analysisRisk: 'steps-missing' }))).toEqual([missingSteps])
   })
 
   it('rejects unknown query keys and invalid filter values', () => {

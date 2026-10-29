@@ -30,9 +30,12 @@ function currentExecutionScope(
   return dispatches.some(dispatch =>
     dispatch.repositoryId === artifact.repositoryId &&
     dispatch.artifactLogicalId === (artifact.logicalId ?? artifact.id) &&
+    dispatch.artifactKind === artifact.kind &&
     dispatch.status === 'accepted' &&
     dispatch.ref === execution.branch &&
     dispatch.sourceRevision.toLowerCase() === execution.revision.toLowerCase() &&
+    Boolean(execution.startedAt) &&
+    Date.parse(execution.startedAt!) >= Date.parse(dispatch.requestedAt) &&
     sameWorkflowPath(dispatch.workflowPath, execution.workflowPath)
   )
 }
@@ -435,9 +438,11 @@ export function ExecutionEvidenceCoverage({
     : undefined
   const collectionPartial = collection?.status === 'partial'
   const provenanceUnverified = collection?.issues?.includes('attempt-provenance-unverified')
+  const headRepositoryUnverified = collection?.issues?.includes('head-repository-unverified')
   const resultLimited = collection?.errorCode === 'PROVIDER_RESULT_LIMIT_EXCEEDED' || collection?.issues?.includes('provider-result-limit-exceeded')
   const canRefresh = execution.provider === 'github-actions' &&
     execution.status !== 'running' &&
+    !headRepositoryUnverified &&
     Boolean(onRefresh)
   const refreshLabel = collection?.status === 'complete'
     ? 'Reconcile provider evidence'
@@ -476,6 +481,11 @@ export function ExecutionEvidenceCoverage({
       {provenanceUnverified && (
         <span className="status-pill status-running">
           {collection?.unverifiedLinks?.length ?? 0} run-level artifacts were withheld because GitHub could not prove they belong to attempt {execution.attempt}
+        </span>
+      )}
+      {headRepositoryUnverified && (
+        <span className="status-pill status-failed">
+          Provider artifacts were withheld because the GitHub head repository could not be verified as the onboarded repository
         </span>
       )}
       {collection?.status === 'complete' && !links && execution.kind !== 'post-production' && (

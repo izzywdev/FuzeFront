@@ -26,6 +26,8 @@ describe('repository flow wireframes', () => {
         schemaVersion: REPOSITORY_FLOW_SCHEMA_VERSION,
         inputArtifactCount: 1,
         promptArtifactCount: 1,
+        promptOmittedArtifactCount: 0,
+        promptContentTruncated: false,
         promptTruncated: false,
         grounding: {
           referencedArtifactCount: 1,
@@ -273,6 +275,32 @@ describe('repository flow wireframes', () => {
 
     expect(sourceBytes).toBeLessThanOrEqual(REPOSITORY_FLOW_SOURCE_BUDGET_BYTES)
     expect(promptVersion).toBe('fuzequality-repository-flow-v3')
+  })
+
+  it('distinguishes truncated source content from omitted prompt artifacts', async () => {
+    const oversized = [{
+      ...artifacts[0],
+      summary: 'e'.repeat(REPOSITORY_FLOW_SOURCE_BUDGET_BYTES * 2),
+    }]
+    const fetchImpl = (async () => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({
+      flows: [{
+        title: 'Bounded checkout', confidence: 0.8, evidenceArtifactIds: ['route-1'],
+        steps: [{ actor: 'buyer', action: 'opens checkout', expectedOutcome: 'checkout appears', targetIds: ['route-1'] }],
+      }],
+    }) } }] }))) as typeof fetch
+    const analyzer = new LiteLlmRepositoryFlowAnalyzer('http://litellm/v1', 'quality-analysis', undefined, fetchImpl)
+
+    await expect(analyzer.analyze(repository, 'abc', oversized)).resolves.toEqual([
+      expect.objectContaining({
+        analysis: expect.objectContaining({
+          inputArtifactCount: 1,
+          promptArtifactCount: 1,
+          promptOmittedArtifactCount: 0,
+          promptContentTruncated: true,
+          promptTruncated: true,
+        }),
+      }),
+    ])
   })
 
   it('does not trust artifact IDs whose source content was omitted by the prompt budget', async () => {

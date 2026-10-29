@@ -52,6 +52,8 @@ export type ExecutionEvidenceRequirement =
   | 'evidence-url-invalid'
   | 'provider-collection-failure'
   | 'github-run-provenance-missing'
+  | 'head-repository-unverified'
+  | 'provider-result-limited'
   | 'attempt-provenance-unverified'
   | 'policy-gate-outcome-missing'
   | 'post-production-video-missing'
@@ -240,7 +242,7 @@ export function filterTestExecutions(
     ) return false
     if (
       filter.evidenceRequirement === 'provider-collection-failure' &&
-      !execution.evidenceCollection?.errorCode
+      execution.evidenceCollection?.status !== 'unavailable'
     ) return false
     if (
       filter.evidenceRequirement === 'github-run-provenance-missing' &&
@@ -253,6 +255,15 @@ export function filterTestExecutions(
     if (
       filter.evidenceRequirement === 'attempt-provenance-unverified' &&
       !execution.evidenceCollection?.issues?.includes('attempt-provenance-unverified')
+    ) return false
+    if (
+      filter.evidenceRequirement === 'head-repository-unverified' &&
+      !execution.evidenceCollection?.issues?.includes('head-repository-unverified')
+    ) return false
+    if (
+      filter.evidenceRequirement === 'provider-result-limited' &&
+      execution.evidenceCollection?.errorCode !== 'PROVIDER_RESULT_LIMIT_EXCEEDED' &&
+      !execution.evidenceCollection?.issues?.includes('provider-result-limit-exceeded')
     ) return false
     if (
       filter.evidenceRequirement === 'post-production-video-missing' &&
@@ -269,10 +280,14 @@ export function filterTestExecutions(
       (execution.gateEvaluations.length > 0 ||
         (execution.policyArtifactIds.length === 1 && execution.gateArtifactIds.length === 1))
     ) return false
-    if (
-      filter.evidenceRequirement === 'terminal-timing-missing' &&
-      (execution.status === 'running' || (execution.startedAt !== undefined && execution.completedAt !== undefined))
-    ) return false
+    if (filter.evidenceRequirement === 'terminal-timing-missing') {
+      const startedAt = Date.parse(execution.startedAt ?? '')
+      const completedAt = Date.parse(execution.completedAt ?? '')
+      if (
+        execution.status === 'running' ||
+        (Number.isFinite(startedAt) && Number.isFinite(completedAt) && completedAt >= startedAt)
+      ) return false
+    }
     if (filter.thresholdOutcome && !execution.thresholds.some(threshold =>
       threshold.passed === (filter.thresholdOutcome === 'passed')
     )) return false
@@ -342,6 +357,10 @@ export type ExecutionOutcomeTrend = {
   githubRunProvenanceMissingCount?: number
   /** Retry attempts whose exact provider-attempt provenance could not be verified. */
   attemptProvenanceUnverifiedCount?: number
+  /** Provider artifact queries whose retained result set was explicitly truncated. */
+  providerResultLimitedCount?: number
+  /** Provider artifact queries whose head-repository ownership could not be verified. */
+  headRepositoryUnverifiedCount?: number
   /** Post-production executions without a safe video evidence link. */
   postProductionVideoMissingCount?: number
   /** Terminal executions without a complete, valid timing interval. */
@@ -375,8 +394,9 @@ export function executionOutcomeTrend(executions: TestExecution[], history: Test
   }
   for (const execution of executions) {
     const timestamp = execution.completedAt ?? execution.startedAt
-    if (!timestamp || Number.isNaN(Date.parse(timestamp))) continue
-    const date = timestamp.slice(0, 10)
+    const timestampMs = Date.parse(timestamp ?? '')
+    if (!Number.isFinite(timestampMs)) continue
+    const date = new Date(timestampMs).toISOString().slice(0, 10)
     const current = results.get(date) ?? {
       date,
       total: 0,
@@ -399,6 +419,8 @@ export function executionOutcomeTrend(executions: TestExecution[], history: Test
       invalidEvidenceUrlCount: 0,
       githubRunProvenanceMissingCount: 0,
       attemptProvenanceUnverifiedCount: 0,
+      providerResultLimitedCount: 0,
+      headRepositoryUnverifiedCount: 0,
       postProductionVideoMissingCount: 0,
       terminalTimingMissingCount: 0,
       gateEvaluationCount: 0,
@@ -422,7 +444,7 @@ export function executionOutcomeTrend(executions: TestExecution[], history: Test
     } else {
       current.evidenceNotCollectedCount = (current.evidenceNotCollectedCount ?? 0) + 1
     }
-    if (execution.evidenceCollection?.errorCode) {
+    if (execution.evidenceCollection?.status === 'unavailable') {
       current.evidenceCollectionFailureCount = (current.evidenceCollectionFailureCount ?? 0) + 1
     }
     if (execution.evidenceLinks.some(link => !safeExecutionEvidenceUrl(link.url))) {
@@ -436,6 +458,12 @@ export function executionOutcomeTrend(executions: TestExecution[], history: Test
     }
     if (execution.evidenceCollection?.issues?.includes('attempt-provenance-unverified')) {
       current.attemptProvenanceUnverifiedCount = (current.attemptProvenanceUnverifiedCount ?? 0) + 1
+    }
+    if (execution.evidenceCollection?.errorCode === 'PROVIDER_RESULT_LIMIT_EXCEEDED' || execution.evidenceCollection?.issues?.includes('provider-result-limit-exceeded')) {
+      current.providerResultLimitedCount = (current.providerResultLimitedCount ?? 0) + 1
+    }
+    if (execution.evidenceCollection?.issues?.includes('head-repository-unverified')) {
+      current.headRepositoryUnverifiedCount = (current.headRepositoryUnverifiedCount ?? 0) + 1
     }
     if (
       execution.kind === 'post-production' &&
@@ -534,7 +562,13 @@ export function executionPerformance(
       current[evaluation.status]++
       const terminalOutcomes = current.passed + current.failed + current.cancelled
       current.passRate = terminalOutcomes ? current.passed / terminalOutcomes : 0
-      if (execution.completedAt && (!current.latestCompletedAt || execution.completedAt > current.latestCompletedAt)) current.latestCompletedAt = execution.completedAt
+      if (execution.completedAt) {
+        const completedAt = Date.parse(execution.completedAt)
+        const latestCompletedAt = Date.parse(current.latestCompletedAt ?? '')
+        if (Number.isFinite(completedAt) && (!Number.isFinite(latestCompletedAt) || completedAt > latestCompletedAt)) {
+          current.latestCompletedAt = new Date(completedAt).toISOString()
+        }
+      }
       results.set(key, current)
     }
   }

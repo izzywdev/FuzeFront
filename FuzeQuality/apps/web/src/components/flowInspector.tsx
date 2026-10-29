@@ -1,4 +1,5 @@
 import type { QualityArtifact, RepositoryFlowCandidate } from '@fuzequality/contracts'
+import { repositoryFlowHasCompleteAnalysisProvenance } from '@fuzequality/contracts/repository-flow'
 import { AlertTriangle, Network, Sparkles, X } from 'lucide-react'
 import { QualityDetailModal, QualityIconAction } from './primitives'
 
@@ -27,6 +28,20 @@ export function unavailableFlowArtifactTargetIds(
     ...flow.steps.flatMap(step => step.targetIds),
     ...flow.wireframe.nodes.flatMap(node => node.targetIds),
   ])].filter(targetId => !known.has(targetId))
+}
+
+export function promptEvidenceLabel(analysis: NonNullable<RepositoryFlowCandidate['analysis']>) {
+  if (analysis.inputArtifactCount === undefined || analysis.promptArtifactCount === undefined) return undefined
+  const omitted = analysis.promptOmittedArtifactCount ?? Math.max(
+    analysis.inputArtifactCount - analysis.promptArtifactCount,
+    0,
+  )
+  const qualifiers: string[] = []
+  if (omitted > 0) qualifiers.push(`${omitted} ${omitted === 1 ? 'artifact' : 'artifacts'} omitted`)
+  if (analysis.promptContentTruncated === true) qualifiers.push('source content truncated')
+  if (!analysis.promptTruncated) qualifiers.push('complete')
+  else if (!qualifiers.length) qualifiers.push('bounded')
+  return `${analysis.promptArtifactCount} of ${analysis.inputArtifactCount} repository artifacts supplied · ${qualifiers.join(' · ')}`
 }
 
 export function FlowInspector({
@@ -170,6 +185,11 @@ export function FlowInspector({
                 </li>
               ))}
             </ol>
+            {flow.steps.length === 0 && (
+              <div className="flow-inspector-state form-error" role="alert">
+                <AlertTriangle size={16} /> No reviewable interaction steps are stored for this flow. Do not confirm it until repository analysis is regenerated.
+              </div>
+            )}
           </section>
 
           <section className="flow-inspector-section" aria-label="Flow provenance">
@@ -180,7 +200,7 @@ export function FlowInspector({
                 <small>Unreviewed model output never becomes authoritative automatically.</small>
               </div>
             </div>
-            {flow.analysis ? (
+            {flow.analysis && repositoryFlowHasCompleteAnalysisProvenance(flow) ? (
               <>
                 <dl className="flow-analysis-provenance">
                   <div><dt>Provider</dt><dd>{flow.analysis.provider}</dd></div>
@@ -191,10 +211,7 @@ export function FlowInspector({
                     flow.analysis.promptArtifactCount !== undefined && (
                       <div>
                         <dt>Prompt evidence</dt>
-                        <dd>
-                          {flow.analysis.promptArtifactCount} of {flow.analysis.inputArtifactCount} artifacts
-                          {flow.analysis.promptTruncated ? ' · bounded' : ' · complete'}
-                        </dd>
+                        <dd>{promptEvidenceLabel(flow.analysis)}</dd>
                       </div>
                     )}
                   {flow.analysis.grounding && (

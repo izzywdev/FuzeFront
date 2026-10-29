@@ -52,6 +52,7 @@ import type {
   TestSuiteDispatch,
   TestImplementationRequest,
 } from '@fuzequality/contracts'
+import { repositoryFlowHasBoundedPromptEvidence, repositoryFlowHasCompleteAnalysisProvenance } from '@fuzequality/contracts/repository-flow'
 import {
   artifactWorkflowExecutionKind,
   executableWorkflowTarget,
@@ -87,7 +88,7 @@ import { PolicyGateEvidence, policyGateArtifactReferenceProblems } from './compo
 import { GovernanceInspector } from './components/governanceInspector'
 import { ExecutionInspector } from './components/executionInspector'
 import { FlowInventoryFilters, type FlowAnalysisRisk, type FlowRevisionScope } from './components/flowInventoryFilters'
-import { FlowInspector, flowArtifactTargetIds, unavailableFlowArtifactTargetIds } from './components/flowInspector'
+import { FlowInspector, flowArtifactTargetIds, promptEvidenceLabel, unavailableFlowArtifactTargetIds } from './components/flowInspector'
 import { RepositoryAnalysisStatus } from './components/repositoryAnalysisStatus'
 import { RequirementFreshnessStatus } from './components/requirementFreshnessStatus'
 import { MAX_HISTORICAL_FLOW_EVIDENCE_REVISIONS, historicalFlowEvidenceSelection } from './flowEvidence'
@@ -217,6 +218,8 @@ function mergeExecutionOutcomeTrends(groups: ExecutionOutcomeTrend[][]): Executi
       invalidEvidenceUrlCount: 0,
       githubRunProvenanceMissingCount: 0,
       attemptProvenanceUnverifiedCount: 0,
+      providerResultLimitedCount: 0,
+      headRepositoryUnverifiedCount: 0,
       postProductionVideoMissingCount: 0,
       terminalTimingMissingCount: 0,
       gateEvaluationCount: 0,
@@ -258,6 +261,8 @@ function mergeExecutionOutcomeTrends(groups: ExecutionOutcomeTrend[][]): Executi
     current.invalidEvidenceUrlCount = (current.invalidEvidenceUrlCount ?? 0) + (item.invalidEvidenceUrlCount ?? 0)
     current.githubRunProvenanceMissingCount = (current.githubRunProvenanceMissingCount ?? 0) + (item.githubRunProvenanceMissingCount ?? 0)
     current.attemptProvenanceUnverifiedCount = (current.attemptProvenanceUnverifiedCount ?? 0) + (item.attemptProvenanceUnverifiedCount ?? 0)
+    current.providerResultLimitedCount = (current.providerResultLimitedCount ?? 0) + (item.providerResultLimitedCount ?? 0)
+    current.headRepositoryUnverifiedCount = (current.headRepositoryUnverifiedCount ?? 0) + (item.headRepositoryUnverifiedCount ?? 0)
     current.postProductionVideoMissingCount = (current.postProductionVideoMissingCount ?? 0) + (item.postProductionVideoMissingCount ?? 0)
     current.terminalTimingMissingCount = (current.terminalTimingMissingCount ?? 0) + (item.terminalTimingMissingCount ?? 0)
     current.gateEvaluationCount = (current.gateEvaluationCount ?? 0) + (item.gateEvaluationCount ?? 0)
@@ -1838,6 +1843,7 @@ function Requirements({ data }: { data: Portfolio }) {
     freshnessStatus: 'unknown',
   })
   const [retrying, setRetrying] = useState(false)
+  const [retryError, setRetryError] = useState<string>()
   useEffect(() => {
     api
       .requirementFreshness()
@@ -1846,9 +1852,19 @@ function Requirements({ data }: { data: Portfolio }) {
   }, [])
   const retry = async () => {
     setRetrying(true)
+    setRetryError(undefined)
     try {
       const result = await api.syncRequirements()
       setFreshness(result.sync)
+    } catch (error) {
+      if (error instanceof CatalogApiError && error.code === 'REQUIREMENT_QUEUE_UNAVAILABLE') {
+        setFreshness(current => ({
+          ...current,
+          freshnessStatus: 'failed',
+          failureCode: 'REQUIREMENT_QUEUE_UNAVAILABLE',
+        }))
+      }
+      setRetryError(error instanceof Error ? error.message : 'Requirement analysis could not be queued.')
     } finally {
       setRetrying(false)
     }
@@ -1860,7 +1876,7 @@ function Requirements({ data }: { data: Portfolio }) {
         title="Requirements & inferred flows"
         detail="Jira stays authoritative. AI proposals remain visibly separate until reviewed."
         action={
-          <RequirementFreshnessStatus sync={freshness} onRetry={() => void retry()} retrying={retrying} />
+          <RequirementFreshnessStatus sync={freshness} onRetry={() => void retry()} retrying={retrying} retryError={retryError} />
         }
       />
       <div className="requirements-grid">
@@ -3042,7 +3058,7 @@ function DispatchExecutionResult({ dispatch }: { dispatch: TestSuiteDispatch }) 
     )
   }
   return dispatch.status === 'accepted' ? (
-    <p className="performance-inventory-only">Awaiting an execution for this exact revision and ref.</p>
+    <p className="performance-inventory-only">Awaiting an onboarded-repository execution started during this dispatch request window for the exact revision and ref.</p>
   ) : null
 }
 
@@ -3183,9 +3199,11 @@ export function FlowReviewControls({
     grounding &&
       (grounding.rejectedArtifactCount > 0 || grounding.ungroundedStepCount > 0)
   )
-  const groundingRationaleMissing = hasGroundingGaps && reason.trim().length < 3
-  const analysisProvenanceMissing = flow.source === 'litellm' && !flow.analysis
+  const hasPromptCoverageGaps = repositoryFlowHasBoundedPromptEvidence(flow)
+  const analysisRationaleMissing = (hasGroundingGaps || hasPromptCoverageGaps) && reason.trim().length < 3
+  const analysisProvenanceMissing = !repositoryFlowHasCompleteAnalysisProvenance(flow)
   const wireframeMissing = flow.wireframe.nodes.length === 0
+  const stepsMissing = flow.steps.length === 0
   const unavailableTargetIds = evidenceVerification !== 'loading' && evidenceVerification !== 'unavailable'
     ? unavailableFlowArtifactTargetIds(flow, knownArtifactIds)
     : []
@@ -3241,8 +3259,8 @@ export function FlowReviewControls({
           </p>
         )}
         <label>
-          {hasGroundingGaps
-            ? 'Review rationale required for grounding gaps'
+          {hasGroundingGaps || hasPromptCoverageGaps
+            ? 'Review rationale required for analysis gaps'
             : 'Optional review rationale'}
           <input
             value={reason}
@@ -3251,9 +3269,14 @@ export function FlowReviewControls({
             placeholder="Why is this flow accurate or unsuitable?"
           />
         </label>
-        {hasGroundingGaps && (
+        {(hasGroundingGaps || hasPromptCoverageGaps) && (
           <p className="performance-inventory-only" role="status">
-            LiteLLM returned unverified repository references. Confirmation requires a reviewer rationale; rejection remains available.
+            {hasGroundingGaps && hasPromptCoverageGaps
+              ? 'LiteLLM returned unverified repository references and used bounded prompt evidence.'
+              : hasGroundingGaps
+                ? 'LiteLLM returned unverified repository references.'
+                : 'LiteLLM used bounded prompt evidence because repository artifacts or source content were omitted.'}{' '}
+            Confirmation requires a reviewer rationale; rejection remains available.
           </p>
         )}
         {analysisProvenanceMissing && (
@@ -3264,6 +3287,11 @@ export function FlowReviewControls({
         {wireframeMissing && (
           <p className="form-error" role="alert">
             Confirmation is blocked because this flow has no reviewable wireframe. Reject this proposal or regenerate repository analysis.
+          </p>
+        )}
+        {stepsMissing && (
+          <p className="form-error" role="alert">
+            Confirmation is blocked because this flow has no reviewable interaction steps. Reject this proposal or regenerate repository analysis.
           </p>
         )}
         {evidenceVerification === 'loading' && (
@@ -3284,7 +3312,7 @@ export function FlowReviewControls({
         <div className="row-actions">
           <QualityAction
             intent="secondary"
-            disabled={busy || !isReviewable || groundingRationaleMissing || analysisProvenanceMissing || wireframeMissing || evidenceVerificationBlocked || unavailableTargetIds.length > 0}
+            disabled={busy || !isReviewable || analysisRationaleMissing || analysisProvenanceMissing || wireframeMissing || stepsMissing || evidenceVerificationBlocked || unavailableTargetIds.length > 0}
             onClick={() => void submit('confirmed')}
           >
             <Check size={14} /> Confirm
@@ -3560,6 +3588,7 @@ type FlowInventorySelection = {
 }
 
 type PolicyGateInventorySelection = {
+  findingType?: 'relationship' | 'anomaly' | ''
   kind: PolicyGateEvaluation['kind'] | ''
   remediationAction: PolicyGateEvaluation['remediationAction'] | ''
   severity: PolicyGateEvaluation['severity'] | ''
@@ -3738,6 +3767,7 @@ export function policyGateEvaluationMatchesInventory(
   selection: PolicyGateInventorySelection
 ) {
   const normalizedSubject = selection.subject.toLowerCase()
+  if (selection.findingType && (selection.findingType === 'relationship' ? evaluation.kind !== 'guarded-policy' : evaluation.kind === 'guarded-policy')) return false
   if (selection.kind && evaluation.kind !== selection.kind) return false
   if (selection.remediationAction && evaluation.remediationAction !== selection.remediationAction) return false
   if (selection.severity && evaluation.severity !== selection.severity)
@@ -3819,11 +3849,24 @@ export function flowCandidateMatchesInventory(
     )
   )) return false
   if (selection.analysisRisk === 'prompt-truncated' && !(
-    flow.source === 'litellm' && flow.analysis?.promptTruncated === true
+    repositoryFlowHasBoundedPromptEvidence(flow)
+  )) return false
+  if (selection.analysisRisk === 'artifacts-omitted' && !(
+    flow.source === 'litellm' && flow.analysis && (
+      (flow.analysis.promptOmittedArtifactCount ?? Math.max(
+        (flow.analysis.inputArtifactCount ?? 0) - (flow.analysis.promptArtifactCount ?? 0),
+        0,
+      )) > 0
+    )
+  )) return false
+  if (selection.analysisRisk === 'content-truncated' && !(
+    flow.source === 'litellm' && flow.analysis?.promptContentTruncated === true
   )) return false
   if (selection.analysisRisk === 'provenance-missing' && !(
-    flow.source === 'litellm' && !flow.analysis
+    flow.source === 'litellm' && !repositoryFlowHasCompleteAnalysisProvenance(flow)
   )) return false
+  if (selection.analysisRisk === 'wireframe-missing' && flow.wireframe.nodes.length > 0) return false
+  if (selection.analysisRisk === 'steps-missing' && flow.steps.length > 0) return false
   if (selection.minimumConfidencePercent !== '' && flow.confidence < Number(selection.minimumConfidencePercent) / 100) return false
   if (selection.maximumConfidencePercent !== '' && flow.confidence > Number(selection.maximumConfidencePercent) / 100) return false
   if (selection.revisionScope === 'current') {
@@ -3951,7 +3994,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [executionEvidenceCheckedAfter, setExecutionEvidenceCheckedAfter] = useState('')
   const [executionEvidenceCheckedBefore, setExecutionEvidenceCheckedBefore] = useState('')
   const [executionEvidenceRequirement, setExecutionEvidenceRequirement] = useState<
-    'evidence-url-invalid' | 'provider-collection-failure' | 'github-run-provenance-missing' | 'attempt-provenance-unverified' | 'policy-gate-outcome-missing' | 'post-production-video-missing' | 'performance-threshold-missing' | 'terminal-timing-missing' | ''
+    'evidence-url-invalid' | 'provider-collection-failure' | 'github-run-provenance-missing' | 'head-repository-unverified' | 'provider-result-limited' | 'attempt-provenance-unverified' | 'policy-gate-outcome-missing' | 'post-production-video-missing' | 'performance-threshold-missing' | 'terminal-timing-missing' | ''
   >('')
   const [executionThresholdOutcome, setExecutionThresholdOutcome] = useState<
     'passed' | 'failed' | ''
@@ -3991,6 +4034,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [policyGateKind, setPolicyGateKind] = useState<
     PolicyGateEvaluation['kind'] | ''
   >('')
+  const [policyGateFindingType, setPolicyGateFindingType] = useState<'relationship' | 'anomaly' | ''>('')
   const [policyGateSeverity, setPolicyGateSeverity] = useState<
     PolicyGateEvaluation['severity'] | ''
   >('')
@@ -4014,6 +4058,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     Number(policyGateMinimumConfidencePercent) > Number(policyGateMaximumConfidencePercent)
   )
   const policyGateSelection: PolicyGateInventorySelection = {
+    findingType: policyGateFindingType,
     kind: policyGateKind,
     remediationAction: policyGateRemediationAction,
     severity: policyGateSeverity,
@@ -4446,6 +4491,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 repository.id,
                 Object.fromEntries(
                   Object.entries({
+                    findingType: policyGateFindingType,
                     kind: policyGateKind,
                     remediationAction: policyGateRemediationAction,
                     severity: policyGateSeverity,
@@ -4516,6 +4562,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   }, [
     data.repositories,
     policyGateKind,
+    policyGateFindingType,
     policyGateRemediationAction,
     policyGateRevisionScope,
     policyGateReviewStatus,
@@ -5169,6 +5216,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         const page = normalizeHistoryPage(await api.policyGateEvaluations(
           repositoryId,
           Object.fromEntries(Object.entries({
+            findingType: policyGateFindingType,
             kind: policyGateKind,
             remediationAction: policyGateRemediationAction,
             severity: policyGateSeverity,
@@ -5267,6 +5315,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       data.repositories,
       policyGateEvaluations,
       policyGateKind,
+      policyGateFindingType,
       policyGateRemediationAction,
       policyGateSeverity,
       policyGateReviewStatus,
@@ -5524,6 +5573,17 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             className="catalog-filters"
             aria-label="Policy and gate finding filters"
           >
+            <label>
+              Finding type
+              <select
+                value={policyGateFindingType}
+                onChange={event => setPolicyGateFindingType(event.target.value as 'relationship' | 'anomaly' | '')}
+              >
+                <option value="">Relationships and anomalies</option>
+                <option value="anomaly">Anomalies requiring review</option>
+                <option value="relationship">Guarded relationships</option>
+              </select>
+            </label>
             <label>
               Relationship or anomaly
               <select
@@ -5845,7 +5905,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                 {flow.status}
                               </code>
                             </div>
-                            {flow.analysis ? (
+                            {flow.analysis && repositoryFlowHasCompleteAnalysisProvenance(flow) ? (
                               <dl
                                 className="flow-analysis-provenance"
                                 aria-label={`${flow.title} analysis provenance`}
@@ -5870,23 +5930,14 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                   flow.analysis.promptArtifactCount !== undefined && (
                                     <div>
                                       <dt>Prompt evidence</dt>
-                                      <dd>
-                                        {flow.analysis.promptArtifactCount} of{' '}
-                                        {flow.analysis.inputArtifactCount} repository artifacts supplied
-                                        {flow.analysis.promptTruncated
-                                          ? ` · ${Math.max(
-                                              flow.analysis.inputArtifactCount - flow.analysis.promptArtifactCount,
-                                              0
-                                            )} omitted by prompt budget`
-                                          : ' · complete'}
-                                      </dd>
+                                      <dd>{promptEvidenceLabel(flow.analysis)}</dd>
                                     </div>
                                   )}
                               </dl>
                             ) : flow.source === 'litellm' ? (
                               <small className="flow-provenance-missing">
-                                Model provenance was not stored for this legacy
-                                proposal.
+                                Complete model provenance was not stored for this
+                                legacy proposal.
                               </small>
                             ) : null}
                             <p>{flow.steps[0]?.action}</p>
@@ -6486,19 +6537,21 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 value={executionEvidenceRequirement}
                 onChange={event =>
                   setExecutionEvidenceRequirement(
-                    event.target.value as 'evidence-url-invalid' | 'provider-collection-failure' | 'github-run-provenance-missing' | 'attempt-provenance-unverified' | 'policy-gate-outcome-missing' | 'post-production-video-missing' | 'performance-threshold-missing' | 'terminal-timing-missing' | ''
+                    event.target.value as 'evidence-url-invalid' | 'provider-collection-failure' | 'github-run-provenance-missing' | 'head-repository-unverified' | 'provider-result-limited' | 'attempt-provenance-unverified' | 'policy-gate-outcome-missing' | 'post-production-video-missing' | 'performance-threshold-missing' | 'terminal-timing-missing' | ''
                   )
                 }
               >
                 <option value="">All requirements</option>
                 <option value="evidence-url-invalid">Invalid or non-HTTPS artifact URL</option>
-                <option value="provider-collection-failure">Provider evidence collection failed</option>
+                <option value="provider-collection-failure">Provider evidence unavailable</option>
                 <option value="github-run-provenance-missing">Missing GitHub run provenance</option>
+                <option value="head-repository-unverified">Unverified GitHub head repository</option>
+                <option value="provider-result-limited">Provider result set truncated</option>
                 <option value="attempt-provenance-unverified">Unverified retry-attempt artifacts</option>
                 <option value="policy-gate-outcome-missing">Missing policy–gate outcome</option>
                 <option value="post-production-video-missing">Missing post-production video</option>
                 <option value="performance-threshold-missing">Missing performance thresholds</option>
-                <option value="terminal-timing-missing">Missing terminal timing</option>
+                <option value="terminal-timing-missing">Missing or invalid terminal timing</option>
               </select>
             </label>
             <label>
@@ -6738,7 +6791,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           <div className="execution-trend" aria-label="Execution outcome trend">
             {outcomeTrend.map(day => (
               <div key={day.date}>
-                <strong>{day.date}</strong>
+                <strong><time dateTime={day.date}>{day.date} UTC</time></strong>
                 <span>{day.passed} passed</span>
                 <span>{day.failed} failed</span>
                 <span>{day.cancelled} cancelled</span>
@@ -6758,7 +6811,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                   Provider evidence: {day.evidenceCompleteCount ?? 0} complete · {day.evidencePartialCount ?? 0} partial · {day.evidenceUnavailableCount ?? 0} unavailable · {day.evidenceNotCollectedCount ?? 0} not collected · {day.evidenceCollectionFailureCount ?? 0} collection failures
                 </span>
                 <span>
-                  Evidence gaps: {day.invalidEvidenceUrlCount ?? 0} invalid URLs · {day.githubRunProvenanceMissingCount ?? 0} GitHub runs missing provenance · {day.attemptProvenanceUnverifiedCount ?? 0} retry attempts with unverified provenance · {day.postProductionVideoMissingCount ?? 0} post-production runs missing video · {day.terminalTimingMissingCount ?? 0} terminal runs missing timing
+                  Evidence gaps: {day.invalidEvidenceUrlCount ?? 0} invalid URLs · {day.githubRunProvenanceMissingCount ?? 0} GitHub runs missing provenance · {day.headRepositoryUnverifiedCount ?? 0} provider collections with unverified repository ownership · {day.attemptProvenanceUnverifiedCount ?? 0} retry attempts with unverified provenance · {day.providerResultLimitedCount ?? 0} provider result sets truncated · {day.postProductionVideoMissingCount ?? 0} post-production runs missing video · {day.terminalTimingMissingCount ?? 0} terminal runs missing or invalid timing
                 </span>
                 <span>
                   Policy gates: {day.gatePassedCount ?? 0} passed · {day.gateFailedCount ?? 0} failed · {day.gateCancelledCount ?? 0} cancelled · {day.gateRunningCount ?? 0} running · {day.gateEvaluationCount ?? 0} evaluated · {day.gateUnevaluatedExecutionCount ?? 0} executions without an attributable gate outcome
@@ -6903,15 +6956,15 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                     {pair.total} observations · {Math.round(pair.passRate * 100)}% passed among terminal outcomes
                   </small>
                   <small>
-                    {pair.latestCompletedAt
-                      ? `Last completed ${new Date(pair.latestCompletedAt).toLocaleString()}`
-                      : 'No completed run yet'}
+                    {pair.latestCompletedAt ? (
+                      <>Last completed <time dateTime={pair.latestCompletedAt}>{new Date(pair.latestCompletedAt).toLocaleString()}</time></>
+                    ) : 'No completed run yet'}
                   </small>
                   {(pair.revisionCount ?? pair.revisions?.length ?? 0) > 0 ? (
                     <small title={pair.revisions?.join(', ') ?? pair.latestRevision}>
                       {(pair.revisionCount ?? pair.revisions?.length) === 1
                         ? `Source revision ${(pair.latestRevision ?? pair.revisions?.[0] ?? '').slice(0, 12)}`
-                        : `Observed across ${pair.revisionCount ?? pair.revisions?.length} source revisions`}
+                        : `Observed across ${pair.revisionCount ?? pair.revisions?.length} source revisions · Latest ${(pair.latestRevision ?? pair.revisions?.[0] ?? '').slice(0, 12)}`}
                     </small>
                   ) : null}
                   {(pair.policySourcePath || pair.gateSourcePath) && (

@@ -127,6 +127,23 @@ describe('execution performance', () => {
       { repositoryId: 'repo-one', policyArtifactId: 'policy', gateArtifactId: 'gate', revisions: ['a'], total: 1, passed: 1, failed: 0, cancelled: 0, running: 0, passRate: 1 },
     ])
   })
+
+  it('selects the latest policy-gate completion by instant instead of timestamp text', () => {
+    const execution = (id: string, revision: string, completedAt: string) => ({
+      id, repositoryId: 'repo', tenantId: 'org', provider: 'external' as const,
+      externalRunId: id, attempt: 1, revision, kind: 'ci' as const,
+      status: 'passed' as const, name: 'CI', completedAt,
+      policyArtifactIds: ['policy'], gateArtifactIds: ['gate'], gateEvaluations: [],
+      thresholds: [], evidenceLinks: [],
+    })
+
+    const [performance] = executionPerformance([
+      execution('older', 'older', '2026-10-21T04:30:00.000Z'),
+      execution('newer-offset', 'newer', '2026-10-21T00:00:00-05:00'),
+    ])
+
+    expect(performance.latestCompletedAt).toBe('2026-10-21T05:00:00.000Z')
+  })
 })
 it('filters and trends only timestamped execution evidence', () => {
   const executions = [
@@ -221,6 +238,48 @@ it('filters and trends only timestamped execution evidence', () => {
     [githubRunWithProvenance, githubRunWithUnverifiedAttemptArtifacts, executions[0]],
     { evidenceRequirement: 'attempt-provenance-unverified' },
   )).toEqual([githubRunWithUnverifiedAttemptArtifacts])
+  const githubRunWithUnverifiedHeadRepository = {
+    ...githubRunWithProvenance,
+    id: 'github-run-with-unverified-head-repository',
+    externalRunId: 'github-run-with-unverified-head-repository',
+    evidenceCollection: {
+      status: 'partial' as const,
+      checkedAt: '2026-10-08T12:02:00.000Z',
+      issues: ['head-repository-unverified' as const],
+    },
+  }
+  expect(filterTestExecutions(
+    [githubRunWithProvenance, githubRunWithUnverifiedHeadRepository, executions[0]],
+    { evidenceRequirement: 'head-repository-unverified' },
+  )).toEqual([githubRunWithUnverifiedHeadRepository])
+  const providerResultLimitedByIssue = {
+    ...githubRunWithProvenance,
+    id: 'provider-result-limited-by-issue',
+    externalRunId: 'provider-result-limited-by-issue',
+    evidenceCollection: {
+      status: 'partial' as const,
+      checkedAt: '2026-10-08T12:03:00.000Z',
+      issues: ['provider-result-limit-exceeded' as const],
+    },
+  }
+  const providerResultLimitedByCode = {
+    ...githubRunWithProvenance,
+    id: 'provider-result-limited-by-code',
+    externalRunId: 'provider-result-limited-by-code',
+    evidenceCollection: {
+      status: 'partial' as const,
+      checkedAt: '2026-10-08T12:04:00.000Z',
+      errorCode: 'PROVIDER_RESULT_LIMIT_EXCEEDED' as const,
+    },
+  }
+  expect(filterTestExecutions(
+    [providerResultLimitedByIssue, providerResultLimitedByCode, githubRunWithProvenance],
+    { evidenceRequirement: 'provider-result-limited' },
+  )).toEqual([providerResultLimitedByIssue, providerResultLimitedByCode])
+  expect(filterTestExecutions(
+    [providerResultLimitedByIssue, providerResultLimitedByCode, executions[1]],
+    { evidenceRequirement: 'provider-collection-failure' },
+  )).toEqual([executions[1]])
   expect(filterTestExecutions(executions, { evidenceRequirement: 'performance-threshold-missing' })).toEqual([executions[1]])
   const explicitPolicyGateOutcome = {
     ...executions[0],
@@ -247,10 +306,17 @@ it('filters and trends only timestamped execution evidence', () => {
     executions[0], ambiguousPolicyGateInventory,
   ])
   expect(filterTestExecutions(executions, { evidenceRequirement: 'terminal-timing-missing' })).toEqual([executions[1]])
+  const invertedTerminalTiming = {
+    ...executions[0],
+    id: 'inverted-terminal-timing',
+    startedAt: '2026-10-08T12:01:00.000Z',
+    completedAt: '2026-10-08T12:00:00.000Z',
+  }
   expect(filterTestExecutions([
     ...executions,
+    invertedTerminalTiming,
     { ...executions[1], id: 'running-without-completion', status: 'running' as const, startedAt: '2026-10-08T12:00:00.000Z', completedAt: undefined },
-  ], { evidenceRequirement: 'terminal-timing-missing' })).toEqual([executions[1]])
+  ], { evidenceRequirement: 'terminal-timing-missing' })).toEqual([executions[1], invertedTerminalTiming])
   expect(filterTestExecutions(executions, { thresholdOutcome: 'failed' })).toEqual([executions[2]])
   expect(filterTestExecutions(executions, { thresholdOutcome: 'passed' })).toEqual([])
   expect(filterTestExecutions(executions, { branch: 'feature/load' })).toEqual([executions[1]])
@@ -266,18 +332,34 @@ it('filters and trends only timestamped execution evidence', () => {
   expect(filterTestExecutions(executions, { minimumDurationMs: 45_001 })).toEqual([executions[2]])
   expect(filterTestExecutions(executions, { maximumDurationMs: 30_000 })).toEqual([executions[0]])
   expect(executionOutcomeTrend(executions)).toEqual([
-    { date: '2026-10-07', total: 2, passed: 1, failed: 1, cancelled: 0, running: 0, passRate: 0.5, durationSampleCount: 2, averageDurationMs: 45_000, maximumDurationMs: 60_000, retryAttemptCount: 1, successfulRetryCount: 1, recoveredRunCount: 1, evidenceCompleteCount: 1, evidencePartialCount: 0, evidenceUnavailableCount: 0, evidenceNotCollectedCount: 1, evidenceCollectionFailureCount: 0, invalidEvidenceUrlCount: 0, githubRunProvenanceMissingCount: 0, attemptProvenanceUnverifiedCount: 0, postProductionVideoMissingCount: 0, terminalTimingMissingCount: 0, gateEvaluationCount: 0, gatePassedCount: 0, gateFailedCount: 0, gateCancelledCount: 0, gateRunningCount: 0, gateUnevaluatedExecutionCount: 2, thresholdEvaluationCount: 1, thresholdPassedCount: 0, thresholdFailedCount: 1, performanceExecutionWithoutThresholdCount: 0 },
-    { date: '2026-10-08', total: 1, passed: 0, failed: 1, cancelled: 0, running: 0, passRate: 0, durationSampleCount: 0, averageDurationMs: 0, maximumDurationMs: 0, retryAttemptCount: 1, successfulRetryCount: 0, recoveredRunCount: 0, evidenceCompleteCount: 0, evidencePartialCount: 0, evidenceUnavailableCount: 1, evidenceNotCollectedCount: 0, evidenceCollectionFailureCount: 1, invalidEvidenceUrlCount: 0, githubRunProvenanceMissingCount: 0, attemptProvenanceUnverifiedCount: 0, postProductionVideoMissingCount: 0, terminalTimingMissingCount: 1, gateEvaluationCount: 0, gatePassedCount: 0, gateFailedCount: 0, gateCancelledCount: 0, gateRunningCount: 0, gateUnevaluatedExecutionCount: 1, thresholdEvaluationCount: 0, thresholdPassedCount: 0, thresholdFailedCount: 0, performanceExecutionWithoutThresholdCount: 1 },
+    { date: '2026-10-07', total: 2, passed: 1, failed: 1, cancelled: 0, running: 0, passRate: 0.5, durationSampleCount: 2, averageDurationMs: 45_000, maximumDurationMs: 60_000, retryAttemptCount: 1, successfulRetryCount: 1, recoveredRunCount: 1, evidenceCompleteCount: 1, evidencePartialCount: 0, evidenceUnavailableCount: 0, evidenceNotCollectedCount: 1, evidenceCollectionFailureCount: 0, invalidEvidenceUrlCount: 0, githubRunProvenanceMissingCount: 0, attemptProvenanceUnverifiedCount: 0, providerResultLimitedCount: 0, headRepositoryUnverifiedCount: 0, postProductionVideoMissingCount: 0, terminalTimingMissingCount: 0, gateEvaluationCount: 0, gatePassedCount: 0, gateFailedCount: 0, gateCancelledCount: 0, gateRunningCount: 0, gateUnevaluatedExecutionCount: 2, thresholdEvaluationCount: 1, thresholdPassedCount: 0, thresholdFailedCount: 1, performanceExecutionWithoutThresholdCount: 0 },
+    { date: '2026-10-08', total: 1, passed: 0, failed: 1, cancelled: 0, running: 0, passRate: 0, durationSampleCount: 0, averageDurationMs: 0, maximumDurationMs: 0, retryAttemptCount: 1, successfulRetryCount: 0, recoveredRunCount: 0, evidenceCompleteCount: 0, evidencePartialCount: 0, evidenceUnavailableCount: 1, evidenceNotCollectedCount: 0, evidenceCollectionFailureCount: 1, invalidEvidenceUrlCount: 0, githubRunProvenanceMissingCount: 0, attemptProvenanceUnverifiedCount: 0, providerResultLimitedCount: 0, headRepositoryUnverifiedCount: 0, postProductionVideoMissingCount: 0, terminalTimingMissingCount: 1, gateEvaluationCount: 0, gatePassedCount: 0, gateFailedCount: 0, gateCancelledCount: 0, gateRunningCount: 0, gateUnevaluatedExecutionCount: 1, thresholdEvaluationCount: 0, thresholdPassedCount: 0, thresholdFailedCount: 0, performanceExecutionWithoutThresholdCount: 1 },
   ])
 })
 
 it('does not infer recovery from a passed retry without retained prior failure evidence', () => {
   const passedRetry = { id: 'retry', repositoryId: 'repo', tenantId: 'org', provider: 'external' as const, externalRunId: 'run', attempt: 2, revision: 'a', kind: 'ci' as const, status: 'passed' as const, name: 'CI', completedAt: '2026-10-09T12:00:00.000Z', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] }
   expect(executionOutcomeTrend([passedRetry])).toEqual([
-    { date: '2026-10-09', total: 1, passed: 1, failed: 0, cancelled: 0, running: 0, passRate: 1, durationSampleCount: 0, averageDurationMs: 0, maximumDurationMs: 0, retryAttemptCount: 1, successfulRetryCount: 1, recoveredRunCount: 0, evidenceCompleteCount: 0, evidencePartialCount: 0, evidenceUnavailableCount: 0, evidenceNotCollectedCount: 1, evidenceCollectionFailureCount: 0, invalidEvidenceUrlCount: 0, githubRunProvenanceMissingCount: 0, attemptProvenanceUnverifiedCount: 0, postProductionVideoMissingCount: 0, terminalTimingMissingCount: 1, gateEvaluationCount: 0, gatePassedCount: 0, gateFailedCount: 0, gateCancelledCount: 0, gateRunningCount: 0, gateUnevaluatedExecutionCount: 1, thresholdEvaluationCount: 0, thresholdPassedCount: 0, thresholdFailedCount: 0, performanceExecutionWithoutThresholdCount: 0 },
+    { date: '2026-10-09', total: 1, passed: 1, failed: 0, cancelled: 0, running: 0, passRate: 1, durationSampleCount: 0, averageDurationMs: 0, maximumDurationMs: 0, retryAttemptCount: 1, successfulRetryCount: 1, recoveredRunCount: 0, evidenceCompleteCount: 0, evidencePartialCount: 0, evidenceUnavailableCount: 0, evidenceNotCollectedCount: 1, evidenceCollectionFailureCount: 0, invalidEvidenceUrlCount: 0, githubRunProvenanceMissingCount: 0, attemptProvenanceUnverifiedCount: 0, providerResultLimitedCount: 0, headRepositoryUnverifiedCount: 0, postProductionVideoMissingCount: 0, terminalTimingMissingCount: 1, gateEvaluationCount: 0, gatePassedCount: 0, gateFailedCount: 0, gateCancelledCount: 0, gateRunningCount: 0, gateUnevaluatedExecutionCount: 1, thresholdEvaluationCount: 0, thresholdPassedCount: 0, thresholdFailedCount: 0, performanceExecutionWithoutThresholdCount: 0 },
   ])
   const failedInitial = { ...passedRetry, id: 'initial', attempt: 1, status: 'failed' as const, completedAt: '2026-10-09T11:00:00.000Z' }
   expect(executionOutcomeTrend([passedRetry], [failedInitial, passedRetry])[0].recoveredRunCount).toBe(1)
+})
+
+it('groups offset execution timestamps into the same UTC day as PostgreSQL', () => {
+  const execution = (id: string, completedAt: string) => ({
+    id, repositoryId: 'repo', tenantId: 'org', provider: 'external' as const,
+    externalRunId: id, attempt: 1, revision: 'a', kind: 'ci' as const,
+    status: 'passed' as const, name: 'CI', completedAt, policyArtifactIds: [],
+    gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [],
+  })
+
+  expect(executionOutcomeTrend([
+    execution('offset', '2026-10-20T23:30:00-02:00'),
+    execution('utc', '2026-10-21T01:45:00.000Z'),
+  ])).toEqual([
+    expect.objectContaining({ date: '2026-10-21', total: 2, passed: 2 }),
+  ])
 })
 
 it('trends actionable evidence gaps without treating running executions as missing timing', () => {
@@ -296,7 +378,7 @@ it('trends actionable evidence gaps without treating running executions as missi
         status: 'partial' as const,
         checkedAt: '2026-10-09T12:01:00.000Z',
         errorCode: 'PROVIDER_RESULT_LIMIT_EXCEEDED' as const,
-        issues: ['attempt-provenance-unverified' as const],
+        issues: ['attempt-provenance-unverified' as const, 'head-repository-unverified' as const],
       },
     },
     {
@@ -315,7 +397,10 @@ it('trends actionable evidence gaps without treating running executions as missi
     invalidEvidenceUrlCount: 1,
     githubRunProvenanceMissingCount: 1,
     attemptProvenanceUnverifiedCount: 1,
-    evidenceCollectionFailureCount: 1,
+    providerResultLimitedCount: 1,
+    headRepositoryUnverifiedCount: 1,
+    evidencePartialCount: 1,
+    evidenceCollectionFailureCount: 0,
     postProductionVideoMissingCount: 1,
     terminalTimingMissingCount: 1,
   })

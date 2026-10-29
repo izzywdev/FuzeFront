@@ -111,17 +111,31 @@ describe('repository flow review lifecycle', () => {
     }
     await store.saveRepositoryFlowCandidates([
       { ...candidate, id: 'missing-provenance', analysis: undefined },
-      { ...candidate, id: 'bounded-prompt', analysis: { ...analysis, inputArtifactCount: 140, promptArtifactCount: 100, promptTruncated: true } },
+      { ...candidate, id: 'incomplete-provenance', analysis: { ...analysis, schemaVersion: '' } },
+      { ...candidate, id: 'artifacts-omitted', analysis: { ...analysis, inputArtifactCount: 140, promptArtifactCount: 100, promptOmittedArtifactCount: 40, promptContentTruncated: false, promptTruncated: true } },
+      { ...candidate, id: 'content-truncated', analysis: { ...analysis, inputArtifactCount: 100, promptArtifactCount: 100, promptOmittedArtifactCount: 0, promptContentTruncated: true, promptTruncated: true } },
+      { ...candidate, id: 'legacy-artifacts-omitted', analysis: { ...analysis, inputArtifactCount: 10, promptArtifactCount: 9, promptOmittedArtifactCount: 1, promptContentTruncated: false } },
+      { ...candidate, id: 'legacy-content-truncated', analysis: { ...analysis, inputArtifactCount: 10, promptArtifactCount: 10, promptOmittedArtifactCount: 0, promptContentTruncated: true } },
       { ...candidate, id: 'grounding-gap', analysis: { ...analysis, grounding: { referencedArtifactCount: 2, groundedArtifactCount: 1, rejectedArtifactCount: 1, ungroundedStepCount: 1 } } },
+      { ...candidate, id: 'missing-wireframe', wireframe: { kind: 'sequence', nodes: [] } },
+      { ...candidate, id: 'missing-steps', steps: [] },
       { ...candidate, id: 'other-tenant-risk', tenantId: 'tenant-2', analysis: undefined },
     ])
 
     await expect(store.repositoryFlowCandidates(candidate.repositoryId, candidate.tenantId, { analysisRisk: 'provenance-missing' }))
-      .resolves.toEqual([expect.objectContaining({ id: 'missing-provenance' })])
+      .resolves.toEqual(expect.arrayContaining([expect.objectContaining({ id: 'missing-provenance' }), expect.objectContaining({ id: 'incomplete-provenance' })]))
     await expect(store.repositoryFlowCandidates(candidate.repositoryId, candidate.tenantId, { analysisRisk: 'prompt-truncated' }))
-      .resolves.toEqual([expect.objectContaining({ id: 'bounded-prompt' })])
+      .resolves.toEqual(expect.arrayContaining([expect.objectContaining({ id: 'artifacts-omitted' }), expect.objectContaining({ id: 'content-truncated' }), expect.objectContaining({ id: 'legacy-artifacts-omitted' }), expect.objectContaining({ id: 'legacy-content-truncated' })]))
+    await expect(store.repositoryFlowCandidates(candidate.repositoryId, candidate.tenantId, { analysisRisk: 'artifacts-omitted' }))
+      .resolves.toEqual(expect.arrayContaining([expect.objectContaining({ id: 'artifacts-omitted' }), expect.objectContaining({ id: 'legacy-artifacts-omitted' })]))
+    await expect(store.repositoryFlowCandidates(candidate.repositoryId, candidate.tenantId, { analysisRisk: 'content-truncated' }))
+      .resolves.toEqual(expect.arrayContaining([expect.objectContaining({ id: 'content-truncated' }), expect.objectContaining({ id: 'legacy-content-truncated' })]))
     await expect(store.repositoryFlowCandidates(candidate.repositoryId, candidate.tenantId, { analysisRisk: 'grounding-gaps' }))
       .resolves.toEqual([expect.objectContaining({ id: 'grounding-gap' })])
+    await expect(store.repositoryFlowCandidates(candidate.repositoryId, candidate.tenantId, { analysisRisk: 'wireframe-missing' }))
+      .resolves.toEqual([expect.objectContaining({ id: 'missing-wireframe' })])
+    await expect(store.repositoryFlowCandidates(candidate.repositoryId, candidate.tenantId, { analysisRisk: 'steps-missing' }))
+      .resolves.toEqual([expect.objectContaining({ id: 'missing-steps' })])
   })
 
   it('binds confidence filters before the stable Postgres continuation cursor', async () => {
@@ -144,7 +158,17 @@ describe('repository flow review lifecycle', () => {
     expect(String(statement)).toContain("$12='grounding-gaps'")
     expect(String(statement)).toContain("analysis_provenance->'grounding'->>'rejectedArtifactCount'")
     expect(String(statement)).toContain("$12='prompt-truncated'")
+    expect(String(statement)).toContain("analysis_provenance->>'promptOmittedArtifactCount'")
+    expect(String(statement)).toContain("analysis_provenance->>'promptContentTruncated'")
+    expect(String(statement)).toContain("$12='artifacts-omitted'")
+    expect(String(statement)).toContain("$12='content-truncated'")
     expect(String(statement)).toContain("$12='provenance-missing'")
+    expect(String(statement)).toContain("$12='wireframe-missing'")
+    expect(String(statement)).toContain("jsonb_array_length(COALESCE(wireframe->'nodes','[]'::jsonb))=0")
+    expect(String(statement)).toContain("$12='steps-missing'")
+    expect(String(statement)).toContain("jsonb_array_length(COALESCE(steps,'[]'::jsonb))=0")
+    expect(String(statement)).toContain("NULLIF(BTRIM(analysis_provenance->>'model'),'') IS NULL")
+    expect(String(statement)).toContain("analysis_provenance->>'provider' IS DISTINCT FROM 'fuzeinfra-litellm'")
     expect(String(statement)).toContain("jsonb_array_elements_text(COALESCE(evidence, '[]'::jsonb))")
     expect(String(statement)).toContain("jsonb_array_elements(COALESCE(steps, '[]'::jsonb))")
     expect(String(statement)).toContain("jsonb_array_elements(COALESCE(wireframe->'nodes', '[]'::jsonb))")

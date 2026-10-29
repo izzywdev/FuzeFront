@@ -91,7 +91,7 @@ await runConsumer(
         operations: portfolio.operations.filter(item => candidateIds.has(item.id)),
         surfaces: portfolio.surfaces.filter(item => candidateIds.has(item.id)),
       })
-      results.push({ requirement, suggestions: suggestionsFromAnalysis(requirement, analysis) })
+      results.push({ requirement, suggestions: suggestionsFromAnalysis(requirement, analysis, command.tenantId) })
       await heartbeat()
     }
     await apiRequest('/api/v1/internal/intelligence/results', {

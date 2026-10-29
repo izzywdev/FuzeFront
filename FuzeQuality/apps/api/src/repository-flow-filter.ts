@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { RepositoryFlowCandidate } from '@fuzequality/contracts'
+import { repositoryFlowHasBoundedPromptEvidence, repositoryFlowHasCompleteAnalysisProvenance } from '@fuzequality/contracts/repository-flow'
 import { historyPageQueryFields } from './history-pagination'
 
 export const repositoryFlowFilterSchema = z.object({
@@ -10,7 +11,7 @@ export const repositoryFlowFilterSchema = z.object({
   model: z.string().trim().min(1).max(200).optional(),
   promptVersion: z.string().trim().min(1).max(100).optional(),
   schemaVersion: z.string().trim().min(1).max(100).optional(),
-  analysisRisk: z.enum(['grounding-gaps', 'prompt-truncated', 'provenance-missing']).optional(),
+  analysisRisk: z.enum(['grounding-gaps', 'prompt-truncated', 'artifacts-omitted', 'content-truncated', 'provenance-missing', 'wireframe-missing', 'steps-missing']).optional(),
   minConfidence: z.coerce.number().min(0).max(1).optional(),
   maxConfidence: z.coerce.number().min(0).max(1).optional(),
   ...historyPageQueryFields,
@@ -41,8 +42,21 @@ export function filterRepositoryFlowCandidates(
             candidate.analysis.grounding.ungroundedStepCount > 0
           ))
         : filter.analysisRisk === 'prompt-truncated'
-          ? candidate.source === 'litellm' && candidate.analysis?.promptTruncated === true
-          : candidate.source === 'litellm' && !candidate.analysis
+          ? repositoryFlowHasBoundedPromptEvidence(candidate)
+          : filter.analysisRisk === 'artifacts-omitted'
+            ? candidate.source === 'litellm' && Boolean(candidate.analysis && (
+                (candidate.analysis.promptOmittedArtifactCount ?? Math.max(
+                  (candidate.analysis.inputArtifactCount ?? 0) - (candidate.analysis.promptArtifactCount ?? 0),
+                  0,
+                )) > 0
+              ))
+            : filter.analysisRisk === 'content-truncated'
+              ? candidate.source === 'litellm' && candidate.analysis?.promptContentTruncated === true
+              : filter.analysisRisk === 'provenance-missing'
+                ? candidate.source === 'litellm' && !repositoryFlowHasCompleteAnalysisProvenance(candidate)
+                : filter.analysisRisk === 'wireframe-missing'
+                  ? candidate.wireframe.nodes.length === 0
+                  : candidate.steps.length === 0
     )) &&
     (filter.minConfidence === undefined || candidate.confidence >= filter.minConfidence) &&
     (filter.maxConfidence === undefined || candidate.confidence <= filter.maxConfidence)
