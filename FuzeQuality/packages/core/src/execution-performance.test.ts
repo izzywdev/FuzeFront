@@ -252,6 +252,30 @@ it('filters and trends only timestamped execution evidence', () => {
     [githubRunWithProvenance, githubRunWithUnverifiedHeadRepository, executions[0]],
     { evidenceRequirement: 'head-repository-unverified' },
   )).toEqual([githubRunWithUnverifiedHeadRepository])
+  const providerResultLimitedByIssue = {
+    ...githubRunWithProvenance,
+    id: 'provider-result-limited-by-issue',
+    externalRunId: 'provider-result-limited-by-issue',
+    evidenceCollection: {
+      status: 'partial' as const,
+      checkedAt: '2026-10-08T12:03:00.000Z',
+      issues: ['provider-result-limit-exceeded' as const],
+    },
+  }
+  const providerResultLimitedByCode = {
+    ...githubRunWithProvenance,
+    id: 'provider-result-limited-by-code',
+    externalRunId: 'provider-result-limited-by-code',
+    evidenceCollection: {
+      status: 'partial' as const,
+      checkedAt: '2026-10-08T12:04:00.000Z',
+      errorCode: 'PROVIDER_RESULT_LIMIT_EXCEEDED' as const,
+    },
+  }
+  expect(filterTestExecutions(
+    [providerResultLimitedByIssue, providerResultLimitedByCode, githubRunWithProvenance],
+    { evidenceRequirement: 'provider-result-limited' },
+  )).toEqual([providerResultLimitedByIssue, providerResultLimitedByCode])
   expect(filterTestExecutions(executions, { evidenceRequirement: 'performance-threshold-missing' })).toEqual([executions[1]])
   const explicitPolicyGateOutcome = {
     ...executions[0],

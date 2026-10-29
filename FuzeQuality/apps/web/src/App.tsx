@@ -3983,7 +3983,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [executionEvidenceCheckedAfter, setExecutionEvidenceCheckedAfter] = useState('')
   const [executionEvidenceCheckedBefore, setExecutionEvidenceCheckedBefore] = useState('')
   const [executionEvidenceRequirement, setExecutionEvidenceRequirement] = useState<
-    'evidence-url-invalid' | 'provider-collection-failure' | 'github-run-provenance-missing' | 'head-repository-unverified' | 'attempt-provenance-unverified' | 'policy-gate-outcome-missing' | 'post-production-video-missing' | 'performance-threshold-missing' | 'terminal-timing-missing' | ''
+    'evidence-url-invalid' | 'provider-collection-failure' | 'github-run-provenance-missing' | 'head-repository-unverified' | 'provider-result-limited' | 'attempt-provenance-unverified' | 'policy-gate-outcome-missing' | 'post-production-video-missing' | 'performance-threshold-missing' | 'terminal-timing-missing' | ''
   >('')
   const [executionThresholdOutcome, setExecutionThresholdOutcome] = useState<
     'passed' | 'failed' | ''
@@ -6509,7 +6509,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 value={executionEvidenceRequirement}
                 onChange={event =>
                   setExecutionEvidenceRequirement(
-                    event.target.value as 'evidence-url-invalid' | 'provider-collection-failure' | 'github-run-provenance-missing' | 'head-repository-unverified' | 'attempt-provenance-unverified' | 'policy-gate-outcome-missing' | 'post-production-video-missing' | 'performance-threshold-missing' | 'terminal-timing-missing' | ''
+                    event.target.value as 'evidence-url-invalid' | 'provider-collection-failure' | 'github-run-provenance-missing' | 'head-repository-unverified' | 'provider-result-limited' | 'attempt-provenance-unverified' | 'policy-gate-outcome-missing' | 'post-production-video-missing' | 'performance-threshold-missing' | 'terminal-timing-missing' | ''
                   )
                 }
               >
@@ -6518,6 +6518,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 <option value="provider-collection-failure">Provider evidence collection failed</option>
                 <option value="github-run-provenance-missing">Missing GitHub run provenance</option>
                 <option value="head-repository-unverified">Unverified GitHub head repository</option>
+                <option value="provider-result-limited">Provider result set truncated</option>
                 <option value="attempt-provenance-unverified">Unverified retry-attempt artifacts</option>
                 <option value="policy-gate-outcome-missing">Missing policy–gate outcome</option>
                 <option value="post-production-video-missing">Missing post-production video</option>

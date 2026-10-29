@@ -53,6 +53,7 @@ export type ExecutionEvidenceRequirement =
   | 'provider-collection-failure'
   | 'github-run-provenance-missing'
   | 'head-repository-unverified'
+  | 'provider-result-limited'
   | 'attempt-provenance-unverified'
   | 'policy-gate-outcome-missing'
   | 'post-production-video-missing'
@@ -258,6 +259,11 @@ export function filterTestExecutions(
     if (
       filter.evidenceRequirement === 'head-repository-unverified' &&
       !execution.evidenceCollection?.issues?.includes('head-repository-unverified')
+    ) return false
+    if (
+      filter.evidenceRequirement === 'provider-result-limited' &&
+      execution.evidenceCollection?.errorCode !== 'PROVIDER_RESULT_LIMIT_EXCEEDED' &&
+      !execution.evidenceCollection?.issues?.includes('provider-result-limit-exceeded')
     ) return false
     if (
       filter.evidenceRequirement === 'post-production-video-missing' &&

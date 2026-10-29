@@ -1873,7 +1873,7 @@ export class PostgresCatalogStore implements CatalogStore {
                OR executions.source_url IS NULL
                OR executions.source_url !~* '^https://[^/?#[:space:]]+'))
            OR ($25='attempt-provenance-unverified'
-             AND COALESCE(executions.evidence_collection->'issues','[]'::jsonb) ? 'attempt-provenance-unverified') OR ($25='head-repository-unverified' AND COALESCE(executions.evidence_collection->'issues','[]'::jsonb) ? 'head-repository-unverified')
+             AND COALESCE(executions.evidence_collection->'issues','[]'::jsonb) ? 'attempt-provenance-unverified') OR ($25='head-repository-unverified' AND COALESCE(executions.evidence_collection->'issues','[]'::jsonb) ? 'head-repository-unverified') OR ($25='provider-result-limited' AND (executions.evidence_collection->>'errorCode'='PROVIDER_RESULT_LIMIT_EXCEEDED' OR COALESCE(executions.evidence_collection->'issues','[]'::jsonb) ? 'provider-result-limit-exceeded'))
            OR ($25='post-production-video-missing'
              AND executions.kind='post-production'
              AND NOT EXISTS (
@@ -2249,7 +2249,7 @@ export class PostgresCatalogStore implements CatalogStore {
                OR executions.source_url IS NULL
                OR executions.source_url !~* '^https://[^/?#[:space:]]+'))
            OR ($25='attempt-provenance-unverified'
-             AND COALESCE(executions.evidence_collection->'issues','[]'::jsonb) ? 'attempt-provenance-unverified') OR ($25='head-repository-unverified' AND COALESCE(executions.evidence_collection->'issues','[]'::jsonb) ? 'head-repository-unverified')
+             AND COALESCE(executions.evidence_collection->'issues','[]'::jsonb) ? 'attempt-provenance-unverified') OR ($25='head-repository-unverified' AND COALESCE(executions.evidence_collection->'issues','[]'::jsonb) ? 'head-repository-unverified') OR ($25='provider-result-limited' AND (executions.evidence_collection->>'errorCode'='PROVIDER_RESULT_LIMIT_EXCEEDED' OR COALESCE(executions.evidence_collection->'issues','[]'::jsonb) ? 'provider-result-limit-exceeded'))
            OR ($25='post-production-video-missing'
              AND executions.kind='post-production'
              AND NOT EXISTS (
@@ -2387,7 +2387,7 @@ export class PostgresCatalogStore implements CatalogStore {
                  OR executions.source_url IS NULL
                  OR executions.source_url !~* '^https://[^/?#[:space:]]+'))
              OR ($28='attempt-provenance-unverified'
-               AND COALESCE(executions.evidence_collection->'issues','[]'::jsonb) ? 'attempt-provenance-unverified') OR ($28='head-repository-unverified' AND COALESCE(executions.evidence_collection->'issues','[]'::jsonb) ? 'head-repository-unverified')
+               AND COALESCE(executions.evidence_collection->'issues','[]'::jsonb) ? 'attempt-provenance-unverified') OR ($28='head-repository-unverified' AND COALESCE(executions.evidence_collection->'issues','[]'::jsonb) ? 'head-repository-unverified') OR ($28='provider-result-limited' AND (executions.evidence_collection->>'errorCode'='PROVIDER_RESULT_LIMIT_EXCEEDED' OR COALESCE(executions.evidence_collection->'issues','[]'::jsonb) ? 'provider-result-limit-exceeded'))
              OR ($28='post-production-video-missing'
                AND executions.kind='post-production'
                AND NOT EXISTS (
