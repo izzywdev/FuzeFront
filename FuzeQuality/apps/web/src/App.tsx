@@ -217,6 +217,8 @@ function mergeExecutionOutcomeTrends(groups: ExecutionOutcomeTrend[][]): Executi
       invalidEvidenceUrlCount: 0,
       githubRunProvenanceMissingCount: 0,
       attemptProvenanceUnverifiedCount: 0,
+      providerResultLimitedCount: 0,
+      headRepositoryUnverifiedCount: 0,
       postProductionVideoMissingCount: 0,
       terminalTimingMissingCount: 0,
       gateEvaluationCount: 0,
@@ -258,6 +260,8 @@ function mergeExecutionOutcomeTrends(groups: ExecutionOutcomeTrend[][]): Executi
     current.invalidEvidenceUrlCount = (current.invalidEvidenceUrlCount ?? 0) + (item.invalidEvidenceUrlCount ?? 0)
     current.githubRunProvenanceMissingCount = (current.githubRunProvenanceMissingCount ?? 0) + (item.githubRunProvenanceMissingCount ?? 0)
     current.attemptProvenanceUnverifiedCount = (current.attemptProvenanceUnverifiedCount ?? 0) + (item.attemptProvenanceUnverifiedCount ?? 0)
+    current.providerResultLimitedCount = (current.providerResultLimitedCount ?? 0) + (item.providerResultLimitedCount ?? 0)
+    current.headRepositoryUnverifiedCount = (current.headRepositoryUnverifiedCount ?? 0) + (item.headRepositoryUnverifiedCount ?? 0)
     current.postProductionVideoMissingCount = (current.postProductionVideoMissingCount ?? 0) + (item.postProductionVideoMissingCount ?? 0)
     current.terminalTimingMissingCount = (current.terminalTimingMissingCount ?? 0) + (item.terminalTimingMissingCount ?? 0)
     current.gateEvaluationCount = (current.gateEvaluationCount ?? 0) + (item.gateEvaluationCount ?? 0)
@@ -6778,7 +6782,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                   Provider evidence: {day.evidenceCompleteCount ?? 0} complete · {day.evidencePartialCount ?? 0} partial · {day.evidenceUnavailableCount ?? 0} unavailable · {day.evidenceNotCollectedCount ?? 0} not collected · {day.evidenceCollectionFailureCount ?? 0} collection failures
                 </span>
                 <span>
-                  Evidence gaps: {day.invalidEvidenceUrlCount ?? 0} invalid URLs · {day.githubRunProvenanceMissingCount ?? 0} GitHub runs missing provenance · {day.attemptProvenanceUnverifiedCount ?? 0} retry attempts with unverified provenance · {day.postProductionVideoMissingCount ?? 0} post-production runs missing video · {day.terminalTimingMissingCount ?? 0} terminal runs missing or invalid timing
+                  Evidence gaps: {day.invalidEvidenceUrlCount ?? 0} invalid URLs · {day.githubRunProvenanceMissingCount ?? 0} GitHub runs missing provenance · {day.headRepositoryUnverifiedCount ?? 0} provider collections with unverified repository ownership · {day.attemptProvenanceUnverifiedCount ?? 0} retry attempts with unverified provenance · {day.providerResultLimitedCount ?? 0} provider result sets truncated · {day.postProductionVideoMissingCount ?? 0} post-production runs missing video · {day.terminalTimingMissingCount ?? 0} terminal runs missing or invalid timing
                 </span>
                 <span>
                   Policy gates: {day.gatePassedCount ?? 0} passed · {day.gateFailedCount ?? 0} failed · {day.gateCancelledCount ?? 0} cancelled · {day.gateRunningCount ?? 0} running · {day.gateEvaluationCount ?? 0} evaluated · {day.gateUnevaluatedExecutionCount ?? 0} executions without an attributable gate outcome

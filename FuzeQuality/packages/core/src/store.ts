@@ -2090,7 +2090,7 @@ export class PostgresCatalogStore implements CatalogStore {
               )::integer AS github_run_provenance_missing_count,
               count(*) FILTER (
                 WHERE COALESCE(evidence_collection->'issues','[]'::jsonb) ? 'attempt-provenance-unverified'
-              )::integer AS attempt_provenance_unverified_count,
+              )::integer AS attempt_provenance_unverified_count, count(*) FILTER (WHERE evidence_collection->>'errorCode'='PROVIDER_RESULT_LIMIT_EXCEEDED' OR COALESCE(evidence_collection->'issues','[]'::jsonb) ? 'provider-result-limit-exceeded')::integer AS provider_result_limited_count, count(*) FILTER (WHERE COALESCE(evidence_collection->'issues','[]'::jsonb) ? 'head-repository-unverified')::integer AS head_repository_unverified_count,
               count(*) FILTER (
                 WHERE kind='post-production' AND NOT EXISTS (
                   SELECT 1 FROM jsonb_array_elements(COALESCE(evidence_links,'[]'::jsonb)) AS evidence(value)
@@ -2299,7 +2299,7 @@ export class PostgresCatalogStore implements CatalogStore {
       evidenceCollectionFailureCount: row.evidence_collection_failure_count,
       invalidEvidenceUrlCount: row.invalid_evidence_url_count,
       githubRunProvenanceMissingCount: row.github_run_provenance_missing_count,
-      attemptProvenanceUnverifiedCount: row.attempt_provenance_unverified_count,
+      attemptProvenanceUnverifiedCount: row.attempt_provenance_unverified_count, providerResultLimitedCount: row.provider_result_limited_count, headRepositoryUnverifiedCount: row.head_repository_unverified_count,
       postProductionVideoMissingCount: row.post_production_video_missing_count,
       terminalTimingMissingCount: row.terminal_timing_missing_count,
       gateEvaluationCount: row.gate_evaluation_count,

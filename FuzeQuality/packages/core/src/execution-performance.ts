@@ -351,6 +351,10 @@ export type ExecutionOutcomeTrend = {
   githubRunProvenanceMissingCount?: number
   /** Retry attempts whose exact provider-attempt provenance could not be verified. */
   attemptProvenanceUnverifiedCount?: number
+  /** Provider artifact queries whose retained result set was explicitly truncated. */
+  providerResultLimitedCount?: number
+  /** Provider artifact queries whose head-repository ownership could not be verified. */
+  headRepositoryUnverifiedCount?: number
   /** Post-production executions without a safe video evidence link. */
   postProductionVideoMissingCount?: number
   /** Terminal executions without a complete, valid timing interval. */
@@ -409,6 +413,8 @@ export function executionOutcomeTrend(executions: TestExecution[], history: Test
       invalidEvidenceUrlCount: 0,
       githubRunProvenanceMissingCount: 0,
       attemptProvenanceUnverifiedCount: 0,
+      providerResultLimitedCount: 0,
+      headRepositoryUnverifiedCount: 0,
       postProductionVideoMissingCount: 0,
       terminalTimingMissingCount: 0,
       gateEvaluationCount: 0,
@@ -446,6 +452,12 @@ export function executionOutcomeTrend(executions: TestExecution[], history: Test
     }
     if (execution.evidenceCollection?.issues?.includes('attempt-provenance-unverified')) {
       current.attemptProvenanceUnverifiedCount = (current.attemptProvenanceUnverifiedCount ?? 0) + 1
+    }
+    if (execution.evidenceCollection?.errorCode === 'PROVIDER_RESULT_LIMIT_EXCEEDED' || execution.evidenceCollection?.issues?.includes('provider-result-limit-exceeded')) {
+      current.providerResultLimitedCount = (current.providerResultLimitedCount ?? 0) + 1
+    }
+    if (execution.evidenceCollection?.issues?.includes('head-repository-unverified')) {
+      current.headRepositoryUnverifiedCount = (current.headRepositoryUnverifiedCount ?? 0) + 1
     }
     if (
       execution.kind === 'post-production' &&

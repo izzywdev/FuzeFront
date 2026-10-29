@@ -2377,7 +2377,7 @@ components:
     ExecutionOutcomeTrend:
       type: object
       additionalProperties: false
-      required: [date, total, passed, failed, cancelled, running, passRate, durationSampleCount, averageDurationMs, maximumDurationMs, retryAttemptCount, successfulRetryCount, recoveredRunCount, evidenceCompleteCount, evidencePartialCount, evidenceUnavailableCount, evidenceNotCollectedCount, evidenceCollectionFailureCount, invalidEvidenceUrlCount, githubRunProvenanceMissingCount, attemptProvenanceUnverifiedCount, postProductionVideoMissingCount, terminalTimingMissingCount, gateEvaluationCount, gatePassedCount, gateFailedCount, gateCancelledCount, gateRunningCount, gateUnevaluatedExecutionCount, thresholdEvaluationCount, thresholdPassedCount, thresholdFailedCount, performanceExecutionWithoutThresholdCount]
+      required: [date, total, passed, failed, cancelled, running, passRate, durationSampleCount, averageDurationMs, maximumDurationMs, retryAttemptCount, successfulRetryCount, recoveredRunCount, evidenceCompleteCount, evidencePartialCount, evidenceUnavailableCount, evidenceNotCollectedCount, evidenceCollectionFailureCount, invalidEvidenceUrlCount, githubRunProvenanceMissingCount, attemptProvenanceUnverifiedCount, providerResultLimitedCount, headRepositoryUnverifiedCount, postProductionVideoMissingCount, terminalTimingMissingCount, gateEvaluationCount, gatePassedCount, gateFailedCount, gateCancelledCount, gateRunningCount, gateUnevaluatedExecutionCount, thresholdEvaluationCount, thresholdPassedCount, thresholdFailedCount, performanceExecutionWithoutThresholdCount]
       properties:
         date: { type: string, format: date }
         total:
@@ -2435,6 +2435,12 @@ components:
           minimum: 0
           description: GitHub Actions executions missing repository, workflow, or safe run URL provenance.
         attemptProvenanceUnverifiedCount:
+          type: integer
+          minimum: 0
+        providerResultLimitedCount:
+          type: integer
+          minimum: 0
+        headRepositoryUnverifiedCount:
           type: integer
           minimum: 0
           description: Retry attempts whose exact provider-attempt provenance could not be verified.
