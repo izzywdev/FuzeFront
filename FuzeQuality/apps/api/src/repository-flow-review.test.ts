@@ -178,6 +178,10 @@ describe('repository UX-flow review revision guard', () => {
       revision: candidate.revision,
     })
     expect(repositoryFlowAnalysisProvenanceConflict(withoutProvenance, 'rejected')).toBeUndefined()
+    expect(repositoryFlowAnalysisProvenanceConflict({
+      ...candidate,
+      analysis: { ...candidate.analysis, promptVersion: ' ' },
+    }, 'confirmed')).toMatchObject({ code: 'FLOW_ANALYSIS_PROVENANCE_REQUIRED' })
     expect(repositoryFlowAnalysisProvenanceConflict(candidate, 'confirmed')).toBeUndefined()
     expect(repositoryFlowAnalysisProvenanceConflict({
       ...withoutProvenance,

@@ -2068,6 +2068,17 @@ describe('RepositoryIntelligence flow inventory', () => {
     })).toBe(true)
   })
 
+  it('retains partially populated legacy LiteLLM provenance in the missing-provenance filter', () => {
+    const incompleteProvenance = {
+      ...candidate,
+      analysis: { ...candidate.analysis!, schemaVersion: '' },
+    }
+
+    expect(flowCandidateMatchesInventory(incompleteProvenance, [repository], {
+      repositoryId: '', source: '', status: '', revisionScope: 'all', targetId: '', model: '', promptVersion: '', schemaVersion: '', analysisRisk: 'provenance-missing', minimumConfidencePercent: '', maximumConfidencePercent: '',
+    })).toBe(true)
+  })
+
   it('shows reviewers how much repository evidence the LiteLLM prompt omitted', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([

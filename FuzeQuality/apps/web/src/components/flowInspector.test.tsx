@@ -140,6 +140,20 @@ describe('FlowInspector', () => {
     expect(screen.queryByText('Deterministic analysis; no model invocation.')).not.toBeInTheDocument()
   })
 
+  it('blocks reviewer trust when retained LiteLLM provenance is incomplete', () => {
+    render(
+      <FlowInspector
+        open
+        flow={{ ...flow, analysis: { ...flow.analysis!, model: ' ' } }}
+        artifacts={[artifact]}
+        onClose={vi.fn()}
+      />
+    )
+
+    expect(screen.getByRole('alert')).toHaveTextContent('no stored model, prompt, and schema provenance')
+    expect(screen.queryByText('fuzeinfra-litellm')).not.toBeInTheDocument()
+  })
+
   it('blocks reviewer trust when LiteLLM evidence is unavailable even if targets still resolve', () => {
     render(
       <FlowInspector

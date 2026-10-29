@@ -111,6 +111,7 @@ describe('repository flow review lifecycle', () => {
     }
     await store.saveRepositoryFlowCandidates([
       { ...candidate, id: 'missing-provenance', analysis: undefined },
+      { ...candidate, id: 'incomplete-provenance', analysis: { ...analysis, schemaVersion: '' } },
       { ...candidate, id: 'artifacts-omitted', analysis: { ...analysis, inputArtifactCount: 140, promptArtifactCount: 100, promptOmittedArtifactCount: 40, promptContentTruncated: false, promptTruncated: true } },
       { ...candidate, id: 'content-truncated', analysis: { ...analysis, inputArtifactCount: 100, promptArtifactCount: 100, promptOmittedArtifactCount: 0, promptContentTruncated: true, promptTruncated: true } },
       { ...candidate, id: 'legacy-artifacts-omitted', analysis: { ...analysis, inputArtifactCount: 10, promptArtifactCount: 9, promptOmittedArtifactCount: 1, promptContentTruncated: false } },
@@ -120,7 +121,7 @@ describe('repository flow review lifecycle', () => {
     ])
 
     await expect(store.repositoryFlowCandidates(candidate.repositoryId, candidate.tenantId, { analysisRisk: 'provenance-missing' }))
-      .resolves.toEqual([expect.objectContaining({ id: 'missing-provenance' })])
+      .resolves.toEqual(expect.arrayContaining([expect.objectContaining({ id: 'missing-provenance' }), expect.objectContaining({ id: 'incomplete-provenance' })]))
     await expect(store.repositoryFlowCandidates(candidate.repositoryId, candidate.tenantId, { analysisRisk: 'prompt-truncated' }))
       .resolves.toEqual(expect.arrayContaining([expect.objectContaining({ id: 'artifacts-omitted' }), expect.objectContaining({ id: 'content-truncated' }), expect.objectContaining({ id: 'legacy-artifacts-omitted' }), expect.objectContaining({ id: 'legacy-content-truncated' })]))
     await expect(store.repositoryFlowCandidates(candidate.repositoryId, candidate.tenantId, { analysisRisk: 'artifacts-omitted' }))
@@ -156,6 +157,8 @@ describe('repository flow review lifecycle', () => {
     expect(String(statement)).toContain("$12='artifacts-omitted'")
     expect(String(statement)).toContain("$12='content-truncated'")
     expect(String(statement)).toContain("$12='provenance-missing'")
+    expect(String(statement)).toContain("NULLIF(BTRIM(analysis_provenance->>'model'),'') IS NULL")
+    expect(String(statement)).toContain("analysis_provenance->>'provider' IS DISTINCT FROM 'fuzeinfra-litellm'")
     expect(String(statement)).toContain("jsonb_array_elements_text(COALESCE(evidence, '[]'::jsonb))")
     expect(String(statement)).toContain("jsonb_array_elements(COALESCE(steps, '[]'::jsonb))")
     expect(String(statement)).toContain("jsonb_array_elements(COALESCE(wireframe->'nodes', '[]'::jsonb))")

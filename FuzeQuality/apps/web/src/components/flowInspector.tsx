@@ -1,4 +1,5 @@
 import type { QualityArtifact, RepositoryFlowCandidate } from '@fuzequality/contracts'
+import { repositoryFlowHasCompleteAnalysisProvenance } from '@fuzequality/contracts/repository-flow'
 import { AlertTriangle, Network, Sparkles, X } from 'lucide-react'
 import { QualityDetailModal, QualityIconAction } from './primitives'
 
@@ -194,7 +195,7 @@ export function FlowInspector({
                 <small>Unreviewed model output never becomes authoritative automatically.</small>
               </div>
             </div>
-            {flow.analysis ? (
+            {flow.analysis && repositoryFlowHasCompleteAnalysisProvenance(flow) ? (
               <>
                 <dl className="flow-analysis-provenance">
                   <div><dt>Provider</dt><dd>{flow.analysis.provider}</dd></div>

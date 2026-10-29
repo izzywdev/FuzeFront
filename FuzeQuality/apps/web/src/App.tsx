@@ -52,7 +52,7 @@ import type {
   TestSuiteDispatch,
   TestImplementationRequest,
 } from '@fuzequality/contracts'
-import { repositoryFlowHasBoundedPromptEvidence } from '@fuzequality/contracts/repository-flow'
+import { repositoryFlowHasBoundedPromptEvidence, repositoryFlowHasCompleteAnalysisProvenance } from '@fuzequality/contracts/repository-flow'
 import {
   artifactWorkflowExecutionKind,
   executableWorkflowTarget,
@@ -3201,7 +3201,7 @@ export function FlowReviewControls({
   )
   const hasPromptCoverageGaps = repositoryFlowHasBoundedPromptEvidence(flow)
   const analysisRationaleMissing = (hasGroundingGaps || hasPromptCoverageGaps) && reason.trim().length < 3
-  const analysisProvenanceMissing = flow.source === 'litellm' && !flow.analysis
+  const analysisProvenanceMissing = !repositoryFlowHasCompleteAnalysisProvenance(flow)
   const wireframeMissing = flow.wireframe.nodes.length === 0
   const unavailableTargetIds = evidenceVerification !== 'loading' && evidenceVerification !== 'unavailable'
     ? unavailableFlowArtifactTargetIds(flow, knownArtifactIds)
@@ -3857,7 +3857,7 @@ export function flowCandidateMatchesInventory(
     flow.source === 'litellm' && flow.analysis?.promptContentTruncated === true
   )) return false
   if (selection.analysisRisk === 'provenance-missing' && !(
-    flow.source === 'litellm' && !flow.analysis
+    flow.source === 'litellm' && !repositoryFlowHasCompleteAnalysisProvenance(flow)
   )) return false
   if (selection.minimumConfidencePercent !== '' && flow.confidence < Number(selection.minimumConfidencePercent) / 100) return false
   if (selection.maximumConfidencePercent !== '' && flow.confidence > Number(selection.maximumConfidencePercent) / 100) return false

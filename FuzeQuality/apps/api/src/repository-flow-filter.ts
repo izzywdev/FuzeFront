@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { RepositoryFlowCandidate } from '@fuzequality/contracts'
-import { repositoryFlowHasBoundedPromptEvidence } from '@fuzequality/contracts/repository-flow'
+import { repositoryFlowHasBoundedPromptEvidence, repositoryFlowHasCompleteAnalysisProvenance } from '@fuzequality/contracts/repository-flow'
 import { historyPageQueryFields } from './history-pagination'
 
 export const repositoryFlowFilterSchema = z.object({
@@ -52,7 +52,7 @@ export function filterRepositoryFlowCandidates(
               ))
             : filter.analysisRisk === 'content-truncated'
               ? candidate.source === 'litellm' && candidate.analysis?.promptContentTruncated === true
-              : candidate.source === 'litellm' && !candidate.analysis
+              : candidate.source === 'litellm' && !repositoryFlowHasCompleteAnalysisProvenance(candidate)
     )) &&
     (filter.minConfidence === undefined || candidate.confidence >= filter.minConfidence) &&
     (filter.maxConfidence === undefined || candidate.confidence <= filter.maxConfidence)

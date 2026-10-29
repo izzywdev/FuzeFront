@@ -1,5 +1,5 @@
 import type { QualityArtifact, Repository, RepositoryFlowCandidate } from '@fuzequality/contracts'
-import { repositoryFlowHasBoundedPromptEvidence } from '@fuzequality/contracts/repository-flow'
+import { repositoryFlowHasBoundedPromptEvidence, repositoryFlowHasCompleteAnalysisProvenance } from '@fuzequality/contracts/repository-flow'
 
 export function repositoryFlowReviewConflict(
   repository: Repository,
@@ -69,7 +69,7 @@ export function repositoryFlowAnalysisProvenanceConflict(
   candidate: RepositoryFlowCandidate,
   status: 'confirmed' | 'rejected',
 ) {
-  if (status !== 'confirmed' || candidate.source !== 'litellm' || candidate.analysis) return undefined
+  if (status !== 'confirmed' || repositoryFlowHasCompleteAnalysisProvenance(candidate)) return undefined
 
   return {
     error: 'This FuzeInfra LiteLLM flow has no stored model, prompt, and schema provenance. Regenerate the repository analysis before confirming it.',
