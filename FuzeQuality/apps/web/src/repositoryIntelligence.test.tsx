@@ -3804,6 +3804,29 @@ describe('RepositoryIntelligence flow inventory', () => {
     })
   })
 
+  it('isolates executions with provider artifacts withheld for unverified head-repository provenance', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await waitFor(() => expect(api.testExecutions).toHaveBeenCalled())
+    fireEvent.change(screen.getByLabelText('Required evidence'), {
+      target: { value: 'head-repository-unverified' },
+    })
+
+    await waitFor(() => {
+      expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, {
+        evidenceRequirement: 'head-repository-unverified',
+      })
+      expect(api.executionTrend).toHaveBeenLastCalledWith(repository.id, {
+        evidenceRequirement: 'head-repository-unverified',
+      })
+      expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, {
+        evidenceRequirement: 'head-repository-unverified',
+      })
+    })
+  })
+
   it('isolates terminal executions missing timing evidence', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])

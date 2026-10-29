@@ -52,6 +52,7 @@ export type ExecutionEvidenceRequirement =
   | 'evidence-url-invalid'
   | 'provider-collection-failure'
   | 'github-run-provenance-missing'
+  | 'head-repository-unverified'
   | 'attempt-provenance-unverified'
   | 'policy-gate-outcome-missing'
   | 'post-production-video-missing'
@@ -253,6 +254,10 @@ export function filterTestExecutions(
     if (
       filter.evidenceRequirement === 'attempt-provenance-unverified' &&
       !execution.evidenceCollection?.issues?.includes('attempt-provenance-unverified')
+    ) return false
+    if (
+      filter.evidenceRequirement === 'head-repository-unverified' &&
+      !execution.evidenceCollection?.issues?.includes('head-repository-unverified')
     ) return false
     if (
       filter.evidenceRequirement === 'post-production-video-missing' &&

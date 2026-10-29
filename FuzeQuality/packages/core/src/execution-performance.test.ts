@@ -238,6 +238,20 @@ it('filters and trends only timestamped execution evidence', () => {
     [githubRunWithProvenance, githubRunWithUnverifiedAttemptArtifacts, executions[0]],
     { evidenceRequirement: 'attempt-provenance-unverified' },
   )).toEqual([githubRunWithUnverifiedAttemptArtifacts])
+  const githubRunWithUnverifiedHeadRepository = {
+    ...githubRunWithProvenance,
+    id: 'github-run-with-unverified-head-repository',
+    externalRunId: 'github-run-with-unverified-head-repository',
+    evidenceCollection: {
+      status: 'partial' as const,
+      checkedAt: '2026-10-08T12:02:00.000Z',
+      issues: ['head-repository-unverified' as const],
+    },
+  }
+  expect(filterTestExecutions(
+    [githubRunWithProvenance, githubRunWithUnverifiedHeadRepository, executions[0]],
+    { evidenceRequirement: 'head-repository-unverified' },
+  )).toEqual([githubRunWithUnverifiedHeadRepository])
   expect(filterTestExecutions(executions, { evidenceRequirement: 'performance-threshold-missing' })).toEqual([executions[1]])
   const explicitPolicyGateOutcome = {
     ...executions[0],

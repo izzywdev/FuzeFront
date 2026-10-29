@@ -93,6 +93,8 @@ describe('execution evidence filter', () => {
       .toBe('provider-collection-failure')
     expect(executionFilterSchema.parse({ evidenceRequirement: 'github-run-provenance-missing' }).evidenceRequirement)
       .toBe('github-run-provenance-missing')
+    expect(executionFilterSchema.parse({ evidenceRequirement: 'head-repository-unverified' }).evidenceRequirement)
+      .toBe('head-repository-unverified')
     expect(executionFilterSchema.parse({ evidenceRequirement: 'attempt-provenance-unverified' }).evidenceRequirement)
       .toBe('attempt-provenance-unverified')
     expect(executionFilterSchema.parse({ evidenceRequirement: 'post-production-video-missing' }).evidenceRequirement)
