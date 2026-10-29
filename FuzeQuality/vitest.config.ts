@@ -10,6 +10,7 @@ export default defineConfig({
     // tests exercise the same singleton React contract as Module Federation.
     dedupe: ['react', 'react-dom', 'react/jsx-runtime'],
     alias: {
+      '@fuzequality/contracts/repository-flow': `${root}packages/contracts/src/repository-flow.ts`,
       '@fuzequality/contracts/workflow-execution': `${root}packages/contracts/src/workflow-execution.ts`,
       '@fuzequality/contracts': `${root}packages/contracts/src/index.ts`,
       '@fuzequality/core': `${root}packages/core/src/index.ts`,

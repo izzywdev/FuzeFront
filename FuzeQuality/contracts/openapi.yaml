@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.84.31
+  version: 0.84.32
   license:
     name: UNLICENSED
 servers:
@@ -1900,7 +1900,9 @@ components:
         promptArtifactCount: { type: integer, minimum: 0 }
         promptOmittedArtifactCount: { type: integer, minimum: 0 }
         promptContentTruncated: { type: boolean }
-        promptTruncated: { type: boolean }
+        promptTruncated:
+          type: boolean
+          description: Backward-compatible aggregate that must be true whenever artifacts or source content were omitted from the reviewed LiteLLM prompt.
         grounding:
           type: object
           additionalProperties: false

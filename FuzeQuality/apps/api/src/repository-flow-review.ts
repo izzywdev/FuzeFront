@@ -1,4 +1,5 @@
 import type { QualityArtifact, Repository, RepositoryFlowCandidate } from '@fuzequality/contracts'
+import { repositoryFlowHasBoundedPromptEvidence } from '@fuzequality/contracts/repository-flow'
 
 export function repositoryFlowReviewConflict(
   repository: Repository,
@@ -48,7 +49,7 @@ export function repositoryFlowGroundingRationaleConflict(
     grounding &&
     (grounding.rejectedArtifactCount > 0 || grounding.ungroundedStepCount > 0)
   )
-  const hasPromptCoverageGaps = candidate.source === 'litellm' && candidate.analysis?.promptTruncated === true
+  const hasPromptCoverageGaps = repositoryFlowHasBoundedPromptEvidence(candidate)
   if (status !== 'confirmed' || (!hasGroundingGaps && !hasPromptCoverageGaps) || (reason?.trim().length ?? 0) >= 3) return undefined
 
   return {

@@ -52,6 +52,7 @@ import type {
   TestSuiteDispatch,
   TestImplementationRequest,
 } from '@fuzequality/contracts'
+import { repositoryFlowHasBoundedPromptEvidence } from '@fuzequality/contracts/repository-flow'
 import {
   artifactWorkflowExecutionKind,
   executableWorkflowTarget,
@@ -3198,7 +3199,7 @@ export function FlowReviewControls({
     grounding &&
       (grounding.rejectedArtifactCount > 0 || grounding.ungroundedStepCount > 0)
   )
-  const hasPromptCoverageGaps = flow.source === 'litellm' && flow.analysis?.promptTruncated === true
+  const hasPromptCoverageGaps = repositoryFlowHasBoundedPromptEvidence(flow)
   const analysisRationaleMissing = (hasGroundingGaps || hasPromptCoverageGaps) && reason.trim().length < 3
   const analysisProvenanceMissing = flow.source === 'litellm' && !flow.analysis
   const wireframeMissing = flow.wireframe.nodes.length === 0

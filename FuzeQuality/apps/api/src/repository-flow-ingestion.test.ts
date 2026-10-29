@@ -66,6 +66,21 @@ describe('repository flow candidate ingestion', () => {
     expect(repositoryFlowCandidateIngestionSchema.safeParse({
       candidates: [{
         ...candidate,
+        analysis: { ...candidate.analysis!, promptTruncated: undefined },
+      }],
+    }).success).toBe(false)
+    expect(repositoryFlowCandidateIngestionSchema.safeParse({
+      candidates: [{
+        ...candidate,
+        analysis: {
+          ...candidate.analysis!, inputArtifactCount: 140, promptArtifactCount: 140,
+          promptOmittedArtifactCount: 0, promptContentTruncated: true, promptTruncated: undefined,
+        },
+      }],
+    }).success).toBe(false)
+    expect(repositoryFlowCandidateIngestionSchema.safeParse({
+      candidates: [{
+        ...candidate,
         analysis: {
           ...candidate.analysis!,
           grounding: { referencedArtifactCount: 2, groundedArtifactCount: 1, rejectedArtifactCount: 0, ungroundedStepCount: 0 },

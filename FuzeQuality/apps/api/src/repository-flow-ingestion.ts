@@ -71,6 +71,18 @@ const analysisSchema = z.object({
     })
   }
   if (
+    analysis.promptTruncated !== true &&
+    ((analysis.promptOmittedArtifactCount ?? 0) > 0 ||
+      analysis.promptContentTruncated === true ||
+      (analysis.inputArtifactCount !== undefined && analysis.promptArtifactCount !== undefined && analysis.promptArtifactCount < analysis.inputArtifactCount))
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['promptTruncated'],
+      message: 'Bounded prompt provenance requires the aggregate truncation flag',
+    })
+  }
+  if (
     analysis.grounding &&
     analysis.grounding.groundedArtifactCount + analysis.grounding.rejectedArtifactCount !== analysis.grounding.referencedArtifactCount
   ) {

@@ -1595,6 +1595,25 @@ describe('RepositoryIntelligence flow inventory', () => {
     ))
   })
 
+  it('derives bounded prompt review risk from exact legacy provenance fields', () => {
+    const onReview = vi.fn().mockResolvedValue(undefined)
+    const bounded = {
+      ...candidate,
+      analysis: {
+        provider: 'fuzeinfra-litellm' as const,
+        model: 'quality-analysis', promptVersion: 'v3', schemaVersion: '1.0',
+        inputArtifactCount: 20, promptArtifactCount: 19, promptOmittedArtifactCount: 1,
+        promptContentTruncated: false,
+      },
+    }
+
+    render(<FlowReviewControls flow={bounded} currentRevision={candidate.revision} knownArtifactIds={candidate.evidence} onReview={onReview} />)
+
+    expect(screen.getByLabelText('Review rationale required for analysis gaps')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled()
+  })
+
   it('blocks confirmation for unavailable exact-revision targets while keeping rejection available', () => {
     const onReview = vi.fn().mockResolvedValue(undefined)
     const invalid = {
