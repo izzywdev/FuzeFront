@@ -2052,6 +2052,22 @@ describe('RepositoryIntelligence flow inventory', () => {
     }))
   })
 
+  it('retains legacy exact bounded-prompt provenance in the aggregate risk filter', () => {
+    const legacyBounded = {
+      ...candidate,
+      analysis: {
+        provider: 'fuzeinfra-litellm' as const,
+        model: 'quality-analysis', promptVersion: 'flow-v2', schemaVersion: '1.0',
+        inputArtifactCount: 10, promptArtifactCount: 9, promptOmittedArtifactCount: 1,
+        promptContentTruncated: false,
+      },
+    }
+
+    expect(flowCandidateMatchesInventory(legacyBounded, [repository], {
+      repositoryId: '', source: '', status: '', revisionScope: 'all', targetId: '', model: '', promptVersion: '', schemaVersion: '', analysisRisk: 'prompt-truncated', minimumConfidencePercent: '', maximumConfidencePercent: '',
+    })).toBe(true)
+  })
+
   it('shows reviewers how much repository evidence the LiteLLM prompt omitted', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([

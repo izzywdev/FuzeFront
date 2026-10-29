@@ -592,7 +592,7 @@ export class MemoryCatalogStore implements CatalogStore {
                 item.analysis.grounding.ungroundedStepCount > 0
               ))
             : query.analysisRisk === 'prompt-truncated'
-              ? item.source === 'litellm' && item.analysis?.promptTruncated === true
+              ? item.source === 'litellm' && Boolean(item.analysis && (item.analysis.promptTruncated === true || (item.analysis.promptOmittedArtifactCount ?? 0) > 0 || item.analysis.promptContentTruncated === true || (item.analysis.inputArtifactCount !== undefined && item.analysis.promptArtifactCount !== undefined && item.analysis.promptArtifactCount < item.analysis.inputArtifactCount)))
               : query.analysisRisk === 'artifacts-omitted' ? item.source === 'litellm' && Boolean(item.analysis && (item.analysis.promptOmittedArtifactCount ?? Math.max((item.analysis.inputArtifactCount ?? 0) - (item.analysis.promptArtifactCount ?? 0), 0)) > 0) : query.analysisRisk === 'content-truncated' ? item.source === 'litellm' && item.analysis?.promptContentTruncated === true : item.source === 'litellm' && !item.analysis
         )) &&
         (query.minConfidence === undefined || item.confidence >= query.minConfidence) &&
@@ -1568,7 +1568,7 @@ export class PostgresCatalogStore implements CatalogStore {
            OR ($12='grounding-gaps' AND source='litellm' AND (
              COALESCE((analysis_provenance->'grounding'->>'rejectedArtifactCount')::integer,0)>0
              OR COALESCE((analysis_provenance->'grounding'->>'ungroundedStepCount')::integer,0)>0))
-           OR ($12='prompt-truncated' AND source='litellm' AND analysis_provenance->>'promptTruncated'='true')
+           OR ($12='prompt-truncated' AND source='litellm' AND (analysis_provenance->>'promptTruncated'='true' OR COALESCE((analysis_provenance->>'promptOmittedArtifactCount')::integer,(analysis_provenance->>'inputArtifactCount')::integer-(analysis_provenance->>'promptArtifactCount')::integer,0)>0 OR analysis_provenance->>'promptContentTruncated'='true'))
            OR ($12='artifacts-omitted' AND source='litellm' AND COALESCE((analysis_provenance->>'promptOmittedArtifactCount')::integer,(analysis_provenance->>'inputArtifactCount')::integer-(analysis_provenance->>'promptArtifactCount')::integer,0)>0) OR ($12='content-truncated' AND source='litellm' AND analysis_provenance->>'promptContentTruncated'='true') OR ($12='provenance-missing' AND source='litellm' AND analysis_provenance IS NULL))
          AND ($16::text IS NULL
            OR EXISTS (

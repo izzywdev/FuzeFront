@@ -3843,7 +3843,7 @@ export function flowCandidateMatchesInventory(
     )
   )) return false
   if (selection.analysisRisk === 'prompt-truncated' && !(
-    flow.source === 'litellm' && flow.analysis?.promptTruncated === true
+    repositoryFlowHasBoundedPromptEvidence(flow)
   )) return false
   if (selection.analysisRisk === 'artifacts-omitted' && !(
     flow.source === 'litellm' && flow.analysis && (

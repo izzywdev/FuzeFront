@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { RepositoryFlowCandidate } from '@fuzequality/contracts'
+import { repositoryFlowHasBoundedPromptEvidence } from '@fuzequality/contracts/repository-flow'
 import { historyPageQueryFields } from './history-pagination'
 
 export const repositoryFlowFilterSchema = z.object({
@@ -41,7 +42,7 @@ export function filterRepositoryFlowCandidates(
             candidate.analysis.grounding.ungroundedStepCount > 0
           ))
         : filter.analysisRisk === 'prompt-truncated'
-          ? candidate.source === 'litellm' && candidate.analysis?.promptTruncated === true
+          ? repositoryFlowHasBoundedPromptEvidence(candidate)
           : filter.analysisRisk === 'artifacts-omitted'
             ? candidate.source === 'litellm' && Boolean(candidate.analysis && (
                 (candidate.analysis.promptOmittedArtifactCount ?? Math.max(

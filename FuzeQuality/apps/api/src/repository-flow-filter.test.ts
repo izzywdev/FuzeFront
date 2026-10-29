@@ -46,12 +46,26 @@ describe('repository flow inventory filter', () => {
         promptContentTruncated: true, promptTruncated: true,
       },
     })
+    const legacyOmitted = candidate({
+      id: 'legacy-artifacts-omitted', source: 'litellm', analysis: {
+        provider: 'fuzeinfra-litellm', model: 'quality-analysis', promptVersion: 'flow-v2', schemaVersion: '1.0',
+        inputArtifactCount: 10, promptArtifactCount: 9, promptOmittedArtifactCount: 1,
+        promptContentTruncated: false,
+      },
+    })
+    const legacyContentTruncated = candidate({
+      id: 'legacy-content-truncated', source: 'litellm', analysis: {
+        provider: 'fuzeinfra-litellm', model: 'quality-analysis', promptVersion: 'flow-v2', schemaVersion: '1.0',
+        inputArtifactCount: 10, promptArtifactCount: 10, promptOmittedArtifactCount: 0,
+        promptContentTruncated: true,
+      },
+    })
     const missingProvenance = candidate({ id: 'missing-provenance', source: 'litellm', analysis: undefined })
-    const candidates = [candidate(), groundingGap, boundedPrompt, contentTruncated, missingProvenance]
+    const candidates = [candidate(), groundingGap, boundedPrompt, contentTruncated, legacyOmitted, legacyContentTruncated, missingProvenance]
     expect(filterRepositoryFlowCandidates(candidates, repositoryFlowFilterSchema.parse({ analysisRisk: 'grounding-gaps' }))).toEqual([groundingGap])
-    expect(filterRepositoryFlowCandidates(candidates, repositoryFlowFilterSchema.parse({ analysisRisk: 'prompt-truncated' }))).toEqual([boundedPrompt, contentTruncated])
-    expect(filterRepositoryFlowCandidates(candidates, repositoryFlowFilterSchema.parse({ analysisRisk: 'artifacts-omitted' }))).toEqual([boundedPrompt])
-    expect(filterRepositoryFlowCandidates(candidates, repositoryFlowFilterSchema.parse({ analysisRisk: 'content-truncated' }))).toEqual([contentTruncated])
+    expect(filterRepositoryFlowCandidates(candidates, repositoryFlowFilterSchema.parse({ analysisRisk: 'prompt-truncated' }))).toEqual([boundedPrompt, contentTruncated, legacyOmitted, legacyContentTruncated])
+    expect(filterRepositoryFlowCandidates(candidates, repositoryFlowFilterSchema.parse({ analysisRisk: 'artifacts-omitted' }))).toEqual([boundedPrompt, legacyOmitted])
+    expect(filterRepositoryFlowCandidates(candidates, repositoryFlowFilterSchema.parse({ analysisRisk: 'content-truncated' }))).toEqual([contentTruncated, legacyContentTruncated])
     expect(filterRepositoryFlowCandidates(candidates, repositoryFlowFilterSchema.parse({ analysisRisk: 'provenance-missing' }))).toEqual([missingProvenance])
   })
 
