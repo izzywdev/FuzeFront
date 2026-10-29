@@ -2050,6 +2050,13 @@ describe('RepositoryIntelligence flow inventory', () => {
     await waitFor(() => expect(flowRequest).toHaveBeenLastCalledWith(repository.id, {
       analysisRisk: 'content-truncated',
     }))
+
+    fireEvent.change(screen.getByLabelText('Analysis review risk'), {
+      target: { value: 'wireframe-missing' },
+    })
+    await waitFor(() => expect(flowRequest).toHaveBeenLastCalledWith(repository.id, {
+      analysisRisk: 'wireframe-missing',
+    }))
   })
 
   it('retains legacy exact bounded-prompt provenance in the aggregate risk filter', () => {
@@ -2076,6 +2083,30 @@ describe('RepositoryIntelligence flow inventory', () => {
 
     expect(flowCandidateMatchesInventory(incompleteProvenance, [repository], {
       repositoryId: '', source: '', status: '', revisionScope: 'all', targetId: '', model: '', promptVersion: '', schemaVersion: '', analysisRisk: 'provenance-missing', minimumConfidencePercent: '', maximumConfidencePercent: '',
+    })).toBe(true)
+  })
+
+  it('labels partially populated LiteLLM provenance as incomplete in the flow inventory', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([{
+      ...candidate,
+      analysis: { ...candidate.analysis!, model: '' },
+    }])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    expect(await screen.findByText(/Complete model provenance was not stored/)).toBeVisible()
+    expect(screen.queryByLabelText(`${candidate.title} analysis provenance`)).not.toBeInTheDocument()
+  })
+
+  it('retains legacy candidates without review wireframes in the remediation filter', () => {
+    const missingWireframe = {
+      ...candidate,
+      wireframe: { kind: 'sequence' as const, nodes: [] },
+    }
+
+    expect(flowCandidateMatchesInventory(missingWireframe, [repository], {
+      repositoryId: '', source: '', status: '', revisionScope: 'all', targetId: '', model: '', promptVersion: '', schemaVersion: '', analysisRisk: 'wireframe-missing', minimumConfidencePercent: '', maximumConfidencePercent: '',
     })).toBe(true)
   })
 

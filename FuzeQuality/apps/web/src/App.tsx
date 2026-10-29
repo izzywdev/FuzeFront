@@ -3859,6 +3859,7 @@ export function flowCandidateMatchesInventory(
   if (selection.analysisRisk === 'provenance-missing' && !(
     flow.source === 'litellm' && !repositoryFlowHasCompleteAnalysisProvenance(flow)
   )) return false
+  if (selection.analysisRisk === 'wireframe-missing' && flow.wireframe.nodes.length > 0) return false
   if (selection.minimumConfidencePercent !== '' && flow.confidence < Number(selection.minimumConfidencePercent) / 100) return false
   if (selection.maximumConfidencePercent !== '' && flow.confidence > Number(selection.maximumConfidencePercent) / 100) return false
   if (selection.revisionScope === 'current') {
@@ -5897,7 +5898,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                 {flow.status}
                               </code>
                             </div>
-                            {flow.analysis ? (
+                            {flow.analysis && repositoryFlowHasCompleteAnalysisProvenance(flow) ? (
                               <dl
                                 className="flow-analysis-provenance"
                                 aria-label={`${flow.title} analysis provenance`}
@@ -5928,8 +5929,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                               </dl>
                             ) : flow.source === 'litellm' ? (
                               <small className="flow-provenance-missing">
-                                Model provenance was not stored for this legacy
-                                proposal.
+                                Complete model provenance was not stored for this
+                                legacy proposal.
                               </small>
                             ) : null}
                             <p>{flow.steps[0]?.action}</p>
