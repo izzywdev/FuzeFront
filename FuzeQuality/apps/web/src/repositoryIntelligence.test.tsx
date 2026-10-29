@@ -3741,6 +3741,7 @@ describe('RepositoryIntelligence flow inventory', () => {
 
     render(<RepositoryIntelligence data={portfolio} />)
     await waitFor(() => expect(api.testExecutions).toHaveBeenCalled())
+    expect(screen.getByRole('option', { name: 'Provider evidence unavailable' })).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('Required evidence'), {
       target: { value: 'provider-collection-failure' },
     })

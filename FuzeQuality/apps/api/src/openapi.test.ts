@@ -281,6 +281,8 @@ describe('contract discovery', () => {
       expect(document.components.parameters.ExecutionEvidenceRequirement.description)
         .toContain('Provider collection failure')
       expect(document.components.parameters.ExecutionEvidenceRequirement.description)
+        .toContain('partial result truncation is selected separately')
+      expect(document.components.parameters.ExecutionEvidenceRequirement.description)
         .toContain('GitHub run provenance')
       expect(document.components.parameters.ExecutionEvidenceRequirement.description)
         .toContain('repository ownership')

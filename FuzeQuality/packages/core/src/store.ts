@@ -1865,7 +1865,7 @@ export class PostgresCatalogStore implements CatalogStore {
                WHERE COALESCE(invalid_evidence.value->>'url','') !~* '^https://[^/?#[:space:]]+'
              ))
            OR ($25='provider-collection-failure'
-             AND executions.evidence_collection->>'errorCode' IS NOT NULL)
+             AND executions.evidence_collection->>'status'='unavailable')
            OR ($25='github-run-provenance-missing'
              AND executions.provider='github-actions'
              AND (executions.head_repository IS NULL
@@ -2078,7 +2078,7 @@ export class PostgresCatalogStore implements CatalogStore {
               count(*) FILTER (WHERE evidence_collection->>'status'='partial')::integer AS evidence_partial_count,
               count(*) FILTER (WHERE evidence_collection->>'status'='unavailable')::integer AS evidence_unavailable_count,
               count(*) FILTER (WHERE evidence_collection IS NULL)::integer AS evidence_not_collected_count,
-              count(*) FILTER (WHERE evidence_collection->>'errorCode' IS NOT NULL)::integer AS evidence_collection_failure_count,
+              count(*) FILTER (WHERE evidence_collection->>'status'='unavailable')::integer AS evidence_collection_failure_count,
               count(*) FILTER (WHERE EXISTS (
                 SELECT 1 FROM jsonb_array_elements(COALESCE(evidence_links,'[]'::jsonb)) AS evidence(value)
                 WHERE COALESCE(evidence.value->>'url','') !~* '^https://[^/?#[:space:]]+'
@@ -2241,7 +2241,7 @@ export class PostgresCatalogStore implements CatalogStore {
                WHERE COALESCE(invalid_evidence.value->>'url','') !~* '^https://[^/?#[:space:]]+'
              ))
            OR ($25='provider-collection-failure'
-             AND executions.evidence_collection->>'errorCode' IS NOT NULL)
+             AND executions.evidence_collection->>'status'='unavailable')
            OR ($25='github-run-provenance-missing'
              AND executions.provider='github-actions'
              AND (executions.head_repository IS NULL
@@ -2379,7 +2379,7 @@ export class PostgresCatalogStore implements CatalogStore {
                  WHERE COALESCE(invalid_evidence.value->>'url','') !~* '^https://[^/?#[:space:]]+'
                ))
              OR ($28='provider-collection-failure'
-               AND executions.evidence_collection->>'errorCode' IS NOT NULL)
+               AND executions.evidence_collection->>'status'='unavailable')
              OR ($28='github-run-provenance-missing'
                AND executions.provider='github-actions'
                AND (executions.head_repository IS NULL

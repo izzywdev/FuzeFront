@@ -6515,7 +6515,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
               >
                 <option value="">All requirements</option>
                 <option value="evidence-url-invalid">Invalid or non-HTTPS artifact URL</option>
-                <option value="provider-collection-failure">Provider evidence collection failed</option>
+                <option value="provider-collection-failure">Provider evidence unavailable</option>
                 <option value="github-run-provenance-missing">Missing GitHub run provenance</option>
                 <option value="head-repository-unverified">Unverified GitHub head repository</option>
                 <option value="provider-result-limited">Provider result set truncated</option>

@@ -242,7 +242,7 @@ export function filterTestExecutions(
     ) return false
     if (
       filter.evidenceRequirement === 'provider-collection-failure' &&
-      !execution.evidenceCollection?.errorCode
+      execution.evidenceCollection?.status !== 'unavailable'
     ) return false
     if (
       filter.evidenceRequirement === 'github-run-provenance-missing' &&
@@ -444,7 +444,7 @@ export function executionOutcomeTrend(executions: TestExecution[], history: Test
     } else {
       current.evidenceNotCollectedCount = (current.evidenceNotCollectedCount ?? 0) + 1
     }
-    if (execution.evidenceCollection?.errorCode) {
+    if (execution.evidenceCollection?.status === 'unavailable') {
       current.evidenceCollectionFailureCount = (current.evidenceCollectionFailureCount ?? 0) + 1
     }
     if (execution.evidenceLinks.some(link => !safeExecutionEvidenceUrl(link.url))) {

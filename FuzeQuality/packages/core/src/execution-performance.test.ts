@@ -276,6 +276,10 @@ it('filters and trends only timestamped execution evidence', () => {
     [providerResultLimitedByIssue, providerResultLimitedByCode, githubRunWithProvenance],
     { evidenceRequirement: 'provider-result-limited' },
   )).toEqual([providerResultLimitedByIssue, providerResultLimitedByCode])
+  expect(filterTestExecutions(
+    [providerResultLimitedByIssue, providerResultLimitedByCode, executions[1]],
+    { evidenceRequirement: 'provider-collection-failure' },
+  )).toEqual([executions[1]])
   expect(filterTestExecutions(executions, { evidenceRequirement: 'performance-threshold-missing' })).toEqual([executions[1]])
   const explicitPolicyGateOutcome = {
     ...executions[0],
@@ -396,7 +400,7 @@ it('trends actionable evidence gaps without treating running executions as missi
     providerResultLimitedCount: 1,
     headRepositoryUnverifiedCount: 1,
     evidencePartialCount: 1,
-    evidenceCollectionFailureCount: 1,
+    evidenceCollectionFailureCount: 0,
     postProductionVideoMissingCount: 1,
     terminalTimingMissingCount: 1,
   })
