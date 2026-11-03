@@ -737,6 +737,11 @@ jobs:
           # master's script happens to be. Only values-prod comes from master
           # (via /tmp/vp-new.yaml, built from master's file).
           cp scripts/publish-release-gitops.sh /tmp/publish-release-gitops.sh
+          # The publish script re-runs the per-service gate if master advances
+          # AFTER this bump was computed (TOCTOU); it needs the released gate
+          # script and the master tip this bump was computed against.
+          cp scripts/release-allow-bump.sh /tmp/release-allow-bump.sh
+          export RELEASE_ALLOW_BUMP=/tmp/release-allow-bump.sh RELEASE_MASTER_SHA="$MASTER_SHA"
           if [ "$MASTER_SHA" != "$GITHUB_SHA" ]; then
             git checkout -q -f -B release-rebase "$MASTER_SHA"
           fi

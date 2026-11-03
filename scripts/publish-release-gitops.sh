@@ -11,13 +11,82 @@ source_sha=${3:?source commit required}
 [[ "$source_sha" =~ ^[0-9a-f]{40}$ && "$tag" == "${source_sha:0:12}" ]] || exit 1
 branch="release/gitops-bump-${tag}"
 bot_email=release-bump@users.noreply.github.com
-expected_blob=$(git hash-object "$file")
 
 set_output() {
   if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
     printf '%s=%s\n' "$1" "$2" >> "$GITHUB_OUTPUT"
   fi
 }
+
+# TOCTOU: master can advance AFTER release.yml computed the bump (RELEASE_MASTER_SHA
+# is the master tip it was computed against) and BEFORE we publish. Accepting a
+# newer descendant head merely because source is its ancestor is not enough: that
+# window may have changed/removed a service's inputs, and publishing our (older)
+# tag for it would deploy code current master already dropped. So when the live
+# tip differs from the basis, RE-EVALUATE the per-service gate against the fresh
+# tip and rebuild the bump on top of it. Descendant masters are still accepted
+# (no livelock) - only the per-service skip set is recomputed.
+# Opt-in via RELEASE_MASTER_SHA so a bare invocation keeps the old behaviour.
+check_source_ancestry() { # <master sha>
+  # The local clone may predate the API value; fetch loudly so a nonzero
+  # --is-ancestor means "not an ancestor", not "Not a valid object name".
+  git fetch origin "$1" || { echo "::error::cannot fetch current master $1"; exit 1; }
+  local rc=0
+  git merge-base --is-ancestor "$source_sha" "$1" || rc=$?
+  if [[ "$rc" == 1 ]]; then
+    echo "::error::source ${source_sha} is not in current master ($1) history; refusing"
+    exit 1
+  elif [[ "$rc" != 0 ]]; then
+    echo "::error::ancestry check failed (exit ${rc}) for ${source_sha} vs $1"
+    exit 1
+  fi
+}
+if [[ -n "${RELEASE_MASTER_SHA:-}" ]]; then
+  fresh_master="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/master" --jq '.object.sha')"
+  if [[ "$fresh_master" != "$RELEASE_MASTER_SHA" ]]; then
+    allow_script=${RELEASE_ALLOW_BUMP:?RELEASE_ALLOW_BUMP required when RELEASE_MASTER_SHA is set}
+    echo "::notice::master advanced ${RELEASE_MASTER_SHA} -> ${fresh_master} after the bump was computed; re-evaluating per-service gate against the fresh head"
+    check_source_ancestry "$fresh_master"
+    work=$(mktemp -d)
+    cp "$file" "$work/candidate.yaml"
+    git show "${fresh_master}:${file}" > "$work/vp-fresh.yaml"
+    git diff --name-only "$source_sha" "$fresh_master" > "$work/changed.txt"
+    : > "$work/skip-log"
+    # Services this bump rewrites = those whose candidate tag is ours.
+    mapfile -t bumped < <(awk -v tag="$tag" '
+      { sub(/\r$/, "") }
+      found { if ($1 == "tag:") { t=$2; gsub(/"/, "", t); if (t == tag) print img } found=0 }
+      match($0, /repository: ghcr\.io\/izzywdev\/[a-z0-9-]+$/) {
+        img=substr($0, RSTART + length("repository: ghcr.io/izzywdev/")); found=1 }' "$work/candidate.yaml")
+    allowed=" "
+    for img in "${bumped[@]}"; do
+      verdict=$(SHA="$tag" GITHUB_SHA="$source_sha" MASTER_SHA="$fresh_master" VP_CURRENT="$work/vp-fresh.yaml" \
+        CHANGED_FILES="$work/changed.txt" SKIP_LOG="$work/skip-log" bash "$allow_script" 1 "$img")
+      if [[ "$verdict" == 1 ]]; then allowed+="${img} "; fi
+    done
+    # Rebuild on the FRESH head: only allowed services take our tag.
+    awk -v tag="$tag" -v allowed="$allowed" '
+      hot { hot=0
+        if ($0 ~ /^[[:space:]]*tag:/) { match($0, /^[[:space:]]*/)
+          print substr($0, 1, RLENGTH) "tag: " tag ($0 ~ /\r$/ ? "\r" : ""); next } }
+      match($0, /repository: ghcr\.io\/izzywdev\/[a-z0-9-]+\r?$/) {
+        i=substr($0, RSTART + length("repository: ghcr.io/izzywdev/")); sub(/\r$/, "", i)
+        if (index(allowed, " " i " ")) hot=1 }
+      { print }' "$work/vp-fresh.yaml" > "$work/vp-new.yaml"
+    git checkout -q -f -B release-rebase "$fresh_master"
+    cp "$work/vp-new.yaml" "$file"
+    if grep -qv ' newer$' "$work/skip-log"; then
+      echo "::error::late-window re-evaluation hit an unresolvable/hand-pinned tag; see notices above"
+      exit 1
+    fi
+    if cmp -s "$work/vp-fresh.yaml" "$file"; then
+      echo "::warning::release of ${tag} bumped NOTHING after re-evaluating against master ${fresh_master}: every service was skipped (a newer master change owns them)."
+      set_output merged false
+      exit 0
+    fi
+  fi
+fi
+expected_blob=$(git hash-object "$file")
 
 pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --base master --head "$branch" \
   --state open --json number --jq '.[0].number // empty')

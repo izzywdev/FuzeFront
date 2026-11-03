@@ -70,7 +70,7 @@ elif args[:2] != ["pr", "merge"]:
 
 
 class ReleaseGitOpsTest(unittest.TestCase):
-    def invoke(self, scenario="merged", file=FILE, tag=SOURCE[:12]):
+    def invoke(self, scenario="merged", file=FILE, tag=SOURCE[:12], extra_env=None):
         with tempfile.TemporaryDirectory() as directory:
             temp = Path(directory)
             for name in ("git", "gh"):
@@ -81,7 +81,7 @@ class ReleaseGitOpsTest(unittest.TestCase):
                        GITHUB_REPOSITORY="owner/repo", SCENARIO=scenario,
                        CALL_LOG=str(temp / "calls"), CREATED=str(temp / "created"),
                        HEAD_COUNT=str(temp / "heads"), FETCHED=str(temp / "fetched"), MASTER_COUNT=str(temp / "masters"),
-                       GITOPS_MERGE_TIMEOUT_SECONDS="0", GITOPS_POLL_SECONDS="1")
+                       GITOPS_MERGE_TIMEOUT_SECONDS="0", GITOPS_POLL_SECONDS="1", **(extra_env or {}))
             result = subprocess.run(["bash", str(SCRIPT), file, tag, SOURCE],
                                     cwd=temp, env=env, capture_output=True, text=True, timeout=10, check=False)
             calls = [json.loads(line) for line in (temp / "calls").read_text().splitlines()] if (temp / "calls").exists() else []
@@ -121,9 +121,15 @@ class ReleaseGitOpsTest(unittest.TestCase):
         # master (per-service ancestry-guarded in release.yml) rather than being
         # rejected. This replaces the old abort-on-master-moved behavior that
         # livelocked every release.
-        result, calls = self.invoke("advanced_before_arm")
+        # Here the bump WAS computed against the current tip (RELEASE_MASTER_SHA
+        # == live master), so there is no late window to re-evaluate and the
+        # descendant head is accepted. The late-window case (tip moved AFTER the
+        # bump was computed) is LateWindowTest below: it re-runs the per-service
+        # gate against the fresh tip instead of accepting blindly.
+        result, calls = self.invoke("advanced_before_arm", extra_env={"RELEASE_MASTER_SHA": "c" * 40})
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(any("--auto" in call for call in calls))
+        self.assertNotIn("re-evaluating", result.stdout)
 
     def test_divergent_source_is_rejected(self):
         # A source that is NOT in current master's history (not an ancestor) is
@@ -234,6 +240,9 @@ class ReleaseGitOpsTest(unittest.TestCase):
         self.assertLess(workflow.index('if [ "$EXPECTED" -eq 0 ]; then'), workflow.index("already at ${SHA}"))
         # 1/6: the per-service gate is the released checkout's script, fed the diff.
         self.assertIn("scripts/release-allow-bump.sh", workflow)
+        # TOCTOU: the publish script gets the gate + the basis tip it was computed on.
+        self.assertIn('RELEASE_MASTER_SHA="$MASTER_SHA"', workflow)
+        self.assertIn("RELEASE_ALLOW_BUMP=/tmp/release-allow-bump.sh", workflow)
         self.assertIn('git diff --name-only "$GITHUB_SHA" "$MASTER_SHA"', workflow)
         subprocess.run(["bash", "-n", str(ALLOW)], check=True)
 
@@ -387,6 +396,114 @@ class AllowBumpTest(unittest.TestCase):
     def test_unbuilt_image_is_never_allowed(self):
         r, _ = self.run_gate("fuzefront-email-service", self.base[:12], [], built="0")
         self.assertEqual(r.stdout.strip(), "0")
+
+
+class LateWindowTest(unittest.TestCase):
+    """Master advances AFTER the bump was computed, BEFORE publish: real git, stub gh."""
+
+    GH = r'''#!/usr/bin/env python3
+import os, pathlib, sys
+a = sys.argv[1:]
+d = pathlib.Path(os.environ["STATE"])
+if a[:2] == ["pr", "list"]:
+    print("17" if (d / "created").exists() else "")
+elif a[:2] == ["pr", "create"]:
+    (d / "created").touch()
+elif a[:2] == ["pr", "view"]:
+    f = a[a.index("--json") + 1]
+    print({"files": "true", "autoMergeRequest": "false", "headRefOid": "b" * 40}[f])
+elif a[0] == "api":
+    print(os.environ["TIP"])
+'''
+
+    def sh(self, *cmd, cwd):
+        return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=True,
+                              env=dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@e",
+                                       GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@e")).stdout.strip()
+
+    def commit(self, files, msg):
+        for name, body in files.items():
+            path = self.repo / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(body)
+        self.sh("git", "add", "-A", cwd=self.repo)
+        self.sh("git", "commit", "-q", "-m", msg, cwd=self.repo)
+        return self.sh("git", "rev-parse", "HEAD", cwd=self.repo)
+
+    @staticmethod
+    def values(email, backend):
+        return ("backend:\n  image:\n    repository: ghcr.io/izzywdev/fuzefront-backend\n    tag: " + backend + "\n"
+                "email:\n  image:\n    repository: ghcr.io/izzywdev/fuzefront-email-service\n    tag: " + email + "\n")
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.repo = self.root / "repo"
+        self.repo.mkdir()
+        self.state = self.root / "state"
+        self.state.mkdir()
+        self.origin = self.root / "origin.git"
+        self.sh("git", "init", "-q", "-b", "master", cwd=self.repo)
+        self.old = self.commit({"README.md": "0"}, "old")
+        self.prev = self.old[:12]                                   # master's current (older) tags
+        self.commit({FILE: self.values(self.prev, self.prev)}, "values")
+        self.built = self.commit({"README.md": "1"}, "built")      # the release source
+        self.basis = self.commit({"docs/a.md": "x"}, "basis")      # tip the bump was computed on
+        self.sh("git", "init", "-q", "--bare", str(self.origin), cwd=self.root)
+        self.sh("git", "remote", "add", "origin", str(self.origin), cwd=self.repo)
+        self.sh("git", "push", "-q", "origin", "master", cwd=self.repo)
+        self.bin = self.root / "bin"
+        self.bin.mkdir()
+        (self.bin / "gh").write_text(self.GH)
+        (self.bin / "gh").chmod(0o700)
+        self.tag = self.built[:12]
+        self.branch = f"release/gitops-bump-{self.tag}"
+
+    def publish(self, late_changes):
+        tip = self.commit(late_changes, "late master change") if late_changes else self.basis
+        self.sh("git", "push", "-q", "origin", "master", cwd=self.repo)
+        # release.yml's tree: detached at the basis with the candidate bump written.
+        self.sh("git", "checkout", "-q", "--detach", self.basis, cwd=self.repo)
+        (self.repo / FILE).write_text(self.values(self.tag, self.tag))
+        env = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}", GITHUB_REPOSITORY="o/r",
+                   STATE=str(self.state), TIP=tip, RELEASE_MASTER_SHA=self.basis,
+                   RELEASE_ALLOW_BUMP=str(ALLOW), GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@e",
+                   GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@e")
+        r = subprocess.run(["bash", str(SCRIPT), FILE, self.tag, self.built], cwd=self.repo, env=env,
+                           capture_output=True, text=True, timeout=30, check=False)
+        return r, tip
+
+    def pushed(self, spec):
+        return self.sh("git", "--git-dir", str(self.origin), "show", spec, cwd=self.root)
+
+    def test_late_change_to_a_services_inputs_skips_only_that_service(self):
+        r, tip = self.publish({"services/email-service/src/a.ts": "removed code"})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("re-evaluating per-service gate", r.stdout)
+        body = self.pushed(f"refs/heads/{self.branch}:{FILE}")
+        backend, email = body.split("fuzefront-email-service")[0], body.split("fuzefront-email-service")[1]
+        self.assertIn("tag: " + self.prev, email)      # email left at master's tag
+        self.assertIn("tag: " + self.tag, backend)     # backend still bumped
+        self.assertEqual(self.sh("git", "--git-dir", str(self.origin), "rev-parse",
+                                 f"refs/heads/{self.branch}^", cwd=self.root), tip)  # based on FRESH head
+
+    def test_late_unrelated_change_still_bumps_everything(self):
+        r, _ = self.publish({"docs/other.md": "y"})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.pushed(f"refs/heads/{self.branch}:{FILE}").count("tag: " + self.tag), 2)
+
+    def test_late_change_to_every_input_bumps_nothing(self):
+        r, _ = self.publish({"services/email-service/a.ts": "x", "backend/a.ts": "x"})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("bumped NOTHING", r.stdout)
+        self.assertFalse((self.state / "created").exists())
+
+    def test_no_late_advance_skips_reevaluation(self):
+        r, _ = self.publish(None)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertNotIn("re-evaluating", r.stdout)
+        self.assertEqual(self.pushed(f"refs/heads/{self.branch}:{FILE}").count("tag: " + self.tag), 2)
 
 
 if __name__ == "__main__":
