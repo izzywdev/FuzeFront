@@ -7,4 +7,4 @@ Multi-line text field that mirrors `Input` exactly — same label, error state, 
 <Textarea id="log" label="Raw log" rows={10} disabled value={logOutput} />
 ```
 
-Props: `label`, `error`, `rows` (default 4), plus all native `<textarea>` attributes (`placeholder`, `value`, `disabled`, `onChange`, etc.). Full-width by default; focus applies the accent border + 3px `--accent-soft` ring; `error` switches the border to `--error-color` and renders the message.
+Props: `label`, `labelAccessory` (a node on the label row at the inline-end edge, outside the `<label>` so it stays out of the accessible name — used by `TextareaWithCounter`), `error`, `rows` (default 4), plus all native `<textarea>` attributes (`placeholder`, `value`, `disabled`, `onChange`, etc.). Full-width by default; focus applies the accent border + 3px `--accent-soft` ring; `error` switches the border to `--error-color` and renders the message.

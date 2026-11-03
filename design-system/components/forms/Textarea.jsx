@@ -12,14 +12,21 @@ const WarningIcon = ({ size = 14 }) => (
 /**
  * Multi-line text field matching Input.jsx tokens — label, error, focus seam,
  * disabled. Renders a `<textarea>` with vertical resize only.
+ *
+ * `labelAccessory` is an optional node placed on the label row at the
+ * inline-end edge (e.g. a character counter). It sits OUTSIDE the `<label>`,
+ * so it never becomes part of the field's accessible name.
  */
 export function Textarea({
   label,
+  labelAccessory,
   error = "",
   id,
   disabled = false,
   rows = 4,
   style,
+  onFocus,
+  onBlur,
   ...rest
 }) {
   const hasError = Boolean(error);
@@ -27,6 +34,21 @@ export function Textarea({
   // Always associate the label with the control (see Input.jsx).
   const reactId = React.useId();
   const fieldId = id ?? reactId;
+
+  const labelEl = (
+    <label
+      htmlFor={fieldId}
+      style={{
+        fontFamily: "var(--font-sans)",
+        fontSize: "var(--text-sm)",
+        fontWeight: "var(--weight-medium)",
+        color: "var(--text-secondary)",
+        lineHeight: 1.2,
+      }}
+    >
+      {label}
+    </label>
+  );
 
   return (
     <div
@@ -37,19 +59,21 @@ export function Textarea({
         width: "100%",
       }}
     >
-      {label && (
-        <label
-          htmlFor={fieldId}
+      {labelAccessory != null ? (
+        <div
+          data-textarea-label-row=""
           style={{
-            fontFamily: "var(--font-sans)",
-            fontSize: "var(--text-sm)",
-            fontWeight: "var(--weight-medium)",
-            color: "var(--text-secondary)",
-            lineHeight: 1.2,
+            display: "flex",
+            alignItems: "baseline",
+            justifyContent: "space-between",
+            gap: "var(--space-3)",
           }}
         >
-          {label}
-        </label>
+          {label && labelEl}
+          <span style={{ marginInlineStart: "auto", flex: "none" }}>{labelAccessory}</span>
+        </div>
+      ) : (
+        label && labelEl
       )}
       <textarea
         id={fieldId}
@@ -81,12 +105,12 @@ export function Textarea({
             ? "var(--error-color)"
             : "var(--accent-color)";
           e.currentTarget.style.boxShadow = "0 0 0 3px var(--accent-soft)";
-          if (rest.onFocus) rest.onFocus(e);
+          if (onFocus) onFocus(e);
         }}
         onBlur={(e) => {
           e.currentTarget.style.borderColor = baseBorder;
           e.currentTarget.style.boxShadow = "none";
-          if (rest.onBlur) rest.onBlur(e);
+          if (onBlur) onBlur(e);
         }}
         {...rest}
       />
