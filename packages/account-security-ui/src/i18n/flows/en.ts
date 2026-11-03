@@ -61,6 +61,7 @@ export const flowsEn = {
       definiteText: "The change wasn't saved. Your password is unchanged — try again.",
       indeterminateTitle: "We couldn't confirm the change.",
       indeterminateText: "Try signing in with your new password. If that doesn't work, your old password still does.",
+      setIndeterminateText: 'Your password may have been saved. Go back to security and reopen this page: if it offers to change your password, it was saved.',
       retry: 'Try again',
     },
     exists: {

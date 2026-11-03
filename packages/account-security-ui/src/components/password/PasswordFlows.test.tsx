@@ -216,6 +216,38 @@ describe('SetPasswordFlow', () => {
     expect(document.querySelector('[data-error="password-policy"]')).toBeTruthy()
   })
 
+  it.each([['5xx', () => err(500)], ['transport', () => new TypeError('Failed to fetch')]])(
+    '%s on set → indeterminate: no "unchanged" claim, no blind replay',
+    async (_n, make) => {
+      const user = userEvent.setup()
+      const setPassword = vi.fn().mockRejectedValue(make())
+      render(<SetPasswordFlow client={asClient(makeClient({ setPassword }))} />)
+      await user.type(document.querySelector('[data-input="set-password"]')!, STRONG)
+      await user.type(document.querySelector('[data-input="set-confirm"]')!, STRONG)
+      await user.click(screen.getByRole('button', { name: /^set password$/i }))
+      await waitFor(() => expect(document.querySelector('[data-error="set-indeterminate"]')).toBeTruthy())
+      const text = document.body.textContent ?? ''
+      expect(text).toContain('Your password may have been saved.')
+      expect(text).not.toMatch(/unchanged|wasn.t saved/i)
+      expect(screen.queryByRole('button', { name: /try again/i })).toBeNull()
+      expect(document.querySelector('input[type="password"]')).toBeNull()
+      expect(document.querySelector('[data-action="back-to-security"]')).toBeTruthy()
+      expect(setPassword).toHaveBeenCalledTimes(1)
+    }
+  )
+
+  it('other unmapped failure (429) on set → retryable error, then success', async () => {
+    const user = userEvent.setup()
+    const setPassword = vi.fn().mockRejectedValueOnce(err(429)).mockResolvedValueOnce(undefined)
+    render(<SetPasswordFlow client={asClient(makeClient({ setPassword }))} />)
+    await user.type(document.querySelector('[data-input="set-password"]')!, STRONG)
+    await user.type(document.querySelector('[data-input="set-confirm"]')!, STRONG)
+    await user.click(screen.getByRole('button', { name: /^set password$/i }))
+    await waitFor(() => expect(document.querySelector('[data-state="error"]')).toBeTruthy())
+    await user.click(screen.getByRole('button', { name: /try again/i }))
+    await waitFor(() => expect(document.querySelector('[data-state="success"]')).toBeTruthy())
+  })
+
   it('double-submit issues a single setPassword request', async () => {
     const user = userEvent.setup()
     let release!: () => void

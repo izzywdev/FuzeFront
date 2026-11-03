@@ -268,12 +268,17 @@ function SetPasswordInner({
         setPhase({ name: 'success' })
         onDone?.()
       } catch (err) {
+        const status = statusOf(err)
         if (isConflict(err)) {
           setPhase({ name: 'exists' })
         } else if (isPolicyRejection(err)) {
           // 400 / 422 PASSWORD_POLICY: back to the editable form with the policy error.
           setErrors({ policy: true })
           setPhase({ name: 'form' })
+        } else if (status === undefined || status >= 500) {
+          // The credential may already be written before the response was lost: never claim
+          // "unchanged", and never blind-replay (a replay would just 409 with no explanation).
+          setPhase({ name: 'indeterminate' })
         } else {
           setPhase({ name: 'error', retry: () => void submit(next) })
         }
@@ -295,6 +300,19 @@ function SetPasswordInner({
           text={m.password.success.setText}
           onBack={() => (onCancel ? onCancel() : nav(ROUTES.security))}
         />
+      ) : phase.name === 'indeterminate' ? (
+        <div data-state="indeterminate">
+          <SeamCard data-error="set-indeterminate">
+            <StatusCallout tone="warning" icon="?" title={m.password.errors.indeterminateTitle} role="alert">
+              {m.password.errors.setIndeterminateText}
+            </StatusCallout>
+            <Actions>
+              <Button variant="primary" data-action="back-to-security" onClick={() => (onCancel ? onCancel() : nav(ROUTES.security))}>
+                {m.password.success.back}
+              </Button>
+            </Actions>
+          </SeamCard>
+        </div>
       ) : phase.name === 'exists' ? (
         <AlreadyHasPassword
           onChange={() => nav(ROUTES.password + '?mode=change')}

@@ -36,6 +36,7 @@ export const flowsHe: DeepPartial<FlowMessages> = {
       definiteText: 'השינוי לא נשמר. הסיסמה שלך לא השתנתה — נסה/י שוב.',
       indeterminateTitle: 'לא הצלחנו לאשר את השינוי.',
       indeterminateText: 'נסה/י להתחבר עם הסיסמה החדשה. אם זה לא עובד, הסיסמה הישנה שלך עדיין תקפה.',
+      setIndeterminateText: 'ייתכן שהסיסמה נשמרה. חזור/י לאבטחה ופתח/י את הדף מחדש: אם מוצעת בו החלפת סיסמה, היא נשמרה.',
       retry: 'נסה/י שוב',
     },
     exists: {
