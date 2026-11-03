@@ -88,10 +88,28 @@ export interface AppRecord {
 
 export interface AppCaller {
   userId: string
-  /** Org memberships of the caller (org ids). Used for `organization` visibility. */
+  /**
+   * Raw active org memberships (org ids). Used for MUTATION (`canMutate`) and,
+   * when effective access is off, for READS too.
+   */
   organizationIds: string[]
   roles: string[]
   isPlatformAdmin: boolean
+  /**
+   * FFRNT-377 / S2 — effective READ org set: memberships ∪ orgs the caller
+   * OWNS (organizations.owner_id), populated by resolveCaller when the
+   * `fuzefront.app-registry.effective-access` flag is on. Optional so existing
+   * AppCaller constructors (tests, host shims) keep compiling; read paths fall
+   * back to `organizationIds` when it is absent.
+   */
+  effectiveReadOrgIds?: string[]
+  /**
+   * FFRNT-377 / S2 — when true, an app's CREATOR (created_by_user_id) may read
+   * it regardless of visibility/org, and `effectiveReadOrgIds` is authoritative
+   * for reads. False/absent = pre-S2 raw-membership reads. Reads only; never
+   * affects `canMutate`.
+   */
+  effectiveAccess?: boolean
 }
 
 const DEFAULT_LIMIT = 50
@@ -160,8 +178,20 @@ export function canRead(app: AppRecord, caller: AppCaller): boolean {
   if (caller.isPlatformAdmin) return true
   const visibility = app.manifest.visibility ?? 'private'
   if (visibility === 'public' || visibility === 'marketplace') return true
+  // FFRNT-377 / S2 — ownership: the app's creator may always read it. Additive
+  // over raw membership; gated on effectiveAccess so flag-OFF is byte-identical.
+  if (
+    caller.effectiveAccess &&
+    app.createdByUserId &&
+    app.createdByUserId === caller.userId
+  ) {
+    return true
+  }
   if (!app.organizationId) return false // should be unreachable; fail closed, not open
-  const inOrg = caller.organizationIds.includes(app.organizationId)
+  // Effective read-org set (memberships ∪ owned orgs) when the flag is on;
+  // falls back to raw memberships otherwise.
+  const readOrgIds = caller.effectiveReadOrgIds ?? caller.organizationIds
+  const inOrg = readOrgIds.includes(app.organizationId)
   if (visibility === 'organization' || visibility === 'private') return inOrg
   return false
 }
@@ -416,7 +446,9 @@ export class AppRegistryService {
     // ENTIRE block — including the FF-EPIC-12-S2 portal-catalog gate below —
     // same "sees everything" convention `canRead`/`canMutate` already apply.
     if (!caller.isPlatformAdmin) {
-      const orgIds = caller.organizationIds
+      // FFRNT-377 / S2 — effective read-org set (memberships ∪ owned orgs) when
+      // the flag is on; raw memberships otherwise. Mirrors canRead exactly.
+      const orgIds = caller.effectiveReadOrgIds ?? caller.organizationIds
 
       // FF-EPIC-12-S2 AC4 — fail closed. A 'denied' portal context (the flag
       // is ON and the caller's portal context is missing/malformed) must
@@ -466,6 +498,13 @@ export class AppRegistryService {
                 .whereIn('visibility', ['organization', 'private'])
                 .whereIn('organization_id', orgIds)
             })
+          }
+          // FFRNT-377 / S2 — ownership: the app's creator sees it regardless of
+          // visibility/org (mirrors canRead). Independent of the portal gate,
+          // like the org-owned branch above. Gated on effectiveAccess so the
+          // flag-OFF SQL is byte-identical to the pre-S2 path.
+          if (caller.effectiveAccess) {
+            builder.orWhere('created_by_user_id', caller.userId)
           }
         })
       }

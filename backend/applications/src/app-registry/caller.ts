@@ -5,6 +5,7 @@
 import { db } from '../config/database'
 import { AppCaller } from './service'
 import { SYNTHETIC_CONSUMER_USER_ID } from '../middleware/consumer-auth'
+import { isEffectiveAccessEnabled } from './flags'
 
 interface SessionUser {
   id: string
@@ -18,6 +19,22 @@ export async function getMemberOrgIds(userId: string): Promise<string[]> {
     .where('status', 'active')
     .select('organization_id')
   return rows.map((r: any) => r.organization_id).filter(Boolean)
+}
+
+/**
+ * FFRNT-377 / S2 — org ids the caller OWNS (`organizations.owner_id`), which is
+ * a distinct relationship from an `organization_memberships` row: an org owner
+ * may have no membership row yet still, by ownership, have effective read
+ * access to the org's apps ("I'm the owner but see nothing"). Returns [] on any
+ * error so a lookup failure fails CLOSED (reads fall back to memberships only).
+ */
+export async function getOwnedOrgIds(userId: string): Promise<string[]> {
+  try {
+    const rows = await db('organizations').where('owner_id', userId).select('id')
+    return rows.map((r: any) => r.id).filter(Boolean)
+  } catch {
+    return []
+  }
 }
 
 /** Roles (owner/admin/member/…) the caller holds in a specific org. */
@@ -61,19 +78,37 @@ export async function resolveCaller(user: SessionUser): Promise<AppCaller> {
   // below, exactly as before; the consumer's `admin` role is what authorises it,
   // and nothing about that changes.
   if (user.id === SYNTHETIC_CONSUMER_USER_ID) {
+    // A service principal owns no org and creates no app — effective access
+    // adds nothing. Leave it off so its reads stay byte-identical.
     return {
       userId: user.id,
       organizationIds: [],
       roles,
       isPlatformAdmin: roles.includes('admin'),
+      effectiveReadOrgIds: [],
+      effectiveAccess: false,
     }
   }
 
   const organizationIds = await getMemberOrgIds(user.id)
+
+  // FFRNT-377 / S2 — effective READ access (flag default ON). When on, the
+  // read-org set is memberships ∪ orgs the caller OWNS, and app-creator reads
+  // are enabled (see service.ts canRead/list). When off, this is byte-identical
+  // to pre-S2 raw-membership reads.
+  const effectiveAccess = await isEffectiveAccessEnabled({ userId: user.id })
+  let effectiveReadOrgIds = organizationIds
+  if (effectiveAccess) {
+    const ownedOrgIds = await getOwnedOrgIds(user.id)
+    effectiveReadOrgIds = Array.from(new Set([...organizationIds, ...ownedOrgIds]))
+  }
+
   return {
     userId: user.id,
     organizationIds,
     roles,
     isPlatformAdmin: roles.includes('admin'),
+    effectiveReadOrgIds,
+    effectiveAccess,
   }
 }

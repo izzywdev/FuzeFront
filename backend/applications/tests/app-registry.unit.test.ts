@@ -143,6 +143,72 @@ describe('app-registry BOLA visibility (canRead)', () => {
   })
 })
 
+describe('app-registry effective-access reads (FFRNT-377 / S2)', () => {
+  // Flag ON: effectiveReadOrgIds = memberships ∪ owned orgs, and creator reads
+  // are enabled. Flag OFF (fields absent) = pre-S2 raw-membership behavior.
+  const ownerNoMembership: AppCaller = {
+    userId: 'owner1',
+    organizationIds: [], // NO membership row...
+    roles: ['user'],
+    isPlatformAdmin: false,
+    effectiveReadOrgIds: ['org-a'], // ...but owns org-a
+    effectiveAccess: true,
+  }
+  const effAccessMemberA: AppCaller = {
+    ...memberOfOrgA,
+    effectiveReadOrgIds: ['org-a'],
+    effectiveAccess: true,
+  }
+
+  it('flag OFF: an org owner with no membership row still cannot read (parity with pre-S2)', () => {
+    const ownerFlagOff: AppCaller = {
+      userId: 'owner1',
+      organizationIds: [],
+      roles: ['user'],
+      isPlatformAdmin: false,
+    }
+    expect(
+      canRead(appWith({ visibility: 'organization', organizationId: 'org-a' }), ownerFlagOff)
+    ).toBe(false)
+  })
+
+  it('flag ON: an org owner (no membership row) reads their org\'s organization/private apps', () => {
+    expect(
+      canRead(appWith({ visibility: 'organization', organizationId: 'org-a' }), ownerNoMembership)
+    ).toBe(true)
+    expect(
+      canRead(appWith({ visibility: 'private', organizationId: 'org-a' }), ownerNoMembership)
+    ).toBe(true)
+  })
+
+  it('flag ON: an app creator reads their own app regardless of visibility/org', () => {
+    expect(
+      canRead(
+        appWith({ visibility: 'private', organizationId: 'org-z', createdByUserId: 'u1' }),
+        effAccessMemberA
+      )
+    ).toBe(true)
+  })
+
+  it('flag OFF: creator ownership does NOT grant a read (byte-identical pre-S2)', () => {
+    expect(
+      canRead(
+        appWith({ visibility: 'private', organizationId: 'org-z', createdByUserId: 'u1' }),
+        memberOfOrgA // no effectiveAccess field
+      )
+    ).toBe(false)
+  })
+
+  it('flag ON: no widening — a non-owner, non-member, non-creator is still denied', () => {
+    expect(
+      canRead(
+        appWith({ visibility: 'organization', organizationId: 'org-b', createdByUserId: 'someone-else' }),
+        effAccessMemberA
+      )
+    ).toBe(false)
+  })
+})
+
 describe('app-registry BOLA mutation (canMutate)', () => {
   it('member of owning org may mutate', () => {
     expect(canMutate(appWith({ organizationId: 'org-a' }), memberOfOrgA)).toBe(
