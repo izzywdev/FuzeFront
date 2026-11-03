@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>"More" → drawer — Mobile bottom navigation</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  body { padding: var(--space-6) var(--space-4) 96px; }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  .crumb { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--text-tertiary); margin-bottom: var(--space-4); text-align: center; }
+  .crumb a { color: var(--cyan-400); text-decoration: none; }
+  .lead { color: var(--text-secondary); font-size: var(--text-sm); max-width: 66ch; margin: 0 auto var(--space-6);
+    text-align: center; line-height: 1.55; }
+  .stage { display: flex; flex-direction: column; gap: var(--space-3); align-items: center; }
+  .notes { max-width: 70ch; margin: var(--space-10) auto 0; font-size: var(--text-sm); color: var(--text-tertiary); line-height: 1.6; }
+  .notes code { font-family: var(--font-mono); color: var(--text-secondary); }
+  .notes b { color: var(--text-secondary); }
+  /* dim the content + bar behind the scrim so the coexistence reads clearly */
+  .behind { filter: saturate(0.9); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="crumb"><a href="index.html">← All frames</a> · Frame 02 · <code>/applications</code> (drawer open) · 375px</div>
+  <p class="lead">Tapping <b>More</b> opens the existing slide-in drawer (<code>SidePanel</code>) over a scrim —
+    the <b>same</b> drawer the top-bar hamburger opens, so there is one overlay, not two. The bottom nav stays
+    mounted behind the scrim with <b>More</b> shown pressed; the drawer carries the long-tail destinations that
+    don't fit the four bar slots. Tapping the scrim, the ✕, or any item closes it.</p>
+
+  <div class="stage">
+    <p class="state-label">Drawer open · More pressed · long-tail nav</p>
+    <div class="phone phone--notch" data-frame="02-more-drawer" data-state="drawer-open" data-route="/applications" data-viewport="375">
+      <!-- shell chrome (behind the scrim) -->
+      <header class="m-topbar behind">
+        <button class="hamburger" data-action="toggle-drawer" aria-label="Close menu" aria-expanded="true">☰</button>
+        <span class="wordmark"><span class="fuse">Fuze</span>Front</span>
+        <span class="spacer"></span>
+        <span class="avatar" aria-hidden="true">IZ</span>
+      </header>
+      <main class="m-content behind" aria-hidden="true">
+        <h1 class="m-h1">Applications</h1>
+        <p class="m-sub">Your activated apps.</p>
+        <div class="m-card"><div class="m-card__seam"></div><h3>▦ FuzePlan</h3><p>Project planning</p></div>
+        <div class="m-card"><h3>📊 FuzeBI</h3><p>Dashboards</p></div>
+      </main>
+
+      <!-- scrim + drawer overlay -->
+      <div class="scrim" data-action="close-drawer" data-scrim aria-hidden="true"></div>
+      <aside class="drawer" data-panel="drawer" data-state="open" data-open="true" role="dialog" aria-modal="true" aria-label="Menu">
+        <div class="drawer__head">
+          <span class="wordmark"><span class="fuse">Fuze</span>Front</span>
+          <button class="drawer__close" data-action="close-drawer" aria-label="Close menu">✕</button>
+        </div>
+        <div class="drawer__section">
+          <div class="drawer__section-label">Portal</div>
+          <a class="drawer-item" data-drawer-item="applications" data-route="/applications" aria-current="page" href="#"><span class="ico" aria-hidden="true">▦</span> Applications</a>
+          <a class="drawer-item" data-drawer-item="organizations" data-route="/organizations" href="#"><span class="ico" aria-hidden="true">🏢</span> Organizations</a>
+          <a class="drawer-item" data-drawer-item="profile" data-route="/profile" href="#"><span class="ico" aria-hidden="true">👤</span> Profile</a>
+          <a class="drawer-item" data-drawer-item="billing" data-route="/billing" href="#"><span class="ico" aria-hidden="true">💳</span> Billing</a>
+          <a class="drawer-item" data-drawer-item="connectors" data-route="/connectors" href="#"><span class="ico" aria-hidden="true">🔌</span> Connectors</a>
+        </div>
+        <div class="drawer__section">
+          <div class="drawer__section-label">Support</div>
+          <a class="drawer-item" data-drawer-item="help" data-route="/help" href="#"><span class="ico" aria-hidden="true">❓</span> Help</a>
+          <a class="drawer-item" data-drawer-item="status" data-route="/status" href="#"><span class="ico" aria-hidden="true">🩺</span> Status</a>
+        </div>
+      </aside>
+
+      <!-- bottom nav stays mounted; More shows pressed while the drawer is open -->
+      <nav class="bottom-nav behind" data-component="bottom-nav" data-panel="bottom-nav" data-state="loaded" aria-label="Primary">
+        <a class="bn-item" data-nav-item="home" data-route="/dashboard" href="#"><span class="bn-ico" aria-hidden="true">🏠</span><span class="bn-label">Home</span></a>
+        <a class="bn-item" data-nav-item="apps" data-route="/applications" aria-current="page" href="#"><span class="bn-ico" aria-hidden="true">▦</span><span class="bn-label">Apps</span></a>
+        <a class="bn-item" data-nav-item="orgs" data-route="/organizations" href="#"><span class="bn-ico" aria-hidden="true">🏢</span><span class="bn-label">Orgs</span></a>
+        <button class="bn-item" data-nav-item="more" data-action="toggle-drawer" data-pressed="true" aria-haspopup="true" aria-expanded="true"><span class="bn-ico" aria-hidden="true">☰</span><span class="bn-label">More</span></button>
+      </nav>
+    </div>
+  </div>
+
+  <p class="notes">
+    <b>Coexistence contract.</b> The <b>More</b> tab and the top-bar hamburger both call the shell's single
+    <code>toggleSidebar</code> (<code>Layout.tsx</code> <code>isSidebarOpen</code>) — one drawer, two triggers,
+    no second overlay primitive. While open: the drawer is <code>role="dialog" aria-modal="true"</code>, the
+    scrim (<code>--scrim</code>) covers content <b>and</b> bar, the backgrounded content is
+    <code>aria-hidden</code>, More shows <code>data-pressed</code> + <code>aria-expanded="true"</code>, and the
+    drawer honours <code>--safe-area-top/-bottom</code> so a full-height panel clears the notch and home
+    indicator. The drawer holds <b>everything the four bar slots can't</b> — Profile, Billing, Connectors,
+    Help, Status, plus the registry Apps section and (role-gated) Admin — reusing <code>SidePanel</code>'s
+    existing markup. Dismiss: scrim tap (<code>data-action='close-drawer'</code>), ✕, Esc, or any item.<br />
+    Test hooks: <code>[data-frame='02-more-drawer']</code> · <code>[data-panel='drawer'][data-state='open']</code> ·
+    <code>[data-scrim]</code> · <code>[data-action='close-drawer']</code> · <code>[data-nav-item='more'][data-pressed='true']</code> ·
+    <code>[data-drawer-item='billing'|'connectors'|'profile'|'help'|'status']</code>. Tokens only.
+  </p>
+</div>
+</body>
+</html>

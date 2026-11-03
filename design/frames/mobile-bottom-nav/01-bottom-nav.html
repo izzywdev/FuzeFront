@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Bottom nav mounted — Mobile bottom navigation</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  body { padding: var(--space-6) var(--space-4) 96px; }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  .crumb { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--text-tertiary); margin-bottom: var(--space-4); text-align: center; }
+  .crumb a { color: var(--cyan-400); text-decoration: none; }
+  .lead { color: var(--text-secondary); font-size: var(--text-sm); max-width: 64ch; margin: 0 auto var(--space-6);
+    text-align: center; line-height: 1.55; }
+  .stages { display: flex; flex-wrap: wrap; gap: var(--space-8); justify-content: center; align-items: flex-start; }
+  .stage { display: flex; flex-direction: column; gap: var(--space-3); align-items: center; }
+  .notes { max-width: 70ch; margin: var(--space-10) auto 0; font-size: var(--text-sm); color: var(--text-tertiary); line-height: 1.6; }
+  .notes code { font-family: var(--font-mono); color: var(--text-secondary); }
+  .notes b { color: var(--text-secondary); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="crumb"><a href="index.html">← All frames</a> · Frame 01 · <code>/dashboard</code> · 375px</div>
+  <p class="lead">The bottom nav mounted in the mobile shell. It sits fixed at the bottom within thumb reach;
+    the content area scrolls behind it. Two stages: the default view with <b>Apps</b> active, and the same bar
+    with a notification badge and the <b>Home</b> tab active.</p>
+
+  <div class="stages">
+    <!-- STAGE A: default, Apps active -->
+    <div class="stage">
+      <p class="state-label">Default · Apps active · <code>/applications</code></p>
+      <div class="phone phone--notch" data-frame="01-bottom-nav" data-state="default" data-route="/applications" data-viewport="375">
+        <header class="m-topbar">
+          <button class="hamburger" data-action="toggle-drawer" aria-label="Open menu">☰</button>
+          <span class="wordmark"><span class="fuse">Fuze</span>Front</span>
+          <span class="spacer"></span>
+          <span class="avatar" aria-hidden="true">IZ</span>
+        </header>
+        <main class="m-content">
+          <h1 class="m-h1">Applications</h1>
+          <p class="m-sub">Your activated apps. Tap one to open it in the shell.</p>
+          <div class="m-card"><div class="m-card__seam"></div><h3>▦ FuzePlan</h3><p>Project planning · activated</p></div>
+          <div class="m-card"><h3>📊 FuzeBI</h3><p>Dashboards · activated</p></div>
+          <div class="m-card"><h3>🗓️ FuzeAgent</h3><p>Assistant · activated</p></div>
+          <div class="m-card"><h3>💬 FuzeSocial</h3><p>Messaging · activated</p></div>
+        </main>
+        <!-- data-component marks the DS BottomNav primitive the shell wraps -->
+        <nav class="bottom-nav" data-component="bottom-nav" data-panel="bottom-nav" data-state="loaded" aria-label="Primary">
+          <a class="bn-item" data-nav-item="home" data-route="/dashboard" href="#">
+            <span class="bn-ico" aria-hidden="true">🏠</span><span class="bn-label">Home</span>
+          </a>
+          <a class="bn-item" data-nav-item="apps" data-route="/applications" aria-current="page" href="#">
+            <span class="bn-ico" aria-hidden="true">▦</span><span class="bn-label">Apps</span>
+          </a>
+          <a class="bn-item" data-nav-item="orgs" data-route="/organizations" href="#">
+            <span class="bn-ico" aria-hidden="true">🏢</span><span class="bn-label">Orgs</span>
+          </a>
+          <button class="bn-item" data-nav-item="more" data-action="toggle-drawer" aria-haspopup="true" aria-expanded="false">
+            <span class="bn-ico" aria-hidden="true">☰</span><span class="bn-label">More</span>
+          </button>
+        </nav>
+      </div>
+    </div>
+
+    <!-- STAGE B: Home active, with a notification badge on More -->
+    <div class="stage">
+      <p class="state-label">Home active · badge on More · <code>/dashboard</code></p>
+      <div class="phone phone--notch" data-frame="01-bottom-nav" data-state="badge" data-route="/dashboard" data-viewport="375">
+        <header class="m-topbar">
+          <button class="hamburger" data-action="toggle-drawer" aria-label="Open menu">☰</button>
+          <span class="wordmark"><span class="fuse">Fuze</span>Front</span>
+          <span class="spacer"></span>
+          <span class="avatar" aria-hidden="true">IZ</span>
+        </header>
+        <main class="m-content">
+          <h1 class="m-h1">Dashboard</h1>
+          <p class="m-sub">Welcome back. Here's what's happening across your workspace.</p>
+          <div class="m-card"><div class="m-card__seam"></div><h3>3 apps active</h3><p>FuzePlan, FuzeBI, FuzeAgent</p></div>
+          <div class="m-card"><h3>Acme Inc.</h3><p>Current organization context</p></div>
+          <div class="m-card"><h3>2 pending invites</h3><p>Review under More → Organizations</p></div>
+        </main>
+        <nav class="bottom-nav" data-component="bottom-nav" data-panel="bottom-nav" data-state="loaded" aria-label="Primary">
+          <a class="bn-item" data-nav-item="home" data-route="/dashboard" aria-current="page" href="#">
+            <span class="bn-ico" aria-hidden="true">🏠</span><span class="bn-label">Home</span>
+          </a>
+          <a class="bn-item" data-nav-item="apps" data-route="/applications" href="#">
+            <span class="bn-ico" aria-hidden="true">▦</span><span class="bn-label">Apps</span>
+          </a>
+          <a class="bn-item" data-nav-item="orgs" data-route="/organizations" href="#">
+            <span class="bn-ico" aria-hidden="true">🏢</span><span class="bn-label">Orgs</span>
+          </a>
+          <button class="bn-item" data-nav-item="more" data-action="toggle-drawer" aria-haspopup="true" aria-expanded="false">
+            <span class="bn-badge" data-badge="2" aria-label="2 notifications">2</span>
+            <span class="bn-ico" aria-hidden="true">☰</span><span class="bn-label">More</span>
+          </button>
+        </nav>
+      </div>
+    </div>
+  </div>
+
+  <p class="notes">
+    <b>Contract.</b> The bar is <code>position: fixed</code> at the viewport bottom at <code>--bottom-nav-height</code>
+    (56px) + <code>--safe-area-bottom</code>; the content area's <code>padding-bottom</code> clears it so nothing is
+    hidden under the bar or the home indicator. Exactly <b>one</b> tab carries <code>aria-current="page"</code>,
+    derived from the router pathname (a <code>/app/&lt;slug&gt;</code> route lights <b>Apps</b>). Each tab is a
+    real <code>&lt;a&gt;</code>/<code>&lt;button&gt;</code> at ≥<code>--touch-target</code> (44px) tall. The
+    <b>More</b> tab is a <code>&lt;button&gt;</code> with <code>aria-haspopup</code>/<code>aria-expanded</code> that
+    opens the drawer (Frame 02) — it never navigates. The badge is an accessible count, not decoration.<br />
+    Test hooks: <code>[data-frame='01-bottom-nav']</code> · <code>[data-component='bottom-nav']</code> ·
+    <code>[data-nav-item='home'|'apps'|'orgs'|'more']</code> · <code>[aria-current='page']</code> ·
+    <code>[data-action='toggle-drawer']</code> · <code>[data-badge]</code>. Tokens only.
+  </p>
+</div>
+</body>
+</html>
