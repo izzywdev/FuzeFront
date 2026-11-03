@@ -738,6 +738,23 @@ describe('ConfirmContactFlow (frame 03, phone)', () => {
     expect(startPhoneVerification).toHaveBeenLastCalledWith('+15550009999')
   })
 
+  it('after a successful send to a mistyped number, "Change number" on the code step lets the user correct it', async () => {
+    const user = userEvent.setup()
+    const startPhoneVerification = vi.fn().mockResolvedValue(undefined)
+    render(<ConfirmContactFlow client={asClient(smsOn({ startPhoneVerification }))} />)
+    await ready()
+    await user.type(q('#phone')!, '+15550004471')
+    await user.click(q('[data-action="send-code"]')!)
+    await waitFor(() => expect(q('[data-panel="confirm-contact"][data-state="enter-code"]')).toBeTruthy())
+    await user.click(q('[data-action="change-number"]')!)
+    expect(q('[data-panel="confirm-contact"][data-state="enter-phone"]')).toBeTruthy()
+    const input = q('#phone') as HTMLInputElement
+    await user.clear(input)
+    await user.type(input, '+15550009999')
+    await user.click(q('[data-action="send-code"]')!)
+    await waitFor(() => expect(startPhoneVerification).toHaveBeenLastCalledWith('+15550009999'))
+  })
+
   it('skip is available on the first step', async () => {
     render(<ConfirmContactFlow client={asClient(smsOn())} onSkip={vi.fn()} />)
     await ready()

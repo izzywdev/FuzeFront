@@ -123,6 +123,12 @@ export function ContactVerifyPanel(p: ContactVerifyPanelProps) {
               <Button variant="ghost" fullWidth data-action="resend" onClick={p.onResend} disabled={p.state === 'verifying'}>
                 {m.contact.resend}
               </Button>
+              {/* A mistyped-but-valid number still "delivers": let the user fix it without leaving the flow. */}
+              {p.onChangeNumber && (
+                <Button variant="ghost" fullWidth data-action="change-number" onClick={p.onChangeNumber} disabled={p.state === 'verifying'}>
+                  {m.contact.changeNumber}
+                </Button>
+              )}
             </Actions>
           </>
         )}
