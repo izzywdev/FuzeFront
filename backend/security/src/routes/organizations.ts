@@ -625,6 +625,17 @@ router.put(
         }
       }
 
+      // Preserve the SERVER-OWNED `metadata.personal` marker. sanitizeInput
+      // already stripped any client-supplied value; this UPDATE replaces the
+      // whole metadata column, so without re-applying the stored value an edit
+      // would silently un-mark a personal workspace — the duplicate "Personal"
+      // row reappears and 015/017's personal-org repair loses the signal it keys
+      // on. Reserved key only; all other metadata is the client's.
+      const currentOrg = await db('organizations').where('id', id).first()
+      if (currentOrg && parseJsonb(currentOrg.metadata)?.personal === true) {
+        input.metadata = { ...input.metadata, personal: true }
+      }
+
       // Update organization + emit identity.org.updated in one transaction so
       // the event commits atomically with the change (see enqueueEvent).
       let updatedOrganization: any

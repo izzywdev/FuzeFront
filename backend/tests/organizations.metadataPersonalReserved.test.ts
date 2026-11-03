@@ -129,7 +129,7 @@ describe('legacy POST /api/organizations — metadata.personal is server-owned',
 describe('legacy PUT /api/organizations/:id — metadata.personal is server-owned', () => {
   beforeEach(() => jest.clearAllMocks())
 
-  it('strips a client-supplied metadata.personal on update', async () => {
+  it('strips a client-supplied metadata.personal on update (no stored marker)', async () => {
     const { updates } = installDb(call => (call === 1 ? undefined : ORG_ROW()))
 
     const res = await request(buildApp())
@@ -141,5 +141,24 @@ describe('legacy PUT /api/organizations/:id — metadata.personal is server-owne
     const meta = parseMeta(orgUpdate.row.metadata)
     expect(meta).not.toHaveProperty('personal')
     expect(meta).toEqual({ team: 'ops' })
+  })
+
+  it('PRESERVES an existing stored metadata.personal even when the client omits it', async () => {
+    // Without this, PUT replaces the whole metadata column and silently un-marks
+    // a personal workspace — the duplicate reappears and the repair migration
+    // loses its signal. call 1 = slug check, call 2 = the current org (marked),
+    // call 3 = the re-read after update.
+    const marked = { ...ORG_ROW(), metadata: JSON.stringify({ personal: true }) }
+    const { updates } = installDb(call => (call === 2 ? marked : call === 1 ? undefined : ORG_ROW()))
+
+    const res = await request(buildApp())
+      .put('/api/organizations/org-1')
+      .send({ name: 'Acme', slug: 'acme', metadata: { team: 'ops' } })
+
+    expect(res.status).toBe(200)
+    const orgUpdate = updates.find(u => u.table === 'organizations')!
+    const meta = parseMeta(orgUpdate.row.metadata)
+    expect(meta.personal).toBe(true)
+    expect(meta.team).toBe('ops')
   })
 })

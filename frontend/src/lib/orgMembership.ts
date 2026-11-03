@@ -49,19 +49,50 @@ export function isPersonalWorkspaceOrg(o: Organization): boolean {
   return o.type === 'personal' || o.metadata?.personal === true
 }
 
+/** True when the list contains a genuine `type='personal'` org. */
+export function hasGenuinePersonalOrg(orgs: readonly Organization[]): boolean {
+  return orgs.some(o => o.type === 'personal')
+}
+
+/**
+ * Whether `o` should be treated as THE Personal context: hidden from the
+ * switcher and resolved to the `null` ("operate as yourself") context, because
+ * the first-class Personal row already represents it.
+ *
+ * A genuine `type='personal'` org always is. An over-reclassified org
+ * (`metadata.personal === true` but `type !== 'personal'`, from migration 022 —
+ * see isPersonalWorkspaceOrg) is too, with ONE exception: when a genuine
+ * `type='personal'` org ALSO exists in the list. That is the migration-025
+ * collision case (025 skips restoring the over-reclassified row when the genuine
+ * personal org already holds content), leaving two DISTINCT tenants. There
+ * `securitySessionAPI.resolvePersonalTenant()` resolves the genuine one as the
+ * `null` context, so hiding the over-reclassified one too would strand its data
+ * — it must stay a selectable switcher target until the tenants are reconciled.
+ *
+ * List-aware by necessity: the collision is only visible across the whole list,
+ * never from a single row. Prefix-safe: reads `type`/`metadata`, not an id.
+ */
+export function isPersonalContextOrg(o: Organization, orgs: readonly Organization[]): boolean {
+  if (o.type === 'personal') return true
+  if (o.metadata?.personal !== true) return false
+  // Over-reclassified: it is the Personal context only when it is the ONLY
+  // personal representation. A genuine sibling means this is a distinct tenant.
+  return !hasGenuinePersonalOrg(orgs)
+}
+
 /**
  * Orgs the reconciled context switcher (`fuzefront.identity.personal-context`)
- * offers as targets: real memberships only, never a personal-workspace row.
+ * offers as targets: real memberships only, never the Personal-context row.
  *
  * design/frames/identity-context-switcher/index.html: "`type='personal'` orgs
  * are dropped from the switcher — a person is Personal, not the owner of a
  * personal org." Personal is the first-class `null` context; listing the
- * legacy personal org beside it showed "Personal" twice (see
- * isPersonalWorkspaceOrg for why `type` alone is not enough). Visibility-only
- * platform orgs (role `null`, rendered as GUEST) are not switch targets
- * either — production carries two platform orgs (migration 025a), and every
- * user saw the legacy one as a GUEST row they could do nothing in.
+ * legacy personal org beside it showed "Personal" twice (see isPersonalContextOrg
+ * for which orgs count, and why a distinct collision-case tenant does NOT).
+ * Visibility-only platform orgs (role `null`, rendered as GUEST) are not switch
+ * targets either — production carries two platform orgs (migration 025a), and
+ * every user saw the legacy one as a GUEST row they could do nothing in.
  */
-export function isSwitcherContextOrg(o: Organization): boolean {
-  return !isPersonalWorkspaceOrg(o) && isProvisionedMembership(o)
+export function isSwitcherContextOrg(o: Organization, orgs: readonly Organization[]): boolean {
+  return !isPersonalContextOrg(o, orgs) && isProvisionedMembership(o)
 }

@@ -577,5 +577,32 @@ describe('WorkspaceProvisioningGate', () => {
       })
       expect(screen.getByTestId('active-org')).toHaveTextContent(/^$/)
     })
+
+    it('KEEPS a persisted over-reclassified org active when a genuine type=personal sibling exists (025 collision — distinct tenant)', async () => {
+      // Two DISTINCT personal tenants: migration 025 skipped the restore because
+      // the genuine personal org already had content. The over-reclassified org
+      // must stay selectable or the user loses access to its data — it is NOT
+      // the Personal (null) context; the genuine type='personal' org is.
+      personalContextFlag = true
+      const overReclassified = {
+        id: 'org-ovr',
+        name: 'Personal',
+        type: 'organization',
+        user_role: 'owner',
+        metadata: { personal: true },
+      }
+      vi.spyOn(shared, 'getPersistedActiveOrganizationId').mockReturnValue('org-ovr')
+      vi.spyOn(api.organizationsAPI, 'getOrganizations').mockResolvedValue([
+        personalOrg, // genuine type='personal'
+        overReclassified,
+      ])
+
+      renderGate()
+
+      await waitFor(() => {
+        expect(screen.getByText('App content')).toBeInTheDocument()
+      })
+      expect(screen.getByTestId('active-org')).toHaveTextContent('org-ovr')
+    })
   })
 })

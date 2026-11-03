@@ -394,7 +394,10 @@ export function OrganizationSwitcherSection({
   const organizations = rawOrganizations.filter(
     org =>
       (isEmployee || org.id !== ROOT_ORG_ID) &&
-      (!personalContextEnabled || isSwitcherContextOrg(org))
+      // `rawOrganizations` (the full list) so isSwitcherContextOrg can tell an
+      // over-reclassified personal org that IS the Personal context from a
+      // distinct collision-case tenant that must stay selectable.
+      (!personalContextEnabled || isSwitcherContextOrg(org, rawOrganizations))
   )
 
   const load = useCallback(async () => {
