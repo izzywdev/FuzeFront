@@ -567,14 +567,63 @@ jobs:
           fi
           git config user.name  "fuzefront-release"
           git config user.email "release-bump@users.noreply.github.com"
-          # Never publish older images over a newer source release. A fresh
-          # master run must rebuild when source changed during this build.
-          git fetch origin master
-          if [ "$(git rev-parse FETCH_HEAD)" != "$GITHUB_SHA" ]; then
-            echo "::error::master changed during the build; release the new source head"
-            exit 1
+          # FFRNT — REBASE-AND-RETRY, not abort-on-master-moved.
+          # The old guard aborted the whole release the instant master advanced
+          # during the ~30-min build. With continuous fleet merges master never
+          # held still for a full build, so NO release ever reached this bump and
+          # nothing shipped (FuzeAgent sat undeployed for 8 days). Instead, base
+          # the bump on CURRENT master's values-prod and re-apply ONLY this run's
+          # built service tags, each PER-SERVICE-GUARDED so we never publish an
+          # older tag over a newer one — the stale-image guard's real intent,
+          # preserved: bump service S only when master's current tag for S is
+          # empty, equals ours, or is an ANCESTOR of our source commit (our build
+          # is newer-or-equal). A concurrent release that already shipped a newer
+          # S keeps it. --unshallow so the ancestry check can resolve stored
+          # short-shas (a shallow clone can't, and would wrongly skip everything).
+          git fetch --unshallow origin master 2>/dev/null || git fetch origin master
+          MASTER_SHA="$(git rev-parse FETCH_HEAD)"
+          if [ "$MASTER_SHA" != "$GITHUB_SHA" ]; then
+            echo "::notice::master advanced ${GITHUB_SHA} -> ${MASTER_SHA} during build; rebasing bump onto current master (per-service ancestry-guarded)"
+            git show "${MASTER_SHA}:${FILE}" > /tmp/vp-current.yaml
+          else
+            cp "$FILE" /tmp/vp-current.yaml
           fi
-          cp "$FILE" /tmp/vp-current.yaml
+          # Per-service gate: built this run ($1) AND not a regression vs the tag
+          # currently in master ($2 = image basename). Fails CLOSED (skip) when a
+          # short-sha can't be resolved, so we never risk publishing older over newer.
+          allow_bump() {
+            [ "$1" = "1" ] || { echo 0; return; }
+            local cur
+            cur=$(awk -v img="repository: ghcr.io/izzywdev/$2" '
+              found { sub(/\r$/,""); if ($1=="tag:") print $2; exit }
+              index($0, img) { found=1 }' /tmp/vp-current.yaml)
+            cur=${cur//\"/}
+            [ -z "$cur" ] && { echo 1; return; }
+            [ "$cur" = "$SHA" ] && { echo 1; return; }
+            if git merge-base --is-ancestor "$cur" "$GITHUB_SHA" 2>/dev/null; then echo 1; else echo 0; fi
+          }
+          BACKEND_ALLOW=$(allow_bump 1 fuzefront-backend)
+          FRONTEND_ALLOW=$(allow_bump 1 fuzefront-frontend)
+          EMAIL_ALLOW=$(allow_bump "$EMAIL_OK" fuzefront-email-service)
+          SMS_ALLOW=$(allow_bump "$SMS_OK" fuzefront-sms-service)
+          PROV_ALLOW=$(allow_bump "$PROV_OK" fuzefront-provisioning-service)
+          BILLING_ALLOW=$(allow_bump "$BILLING_OK" fuzefront-billing-service)
+          SECURITY_ALLOW=$(allow_bump "$SECURITY_OK" fuzefront-security-service)
+          APPS_ALLOW=$(allow_bump "$APPS_OK" fuzefront-applications-service)
+          CLOCK_ALLOW=$(allow_bump "$CLOCK_OK" fuzefront-clock-app)
+          CHAT_ALLOW=$(allow_bump "$CHAT_OK" fuzefront-chat-service)
+          NOTIF_ALLOW=$(allow_bump "$NOTIF_OK" fuzefront-notification-service)
+          PAYMENT_ALLOW=$(allow_bump "$PAYMENT_OK" fuzefront-payment-service)
+          SELECTION_LIST_ALLOW=$(allow_bump "$SELECTION_LIST_OK" fuzefront-selection-list-service)
+          CONFIG_SERVICE_ALLOW=$(allow_bump "$CONFIG_SERVICE_OK" fuzefront-config-service)
+          WEBSITE_FRONTEND_ALLOW=$(allow_bump "$WEBSITE_FRONTEND_OK" fuzefront-website-frontend)
+          WEBSITE_BACKEND_ALLOW=$(allow_bump "$WEBSITE_BACKEND_OK" fuzefront-website-backend)
+          DEVPORTAL_SERVICE_ALLOW=$(allow_bump "$DEVPORTAL_SERVICE_OK" fuzefront-devportal-service)
+          DEVPORTAL_FRONTEND_ALLOW=$(allow_bump "$DEVPORTAL_FRONTEND_OK" fuzefront-devportal-frontend)
+          # The count guard below now expects exactly the ALLOWED rewrites (built
+          # AND not-a-regression), not just the built count — reassigning EXPECTED.
+          EXPECTED=$((BACKEND_ALLOW + FRONTEND_ALLOW + EMAIL_ALLOW + SMS_ALLOW + PROV_ALLOW + BILLING_ALLOW + SECURITY_ALLOW + APPS_ALLOW + CLOCK_ALLOW + CHAT_ALLOW + NOTIF_ALLOW + PAYMENT_ALLOW + SELECTION_LIST_ALLOW + CONFIG_SERVICE_ALLOW + WEBSITE_FRONTEND_ALLOW + WEBSITE_BACKEND_ALLOW + DEVPORTAL_SERVICE_ALLOW + DEVPORTAL_FRONTEND_ALLOW))
+          echo "rebase-retry: ${EXPECTED} tag rewrite(s) allowed onto current master ${MASTER_SHA}"
           # Bump ONLY the core-app image tags built by this workflow. A blanket
           # `tag:` sed would also stomp deliberately-pinned services and the
           # EXTERNAL images (authentik, unleash) whose tags are managed by hand.
@@ -588,13 +637,14 @@ jobs:
           # manually restored LF. Rewritten tag lines preserve the line's
           # original ending so a CRLF file round-trips without a spurious
           # whole-file diff.
-          awk -v sha="$SHA" -v chat="$CHAT_OK" -v notif="$NOTIF_OK" \
-              -v email="$EMAIL_OK" -v sms="$SMS_OK" -v prov="$PROV_OK" \
-              -v billing="$BILLING_OK" -v security="$SECURITY_OK" \
-              -v apps="$APPS_OK" -v clock="$CLOCK_OK" -v payment="$PAYMENT_OK" \
-              -v selection_list="$SELECTION_LIST_OK" -v config_service="$CONFIG_SERVICE_OK" \
-              -v website_frontend="$WEBSITE_FRONTEND_OK" -v website_backend="$WEBSITE_BACKEND_OK" \
-              -v devportal_service="$DEVPORTAL_SERVICE_OK" -v devportal_frontend="$DEVPORTAL_FRONTEND_OK" '
+          awk -v sha="$SHA" -v chat="$CHAT_ALLOW" -v notif="$NOTIF_ALLOW" \
+              -v backend="$BACKEND_ALLOW" -v frontend="$FRONTEND_ALLOW" \
+              -v email="$EMAIL_ALLOW" -v sms="$SMS_ALLOW" -v prov="$PROV_ALLOW" \
+              -v billing="$BILLING_ALLOW" -v security="$SECURITY_ALLOW" \
+              -v apps="$APPS_ALLOW" -v clock="$CLOCK_ALLOW" -v payment="$PAYMENT_ALLOW" \
+              -v selection_list="$SELECTION_LIST_ALLOW" -v config_service="$CONFIG_SERVICE_ALLOW" \
+              -v website_frontend="$WEBSITE_FRONTEND_ALLOW" -v website_backend="$WEBSITE_BACKEND_ALLOW" \
+              -v devportal_service="$DEVPORTAL_SERVICE_ALLOW" -v devportal_frontend="$DEVPORTAL_FRONTEND_ALLOW" '
             hot {
               hot=0
               if ($0 ~ /^[[:space:]]*tag:/) {
@@ -604,8 +654,8 @@ jobs:
                 next
               }
             }
-            /repository: ghcr\.io\/izzywdev\/fuzefront-backend\r?$/ { hot=1 }
-            /repository: ghcr\.io\/izzywdev\/fuzefront-frontend\r?$/ { hot=1 }
+            backend == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-backend\r?$/ { hot=1 }
+            frontend == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-frontend\r?$/ { hot=1 }
             security == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-security-service\r?$/ { hot=1 }
             apps == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-applications-service\r?$/ { hot=1 }
             clock == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-clock-app\r?$/ { hot=1 }
@@ -659,6 +709,13 @@ jobs:
           if cmp -s /tmp/vp-current.yaml /tmp/vp-new.yaml; then
             echo "values-prod.yaml already at ${SHA} — nothing to bump"
             exit 0
+          fi
+          # When we rebased, base the release PR on CURRENT master so its only
+          # diff is the values-prod bump. The build steps may have left
+          # design-system-sync edits in the working tree; -f discards them — we
+          # commit only values-prod. Happy path (master unchanged) is untouched.
+          if [ "$MASTER_SHA" != "$GITHUB_SHA" ]; then
+            git checkout -q -f -B release-rebase "$MASTER_SHA"
           fi
           cp /tmp/vp-new.yaml "$FILE"
           bash scripts/publish-release-gitops.sh "$FILE" "$SHA" "$GITHUB_SHA"

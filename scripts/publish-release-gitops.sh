@@ -53,10 +53,17 @@ only_values=$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json files \
 [[ "$only_values" == true ]] || { echo "::error::release PR contains unexpected files"; exit 1; }
 head=$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json headRefOid --jq '.headRefOid')
 [[ "$head" =~ ^[0-9a-f]{40}$ ]] || exit 1
-[[ "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/master" --jq '.object.sha')" == "$source_sha" ]] || {
-  echo "::error::source advanced before merge request; rebuild current master"
+# FFRNT rebase-and-retry: the release.yml bump step now rebases onto current
+# master (re-applying only this run's built tags, per-service ancestry-guarded
+# so nothing older is published over newer). So master advancing past
+# source_sha is EXPECTED, not a reason to abort — that abort livelocked every
+# release. Still require source_sha to be a real ancestor of current master
+# (a sane build off master history), and reject only a divergent/garbage source.
+cur_master="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/master" --jq '.object.sha')"
+if [[ "$cur_master" != "$source_sha" ]] && ! git merge-base --is-ancestor "$source_sha" "$cur_master" 2>/dev/null; then
+  echo "::error::source ${source_sha} is not in current master (${cur_master}) history; refusing"
   exit 1
-}
+fi
 # Do not approve our own PR or bypass any review/check/signature requirement.
 if [[ "$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json autoMergeRequest --jq '.autoMergeRequest != null')" != true ]]; then
   gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" --auto --squash --match-head-commit "$head"
