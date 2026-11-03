@@ -11,6 +11,14 @@ import type { Organization } from '../services/api'
  * ever returned because a membership row exists.
  */
 export function isProvisionedMembership(o: Organization): boolean {
+  // Two branches, in priority order:
+  //   1. `user_role` present (including an explicit `null`): it is authoritative
+  //      — `null` means "visible but not a member" → false; any role → true.
+  //      This branch is taken whenever the key exists, because `null !==
+  //      undefined`, so `type` is NOT consulted when `user_role` is present.
+  //   2. `user_role` absent (`=== undefined`): fall back to excluding only
+  //      `type='platform'` orgs (a non-platform org is only ever returned
+  //      because a membership row exists).
   if (o.user_role !== undefined) {
     return o.user_role != null
   }
