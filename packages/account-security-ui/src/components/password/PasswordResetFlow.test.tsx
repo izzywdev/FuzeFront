@@ -120,9 +120,29 @@ describe('PasswordResetFlow — confirm with token', () => {
     expect(confirmPasswordReset).toHaveBeenLastCalledWith('tok_keep', 'Another-Str0ng-Pass!9')
   })
 
-  it('a server fault (5xx) → generic retryable error, not a misleading "expired link"', async () => {
+  it.each([['5xx', () => err(503)], ['transport', () => new TypeError('Failed to fetch')]])(
+    '%s on confirm → indeterminate: no "unchanged" claim, no replay of the possibly-consumed token',
+    async (_n, make) => {
+      const user = userEvent.setup()
+      const onSignIn = vi.fn()
+      const confirmPasswordReset = vi.fn().mockRejectedValue(make())
+      render(<PasswordResetFlow client={asClient(makeClient({ confirmPasswordReset }))} token="tok" onSignIn={onSignIn} />)
+      await fill(user)
+      await waitFor(() => expect(document.querySelector('[data-error="reset-indeterminate"]')).toBeTruthy())
+      const text = document.body.textContent ?? ''
+      expect(text).toContain("Try signing in with your new password.")
+      expect(text).not.toMatch(/unchanged|wasn.t saved|expired/i)
+      expect(screen.queryByRole('button', { name: /try again/i })).toBeNull()
+      expect(document.querySelector('input[type="password"]')).toBeNull()
+      await user.click(document.querySelector('[data-action="go-sign-in"]')!)
+      expect(onSignIn).toHaveBeenCalled()
+      expect(confirmPasswordReset).toHaveBeenCalledTimes(1)
+    }
+  )
+
+  it('other unmapped failure (429) → retryable error, then done', async () => {
     const user = userEvent.setup()
-    const confirmPasswordReset = vi.fn().mockRejectedValueOnce(err(503)).mockResolvedValueOnce(undefined)
+    const confirmPasswordReset = vi.fn().mockRejectedValueOnce(err(429)).mockResolvedValueOnce(undefined)
     render(<PasswordResetFlow client={asClient(makeClient({ confirmPasswordReset }))} token="tok" />)
     await fill(user)
     await waitFor(() => expect(document.querySelector('[data-state="error"]')).toBeTruthy())

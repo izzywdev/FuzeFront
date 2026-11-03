@@ -33,6 +33,8 @@ type Step =
   | { name: 'sent'; email: string }
   | { name: 'confirm' }
   | { name: 'invalid' }
+  /** Transport failure / 5xx on confirm: the reset may have committed (token consumed, sessions revoked). */
+  | { name: 'indeterminate' }
   | { name: 'done' }
 
 export function ResetRequestForm({
@@ -314,6 +316,9 @@ function PasswordResetInner({ client, getToken, token, onSignIn, onNavigate }: P
         // 422 PASSWORD_POLICY: the token is still live — back to the editable form.
         if (s === 422 || (err instanceof HttpError && err.code === 'PASSWORD_POLICY')) setPolicyRejected(true)
         else if (s === 400 || s === 401 || s === 404 || s === 410) setStep({ name: 'invalid' })
+        // The server may have reset the password and consumed the single-use token before the
+        // response was lost: never claim "unchanged", and never replay a token that may be spent.
+        else if (s === undefined || s >= 500) setStep({ name: 'indeterminate' })
         else setFailure(() => () => void confirm(newPassword))
       } finally {
         setBusy(false)
@@ -343,6 +348,29 @@ function PasswordResetInner({ client, getToken, token, onSignIn, onNavigate }: P
         />
       ) : step.name === 'confirm' ? (
         <NewPasswordForm submitting={busy} policyRejected={policyRejected} onSubmit={(p) => void confirm(p)} />
+      ) : step.name === 'indeterminate' ? (
+        <div data-state="indeterminate">
+          <SeamCard data-error="reset-indeterminate">
+            <StatusCallout tone="warning" icon="?" title={m.password.errors.indeterminateTitle} role="alert">
+              {m.password.errors.indeterminateText}
+            </StatusCallout>
+            <Actions>
+              <Button variant="primary" data-action="go-sign-in" onClick={back}>
+                {m.reset.done.signIn}
+              </Button>
+              <Button
+                variant="ghost"
+                data-action="request-again"
+                onClick={() => {
+                  setStep({ name: 'request' })
+                  onNavigate?.('/reset')
+                }}
+              >
+                {m.reset.invalid.requestAgain}
+              </Button>
+            </Actions>
+          </SeamCard>
+        </div>
       ) : step.name === 'invalid' ? (
         <TokenInvalidNotice
           onRequestAgain={() => {
