@@ -3,6 +3,7 @@ import { Badge, Button, StatusCallout } from '@fuzefront/design-system'
 import { useAccountSecurityI18n } from '../../i18n/AccountSecurityI18nProvider'
 import { ConnectedAccountRow } from '../connected-accounts/ConnectedAccountRow'
 import { HttpError } from '../../api/http'
+import { useInFlight } from '../common/flowKit'
 import type { IdentityConnections, SocialConnection } from '../../types'
 
 export interface SignInMethodsListProps {
@@ -44,12 +45,13 @@ export function SignInMethodsList({
   const { messages: m } = useAccountSecurityI18n()
   const [lastMethodGuard, setLastMethodGuard] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
+  const inFlight = useInFlight()
   const onlyMethodProvider =
     disableUnlinkWhenOnlyMethod && !connections.hasPassword && connections.providers.length === 1
       ? connections.providers[0].provider
       : null
 
-  const handleUnlink = async (provider: SocialConnection['provider']) => {
+  const handleUnlink = (provider: SocialConnection['provider']) => inFlight(async () => {
     if (!onUnlink) return
     setBusy(provider)
     setLastMethodGuard(false)
@@ -64,7 +66,7 @@ export function SignInMethodsList({
     } finally {
       setBusy(null)
     }
-  }
+  })
 
   return (
     <div data-panel="sign-in-methods">

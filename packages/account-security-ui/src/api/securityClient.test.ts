@@ -28,6 +28,24 @@ describe('createAccountSecurityClient', () => {
     expect(await client.getActiveSessionCount!()).toBe(2)
   })
 
+  it('redeems a recovery code on /mfa/verify with exactly { challengeId, recoveryCode }', async () => {
+    const fetchImpl = mockFetch(200, { token: 't' })
+    const client = createAccountSecurityClient({ fetchImpl })
+    await client.verifyRecoveryCode('chl_1', 'abc')
+    const call = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0]
+    expect(call[0]).toBe('/api/v1/security/mfa/verify')
+    expect(JSON.parse((call[1] as RequestInit).body as string)).toEqual({ challengeId: 'chl_1', recoveryCode: 'abc' })
+  })
+
+  it('reads recovery-code counts with GET /mfa/recovery-codes', async () => {
+    const fetchImpl = mockFetch(200, { remaining: 8, total: 10 })
+    const client = createAccountSecurityClient({ fetchImpl, getToken: () => 'tok' })
+    expect(await client.getRecoveryCodesStatus()).toEqual({ remaining: 8, total: 10 })
+    const call = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0]
+    expect(call[0]).toBe('/api/v1/security/mfa/recovery-codes')
+    expect((call[1] as RequestInit).method).toBe('GET')
+  })
+
   it('surfaces a 409 as an HttpError with the fail-closed code', async () => {
     const fetchImpl = mockFetch(409, { error: 'last method', code: 'CONFLICT' })
     const client = createAccountSecurityClient({ fetchImpl })
@@ -96,5 +114,20 @@ describe('createAccountSecurityClient', () => {
       constructor: HttpError,
       status: 409,
     })
+  })
+
+  it('calls the global fetch unbound-safely (a bare window.fetch throws "Illegal invocation" as a method)', async () => {
+    const seen: unknown[] = []
+    vi.stubGlobal('fetch', function (this: unknown) {
+      seen.push(this)
+      if (this !== undefined && this !== globalThis) throw new TypeError('Illegal invocation')
+      return Promise.resolve(new Response(JSON.stringify({ providers: [], hasPassword: true }), { status: 200 }))
+    })
+    try {
+      const client = createAccountSecurityClient()
+      await expect(client.getConnections()).resolves.toMatchObject({ hasPassword: true })
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })

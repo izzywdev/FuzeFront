@@ -1,8 +1,11 @@
 import { useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AccountSecurityHub } from '@fuzefront/account-security-ui'
+import { AccountSecurityHub, SecurityStatusMobileFlow } from '@fuzefront/account-security-ui'
 import { useFlag } from '../platform/featureFlags'
 import { getActiveAuthToken } from '../lib/accounts'
+import { ACCOUNT_SECURITY_FLAGS } from '../components/account-security/FlaggedSurface'
+import { useCompactViewport } from '../lib/compactViewport'
+import { useAccountSecurityLocale } from '../components/account-security/useAccountSecurityLocale'
 
 /**
  * Feature-flag gate for the account-security hub
@@ -27,6 +30,11 @@ function useAccountSecurityHubFlag(): boolean {
 export default function AccountSecurityPage() {
   const navigate = useNavigate()
   const enabled = useAccountSecurityHubFlag()
+  // FFRNT-141 / FFRNT-362 — both default OFF. Flag OFF = the hub exactly as before.
+  const mfaManagement = useFlag(ACCOUNT_SECURITY_FLAGS.mfaManagement, false)
+  const mfaStepUpMobile = useFlag(ACCOUNT_SECURITY_FLAGS.mfaStepUpMobile, false)
+  const compact = useCompactViewport()
+  const locale = useAccountSecurityLocale()
 
   const onNavigate = useCallback(
     (route: string) => {
@@ -49,10 +57,19 @@ export default function AccountSecurityPage() {
 
   return (
     <div style={{ padding: 'var(--space-8)' }}>
+      {/* Mobile combined 2FA + contact-verification status — additive to the hub,
+          small screens only, behind fuzefront.security.mfa-stepup-mobile. */}
+      {mfaStepUpMobile && compact && (
+        <div style={{ marginBottom: 'var(--space-6)' }}>
+          <SecurityStatusMobileFlow getToken={getToken} locale={locale} onNavigate={onNavigate} addMethodEnabled={mfaManagement} />
+        </div>
+      )}
       <AccountSecurityHub
         getToken={getToken}
+        locale={locale}
         onNavigate={onNavigate}
         onSetPassword={() => navigate('/account/security/password')}
+        routes={mfaManagement ? { twoFactor: '/account/security/mfa' } : undefined}
       />
     </div>
   )

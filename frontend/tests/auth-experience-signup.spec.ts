@@ -815,20 +815,23 @@ test.describe('flag ON — reconciled 400 CAPTCHA_FAILED => turnstile-failed', (
 
 // ── sign-in adjacent states that 06-states puts in the signup state set ──────
 test.describe('flag ON — mfa-required handoff and unverified-gate (06-states)', () => {
-  test('mfa-required: sign-in that resolves to an MFA challenge shows the handoff, not a dead end', async ({ page }) => {
+  // The host answers the challenge itself (MFA step-up, FFRNT-141): the panel's
+  // "One more step" notice is replaced by the step-up code prompt, never a dead end.
+  test('mfa-required: sign-in that resolves to an MFA challenge opens the step-up prompt, not a dead end', async ({ page }) => {
     await boot(page, { flag: true })
     await page.route(`${SEC}/session`, route =>
       route.request().method() === 'POST'
-        ? json(route, 200, { status: 'mfa_required', challengeId: 'ch_1', methods: ['totp'] })
+        ? json(route, 200, { status: 'mfa_required', challengeId: 'ch_1', factors: [{ factorId: 'fct_totp_1', type: 'totp' }] })
         : route.fallback(),
     )
     await page.goto('/login', { waitUntil: 'domcontentloaded' })
     await page.locator('#fzf-auth-email').fill('ada@lovelace.io')
     await page.locator('#fzf-auth-password').fill(STRONG)
     await page.locator('form button[type="submit"]').click()
-    const mfa = page.locator('[data-state="mfa-required"]')
-    await expect(mfa).toBeVisible()
-    await expect(mfa).toContainText(/One more step/i)
+    const challenge = page.locator('[data-component="mfa-challenge"]')
+    await expect(challenge).toBeVisible()
+    await expect(challenge.locator('[data-component="otp-input"]')).toBeVisible()
+    await expect(page.locator('[data-action="verify-mfa"]')).toBeVisible()
   })
 
   test('unverified-gate: signed-in but unverified account sees the banner; Resend POSTs /verify/email/start', async ({ page }) => {
