@@ -38,22 +38,60 @@ async function main() {
   });
 
   const statusProducer = new TypedProducer(kafka);
-  await statusProducer.connect();
-
   const consumer = new TypedConsumer(kafka, config.kafka.groupId);
-  await consumer.connect();
-  await consumer.subscribe(TOPICS.NOTIFY_EMAIL_REQUESTED);
-  await consumer.run(
-    (event) => handleEmailRequested(event as any, { provider, statusProducer, from: config.email.from }),
-    notifyEmailRequestedSchemaV1,
-    statusProducer
-  );
 
   // --- HTTP ---
+  // Bind the health port BEFORE connecting to Kafka. The broker connection is
+  // established in the background (startKafka below) with retry, so a broker
+  // that is unreachable or slow at boot leaves the service degraded (no
+  // consumption) instead of blocking app.listen — which would fail the
+  // /health liveness probe and CrashLoopBackOff the pod. Mirrors chat-service,
+  // which connects its producer lazily (.catch) for exactly this reason.
   const app = createApp({ provider, from: config.email.from, authSecret: config.authSecret });
   const server = app.listen(config.port, () => {
     console.log(`[email-service] Listening on port ${config.port}`);
   });
+
+  // --- Kafka consumer (background, retried) ---
+  // Each step is guarded by a flag so that a failure partway through (e.g.
+  // connect() succeeds but subscribe()/run() then throws) does not re-invoke
+  // connect()/subscribe() on an already-initialized KafkaJS client on the next
+  // retry. KafkaJS throws on a double-connect, which would otherwise wedge the
+  // loop in a permanent failure state that no broker recovery could clear.
+  const startKafka = async (): Promise<void> => {
+    let producerConnected = false;
+    let consumerConnected = false;
+    let subscribed = false;
+    for (;;) {
+      try {
+        if (!producerConnected) {
+          await statusProducer.connect();
+          producerConnected = true;
+        }
+        if (!consumerConnected) {
+          await consumer.connect();
+          consumerConnected = true;
+        }
+        if (!subscribed) {
+          await consumer.subscribe(TOPICS.NOTIFY_EMAIL_REQUESTED);
+          subscribed = true;
+        }
+        await consumer.run(
+          (event) => handleEmailRequested(event as any, { provider, statusProducer, from: config.email.from }),
+          notifyEmailRequestedSchemaV1,
+          statusProducer
+        );
+        console.log('[email-service] Kafka consumer running');
+        return;
+      } catch (err) {
+        console.error('[email-service] Kafka connect failed; retrying in 5s:', err);
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+      }
+    }
+  };
+  startKafka().catch((err) =>
+    console.error('[email-service] Kafka startup aborted:', err),
+  );
 
   // --- Graceful shutdown ---
   const shutdown = async () => {

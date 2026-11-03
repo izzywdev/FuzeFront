@@ -8,7 +8,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SelectionListManagementFlow } from '../SelectionListManagementFlow'
 import { TranslationWorkbenchFlow } from '../TranslationWorkbenchFlow'
-import { onGet, page, renderShared, stubApi } from './browseHarness'
+import { onGet, onItems, page, renderShared, stubApi } from './browseHarness'
 import {
   COMMON_ID,
   makeCommonList,
@@ -157,12 +157,10 @@ describe('translation workbench', () => {
   const T_LOCALE = `${INDEX}/:listId/translations/:locale`
   // The service answers an array of TranslationLocaleStatus (no source locale).
   const locales = [{ locale: 'fr', completeness_pct: 100, machine_translated: false, source_changed: false }]
-  const legacyLocales = {
-    locales: [
-      { locale: 'en', is_source: true, translated: 1, total: 1, machine_count: 0, stale_count: 0 },
-      { locale: 'fr', is_source: false, translated: 1, total: 1, machine_count: 0, stale_count: 0 },
-    ],
-  }
+  // The 4.0.0 workbench reads the SAME service shapes (top-level array; text via items?locale=).
+  const frItems = [
+    { id: 'sli1', list_id: COMMON_ID, code: 'LOW', label: 'Basse', is_machine: false, status: 'active', sort_order: 1, resolved_locale: 'fr' },
+  ]
 
   it('flag ON, read-only list: the read-only locale index; a locale link opens the view; breadcrumb returns', async () => {
     stubApi(
@@ -196,8 +194,8 @@ describe('translation workbench', () => {
   ])('flag ON, %s: the 4.0.0 workbench (index and locale editor)', async (_name, list) => {
     stubApi(
       onGet(`${LISTS}/${COMMON_ID}`, list),
-      onGet(`${LISTS}/${COMMON_ID}/translations`, legacyLocales),
-      onGet(`${LISTS}/${COMMON_ID}/translations/fr`, { locale: 'fr', translations: [{ item_id: 'sli1', locale: 'fr', label: 'Basse', is_machine: false, source_hash: 'h', source_hash_current: 'h' }] })
+      onGet(`${LISTS}/${COMMON_ID}/translations`, locales),
+      onItems(`${LISTS}/${COMMON_ID}/items`, frItems)
     )
     const first = renderShared(<TranslationWorkbenchFlow />, `${INDEX}/${COMMON_ID}/translations`, { routePaths: [T_INDEX, T_LOCALE] })
     await waitFor(() => expect(first.container.querySelector('[data-panel="translation-index"]')).not.toBeNull())
@@ -206,13 +204,19 @@ describe('translation workbench', () => {
     await waitFor(() => expect(second.container.querySelector('[data-action="save-row"]')).not.toBeNull())
   })
 
-  it('flag OFF: the 4.0.0 workbench with no list read at all', async () => {
-    const api = stubApi(onGet(`${LISTS}/${COMMON_ID}/translations`, legacyLocales))
+  it('flag OFF: the 4.0.0 workbench — its one list read (source locale) carries no shared-lists gate', async () => {
+    const api = stubApi(
+      onGet(`${LISTS}/${COMMON_ID}`, makeSharedList({ id: COMMON_ID })),
+      onGet(`${LISTS}/${COMMON_ID}/translations`, locales)
+    )
     const { container } = renderShared(<TranslationWorkbenchFlow />, `${INDEX}/${COMMON_ID}/translations`, {
       routePaths: [T_INDEX, T_LOCALE],
       sharedLists: false,
     })
     await waitFor(() => expect(container.querySelector('[data-panel="translation-index"]')).not.toBeNull())
-    expect(api.callsTo('GET', `${LISTS}/${COMMON_ID}`)).toHaveLength(0)
+    // the workbench reads the list once, for its source locale; no read-only gate, no shared params
+    const listReads = api.callsTo('GET', `${LISTS}/${COMMON_ID}`)
+    expect(listReads).toHaveLength(1)
+    expect([...listReads[0].query.keys()]).toEqual([])
   })
 })

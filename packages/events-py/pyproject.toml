@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fuzefront-events"
-version = "0.1.0"
-description = "Event envelope v2, transactional outbox, relay and idempotent consumer runtime for FuzeFront Python services"
+version = "0.2.0"
+description = "FuzeFront Python events runtime (envelope v2, transactional outbox, relay, idempotent consumer) plus the v1 Kafka payload-contract mirror (topics + per-topic payload schemas)"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "UNLICENSED" }

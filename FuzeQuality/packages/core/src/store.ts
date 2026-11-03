@@ -51,6 +51,7 @@ export type RepositoryFlowCandidateQuery = {
   source?: RepositoryFlowCandidate['source']
   status?: RepositoryFlowCandidate['status']
   revision?: string
+  targetId?: string
   model?: string
   promptVersion?: string
   schemaVersion?: string
@@ -83,6 +84,7 @@ export type PolicyGateEvaluationQuery = {
   reviewStatus?: PolicyGateEvaluation['reviewStatus']
   revision?: string
   subject?: string
+  sourcePath?: string
   policyArtifactId?: string
   gateArtifactId?: string
   minConfidence?: number
@@ -358,11 +360,13 @@ export interface CatalogStore {
   setRepositoryAnalysis(id: string, analysis: NonNullable<Repository['lastAnalysis']>): Promise<void>
   queueRepositoryAnalysis(id: string, tenantId: string): Promise<Repository | undefined>
   saveScan(result: ScanResult): Promise<void>
-  syncCursor(sourceType: SyncCursor['sourceType'], sourceKey: string): Promise<SyncCursor | undefined>
-  markSyncFailed(sourceType: SyncCursor['sourceType'], sourceKey: string): Promise<void>
+  syncCursor(sourceType: SyncCursor['sourceType'], sourceKey: string, tenantId: string): Promise<SyncCursor | undefined>
+  syncCursorStatuses(sourceType: SyncCursor['sourceType'], sourceKey: string): Promise<SyncCursor[]>
+  markSyncQueued(sourceType: SyncCursor['sourceType'], sourceKey: string, tenantId: string): Promise<SyncCursor>
+  markSyncFailed(sourceType: SyncCursor['sourceType'], sourceKey: string, tenantId: string, code: NonNullable<SyncCursor['failureCode']>): Promise<void>
   saveIntelligence(
     results: Array<{ requirement: Requirement; suggestions: Suggestion[] }>,
-    sync?: Pick<SyncCursor, 'sourceType' | 'sourceKey' | 'cursor'> & { tenantId?: string }
+    sync?: Pick<SyncCursor, 'sourceType' | 'sourceKey' | 'cursor'> & { tenantId: string }
   ): Promise<void>
   rebuildCoverage(): Promise<CoverageProjection>
   reviewSuggestion(id: string, input: Omit<SuggestionDecision, 'id' | 'suggestionId' | 'originalPayload' | 'decidedAt'>): Promise<Suggestion | undefined>
@@ -373,6 +377,7 @@ export interface CatalogStore {
   testImplementation(id: string, tenantId: string): Promise<TestImplementationRequest | undefined>
   updateTestImplementation(id: string, value: Partial<Pick<TestImplementationRequest, 'status' | 'workflowUrl' | 'pullRequestUrl' | 'error'>>): Promise<void>
   recordAdminContext(input: Omit<AdminContextAudit, 'id' | 'createdAt'>): Promise<AdminContextAudit>
+  activeTenantIds(): Promise<string[]>
   upsertTenant(tenant: QualityTenant): Promise<boolean>
   deactivateTenant(tenantId: string, cascade?: 'soft' | 'hard'): Promise<boolean>
   upsertPrincipal(principal: QualityPrincipal): Promise<boolean>
@@ -436,7 +441,7 @@ export class MemoryCatalogStore implements CatalogStore {
   private implementations: Array<TestImplementationRequest & { idempotencyKey: string }> = []
   private decisions: SuggestionDecision[] = []
   private adminContextAudits: AdminContextAudit[] = []
-  private syncCursors: SyncCursor[] = []
+  private syncCursors: Array<SyncCursor & { tenantId: string }> = []
   private scanHistory: Array<{ repositoryId: string; item: RepositoryScanHistoryEntry }> = []
   private sourceCatalogRevisions = new Map<string, string>()
   private exclusions = new Map<string, ExpectationExclusionInput>()
@@ -541,6 +546,9 @@ export class MemoryCatalogStore implements CatalogStore {
         (!query.source || item.source === query.source) &&
         (!query.status || item.status === query.status) &&
         (!query.revision || item.revision === query.revision) &&
+        (!query.targetId || item.evidence.includes(query.targetId) ||
+          item.steps.some(step => step.targetIds.includes(query.targetId!)) ||
+          item.wireframe.nodes.some(node => node.targetIds.includes(query.targetId!))) &&
         (!query.model || item.analysis?.model === query.model) &&
         (!query.promptVersion || item.analysis?.promptVersion === query.promptVersion) &&
         (!query.schemaVersion || item.analysis?.schemaVersion === query.schemaVersion) &&
@@ -618,6 +626,7 @@ export class MemoryCatalogStore implements CatalogStore {
         (!query.reviewStatus || item.reviewStatus === query.reviewStatus) &&
         (!query.revision || item.revision === query.revision) &&
         (!normalizedSubject || item.scope.subjects.some(subject => subject.toLowerCase() === normalizedSubject)) &&
+        (!query.sourcePath || item.scope.sourcePaths.includes(query.sourcePath)) &&
         (!query.policyArtifactId || item.policyArtifactIds.includes(query.policyArtifactId)) &&
         (!query.gateArtifactId || item.gateArtifactIds.includes(query.gateArtifactId)) &&
         (query.minConfidence === undefined || item.confidence >= query.minConfidence) &&
@@ -1019,7 +1028,7 @@ export class MemoryCatalogStore implements CatalogStore {
   async reviewSuggestion(id: string, input: Omit<SuggestionDecision, 'id' | 'suggestionId' | 'originalPayload' | 'decidedAt'>) {
     const suggestion = this.data.suggestions.find(item => item.id === id && this.data.requirements.some(requirement => requirement.id === item.requirementId && requirement.tenantId === input.tenantId))
     if (!suggestion || suggestion.state !== 'proposed') return undefined
-    const payload = input.editedPayload ?? suggestion.payload
+    const payload = structuredClone(input.editedPayload ?? suggestion.payload)
     const action = input.action
     suggestion.state = action === 'confirm' || action === 'merge' ? 'confirmed' : action === 'suppress' ? 'suppressed' : action === 'reject' ? 'rejected' : 'proposed'
     if ((action === 'confirm' || action === 'merge') && suggestion.type === 'flow') {
@@ -1029,7 +1038,7 @@ export class MemoryCatalogStore implements CatalogStore {
       if (existing >= 0) this.data.flows[existing] = confirmed
       else this.data.flows.push(confirmed)
     }
-    this.decisions.unshift({ id: randomUUID(), suggestionId: id, originalPayload: suggestion.payload, decidedAt: new Date().toISOString(), ...input })
+    this.decisions.unshift(structuredClone({ id: randomUUID(), suggestionId: id, originalPayload: suggestion.payload, decidedAt: new Date().toISOString(), ...input }))
     if (action === 'edit') suggestion.payload = payload
     return suggestion
   }
@@ -1040,7 +1049,7 @@ export class MemoryCatalogStore implements CatalogStore {
     const priority = suggestion.payload.priority === 'required' ? 'required' : 'recommended'
     this.data.expectations.push({ id: `expectation:ai:${id}`, subjectType: 'flow-step', subjectId: `requirement:${suggestion.requirementId}`, kind: 'ai-approved', label: suggestion.title, priority, rule: `ai-reviewed:${id}`, coverage: 'gap', evidenceIds: [] })
     suggestion.state = 'confirmed'
-    this.decisions.unshift({ id: randomUUID(), suggestionId: id, originalPayload: suggestion.payload, decidedAt: new Date().toISOString(), ...input, action: 'confirm' })
+    this.decisions.unshift(structuredClone({ id: randomUUID(), suggestionId: id, originalPayload: suggestion.payload, decidedAt: new Date().toISOString(), ...input, action: 'confirm' as const }))
     return suggestion
   }
 
@@ -1053,7 +1062,7 @@ export class MemoryCatalogStore implements CatalogStore {
 
   async suggestionDecisions(id: string, tenantId: string) {
     const visible = this.data.suggestions.some(item => item.id === id && this.data.requirements.some(requirement => requirement.id === item.requirementId && requirement.tenantId === tenantId))
-    return visible ? this.decisions.filter(item => item.suggestionId === id && item.tenantId === tenantId) : []
+    return visible ? structuredClone(this.decisions.filter(item => item.suggestionId === id && item.tenantId === tenantId)) : []
   }
 
   async rebuildCoverage() {
@@ -1065,18 +1074,40 @@ export class MemoryCatalogStore implements CatalogStore {
     return projection
   }
 
-  async syncCursor(sourceType: SyncCursor['sourceType'], sourceKey: string) {
-    return this.syncCursors.find(item => item.sourceType === sourceType && item.sourceKey === sourceKey)
+  async syncCursor(sourceType: SyncCursor['sourceType'], sourceKey: string, tenantId: string) {
+    return this.syncCursors.find(item => item.sourceType === sourceType && item.sourceKey === sourceKey && item.tenantId === tenantId)
   }
 
-  async markSyncFailed(sourceType: SyncCursor['sourceType'], sourceKey: string) {
-    const existing = await this.syncCursor(sourceType, sourceKey)
-    const value: SyncCursor = {
+  async syncCursorStatuses(sourceType: SyncCursor['sourceType'], sourceKey: string) {
+    return this.syncCursors.filter(item => item.sourceType === sourceType && item.sourceKey === sourceKey)
+  }
+
+  async markSyncQueued(sourceType: SyncCursor['sourceType'], sourceKey: string, tenantId: string) {
+    const existing = await this.syncCursor(sourceType, sourceKey, tenantId)
+    const value: SyncCursor & { tenantId: string } = {
       sourceType,
       sourceKey,
+      tenantId,
+      cursor: existing?.cursor,
+      lastSuccessAt: existing?.lastSuccessAt,
+      freshnessStatus: 'queued',
+      failureCode: undefined,
+    }
+    if (existing) Object.assign(existing, value)
+    else this.syncCursors.push(value)
+    return value
+  }
+
+  async markSyncFailed(sourceType: SyncCursor['sourceType'], sourceKey: string, tenantId: string, code: NonNullable<SyncCursor['failureCode']>) {
+    const existing = await this.syncCursor(sourceType, sourceKey, tenantId)
+    const value: SyncCursor & { tenantId: string } = {
+      sourceType,
+      sourceKey,
+      tenantId,
       cursor: existing?.cursor,
       lastSuccessAt: existing?.lastSuccessAt,
       freshnessStatus: 'failed',
+      failureCode: code,
     }
     if (existing) Object.assign(existing, value)
     else this.syncCursors.push(value)
@@ -1084,7 +1115,7 @@ export class MemoryCatalogStore implements CatalogStore {
 
   async saveIntelligence(
     results: Array<{ requirement: Requirement; suggestions: Suggestion[] }>,
-    sync?: Pick<SyncCursor, 'sourceType' | 'sourceKey' | 'cursor'> & { tenantId?: string }
+    sync?: Pick<SyncCursor, 'sourceType' | 'sourceKey' | 'cursor'> & { tenantId: string }
   ) {
     for (const result of results) {
       const requirement = { ...result.requirement, tenantId: sync?.tenantId }
@@ -1097,12 +1128,13 @@ export class MemoryCatalogStore implements CatalogStore {
       ]
     }
     if (sync) {
-      const existing = await this.syncCursor(sync.sourceType, sync.sourceKey)
-      const value: SyncCursor = {
+      const existing = await this.syncCursor(sync.sourceType, sync.sourceKey, sync.tenantId)
+      const value: SyncCursor & { tenantId: string } = {
         ...sync,
         cursor: sync.cursor,
         lastSuccessAt: new Date().toISOString(),
         freshnessStatus: 'fresh',
+        failureCode: undefined,
       }
       if (existing) Object.assign(existing, value)
       else this.syncCursors.push(value)
@@ -1114,6 +1146,10 @@ export class MemoryCatalogStore implements CatalogStore {
     if (existing) return existing
     this.implementations.push({ ...request, idempotencyKey })
     return request
+  }
+
+  async activeTenantIds() {
+    return [...this.tenants.values()].filter(tenant => tenant.active).map(tenant => tenant.id).sort()
   }
 
   async testImplementation(id: string, tenantId: string) {
@@ -1460,10 +1496,27 @@ export class PostgresCatalogStore implements CatalogStore {
              OR COALESCE((analysis_provenance->'grounding'->>'ungroundedStepCount')::integer,0)>0))
            OR ($12='prompt-truncated' AND source='litellm' AND analysis_provenance->>'promptTruncated'='true')
            OR ($12='provenance-missing' AND source='litellm' AND analysis_provenance IS NULL))
+         AND ($16::text IS NULL
+           OR EXISTS (
+             SELECT 1 FROM jsonb_array_elements_text(COALESCE(evidence, '[]'::jsonb)) AS evidence_target(value)
+             WHERE evidence_target.value=$16
+           )
+           OR EXISTS (
+             SELECT 1
+             FROM jsonb_array_elements(COALESCE(steps, '[]'::jsonb)) AS step,
+                  LATERAL jsonb_array_elements_text(COALESCE(step->'targetIds', '[]'::jsonb)) AS step_target(value)
+             WHERE step_target.value=$16
+           )
+           OR EXISTS (
+             SELECT 1
+             FROM jsonb_array_elements(COALESCE(wireframe->'nodes', '[]'::jsonb)) AS node,
+                  LATERAL jsonb_array_elements_text(COALESCE(node->'targetIds', '[]'::jsonb)) AS node_target(value)
+             WHERE node_target.value=$16
+           ))
          AND ($13::timestamptz IS NULL OR (created_at,id) < ($13::timestamptz,$14::text))
        ORDER BY created_at DESC,id DESC
        LIMIT COALESCE($15::integer, 2147483647)`,
-      [repositoryId, tenantId, query.id ?? null, query.source ?? null, query.status ?? null, query.revision ?? null, query.model ?? null, query.promptVersion ?? null, query.schemaVersion ?? null, query.minConfidence ?? null, query.maxConfidence ?? null, query.analysisRisk ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null],
+      [repositoryId, tenantId, query.id ?? null, query.source ?? null, query.status ?? null, query.revision ?? null, query.model ?? null, query.promptVersion ?? null, query.schemaVersion ?? null, query.minConfidence ?? null, query.maxConfidence ?? null, query.analysisRisk ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null, query.targetId ?? null],
     )
     return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, title: row.title, confidence: Number(row.confidence), evidence: row.evidence, steps: row.steps, wireframe: flowWireframe(row.wireframe, row.steps), status: row.status, reviewedAt: row.reviewed_at?.toISOString(), reviewedBy: row.reviewed_by ?? undefined, reviewReason: row.review_reason ?? undefined, analysis: row.analysis_provenance ?? undefined, source: row.source, createdAt: row.created_at.toISOString() }))
   }
@@ -1560,9 +1613,13 @@ export class PostgresCatalogStore implements CatalogStore {
            SELECT 1 FROM jsonb_array_elements_text(COALESCE(gate_artifact_ids, '[]'::jsonb)) AS gate_artifact(value)
            WHERE gate_artifact.value=$16
          ))
+         AND ($17::text IS NULL OR EXISTS (
+           SELECT 1 FROM jsonb_array_elements_text(COALESCE(scope->'sourcePaths', '[]'::jsonb)) AS source_path(value)
+           WHERE source_path.value=$17
+         ))
        ORDER BY created_at DESC,id DESC
        LIMIT COALESCE($12::integer, 2147483647)`,
-      [repositoryId, tenantId, query.id ?? null, query.kind ?? null, query.severity ?? null, query.reviewStatus ?? null, query.revision ?? null, query.minConfidence ?? null, query.maxConfidence ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null, query.subject ?? null, query.remediationAction ?? null, query.policyArtifactId ?? null, query.gateArtifactId ?? null],
+      [repositoryId, tenantId, query.id ?? null, query.kind ?? null, query.severity ?? null, query.reviewStatus ?? null, query.revision ?? null, query.minConfidence ?? null, query.maxConfidence ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null, query.subject ?? null, query.remediationAction ?? null, query.policyArtifactId ?? null, query.gateArtifactId ?? null, query.sourcePath ?? null],
     )
     return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, kind: row.kind, severity: row.severity, title: row.title, detail: row.detail, policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, confidence: Number(row.confidence), scope: row.scope, evidencePassages: row.evidence_passages ?? [], remediationAction: row.remediation_action, recommendation: row.recommendation, reviewStatus: row.review_status, reviewedAt: row.reviewed_at?.toISOString(), reviewedBy: row.reviewed_by ?? undefined, reviewReason: row.review_reason ?? undefined, createdAt: row.created_at.toISOString() }))
   }
@@ -1733,12 +1790,16 @@ export class PostgresCatalogStore implements CatalogStore {
                SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS invalid_evidence(value)
                WHERE COALESCE(invalid_evidence.value->>'url','') !~* '^https://[^/?#[:space:]]+'
              ))
+           OR ($25='provider-collection-failure'
+             AND executions.evidence_collection->>'errorCode' IS NOT NULL)
            OR ($25='github-run-provenance-missing'
              AND executions.provider='github-actions'
              AND (executions.head_repository IS NULL
                OR executions.workflow_path IS NULL
                OR executions.source_url IS NULL
                OR executions.source_url !~* '^https://[^/?#[:space:]]+'))
+           OR ($25='attempt-provenance-unverified'
+             AND COALESCE(executions.evidence_collection->'issues','[]'::jsonb) ? 'attempt-provenance-unverified')
            OR ($25='post-production-video-missing'
              AND executions.kind='post-production'
              AND NOT EXISTS (
@@ -1922,6 +1983,7 @@ export class PostgresCatalogStore implements CatalogStore {
               count(*) FILTER (WHERE evidence_collection->>'status'='partial')::integer AS evidence_partial_count,
               count(*) FILTER (WHERE evidence_collection->>'status'='unavailable')::integer AS evidence_unavailable_count,
               count(*) FILTER (WHERE evidence_collection IS NULL)::integer AS evidence_not_collected_count,
+              count(*) FILTER (WHERE evidence_collection->>'errorCode' IS NOT NULL)::integer AS evidence_collection_failure_count,
               count(*) FILTER (WHERE EXISTS (
                 SELECT 1 FROM jsonb_array_elements(COALESCE(evidence_links,'[]'::jsonb)) AS evidence(value)
                 WHERE COALESCE(evidence.value->>'url','') !~* '^https://[^/?#[:space:]]+'
@@ -1931,6 +1993,9 @@ export class PostgresCatalogStore implements CatalogStore {
                   AND (head_repository IS NULL OR workflow_path IS NULL OR source_url IS NULL
                     OR source_url !~* '^https://[^/?#[:space:]]+')
               )::integer AS github_run_provenance_missing_count,
+              count(*) FILTER (
+                WHERE COALESCE(evidence_collection->'issues','[]'::jsonb) ? 'attempt-provenance-unverified'
+              )::integer AS attempt_provenance_unverified_count,
               count(*) FILTER (
                 WHERE kind='post-production' AND NOT EXISTS (
                   SELECT 1 FROM jsonb_array_elements(COALESCE(evidence_links,'[]'::jsonb)) AS evidence(value)
@@ -2080,12 +2145,16 @@ export class PostgresCatalogStore implements CatalogStore {
                SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS invalid_evidence(value)
                WHERE COALESCE(invalid_evidence.value->>'url','') !~* '^https://[^/?#[:space:]]+'
              ))
+           OR ($25='provider-collection-failure'
+             AND executions.evidence_collection->>'errorCode' IS NOT NULL)
            OR ($25='github-run-provenance-missing'
              AND executions.provider='github-actions'
              AND (executions.head_repository IS NULL
                OR executions.workflow_path IS NULL
                OR executions.source_url IS NULL
                OR executions.source_url !~* '^https://[^/?#[:space:]]+'))
+           OR ($25='attempt-provenance-unverified'
+             AND COALESCE(executions.evidence_collection->'issues','[]'::jsonb) ? 'attempt-provenance-unverified')
            OR ($25='post-production-video-missing'
              AND executions.kind='post-production'
              AND NOT EXISTS (
@@ -2132,8 +2201,10 @@ export class PostgresCatalogStore implements CatalogStore {
       evidencePartialCount: row.evidence_partial_count,
       evidenceUnavailableCount: row.evidence_unavailable_count,
       evidenceNotCollectedCount: row.evidence_not_collected_count,
+      evidenceCollectionFailureCount: row.evidence_collection_failure_count,
       invalidEvidenceUrlCount: row.invalid_evidence_url_count,
       githubRunProvenanceMissingCount: row.github_run_provenance_missing_count,
+      attemptProvenanceUnverifiedCount: row.attempt_provenance_unverified_count,
       postProductionVideoMissingCount: row.post_production_video_missing_count,
       terminalTimingMissingCount: row.terminal_timing_missing_count,
       gateEvaluationCount: row.gate_evaluation_count,
@@ -2212,12 +2283,16 @@ export class PostgresCatalogStore implements CatalogStore {
                  SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS invalid_evidence(value)
                  WHERE COALESCE(invalid_evidence.value->>'url','') !~* '^https://[^/?#[:space:]]+'
                ))
+             OR ($28='provider-collection-failure'
+               AND executions.evidence_collection->>'errorCode' IS NOT NULL)
              OR ($28='github-run-provenance-missing'
                AND executions.provider='github-actions'
                AND (executions.head_repository IS NULL
                  OR executions.workflow_path IS NULL
                  OR executions.source_url IS NULL
                  OR executions.source_url !~* '^https://[^/?#[:space:]]+'))
+             OR ($28='attempt-provenance-unverified'
+               AND COALESCE(executions.evidence_collection->'issues','[]'::jsonb) ? 'attempt-provenance-unverified')
              OR ($28='post-production-video-missing'
                AND executions.kind='post-production'
                AND NOT EXISTS (
@@ -2606,6 +2681,13 @@ export class PostgresCatalogStore implements CatalogStore {
         dispatch.completedAt ?? null,
       ],
     )
+  }
+
+  async activeTenantIds() {
+    const result = await this.pool.query(
+      'SELECT id FROM fuzequality.tenants WHERE active=true ORDER BY id',
+    )
+    return result.rows.map(row => String(row.id))
   }
 
   async upsertTenant(tenant: QualityTenant): Promise<boolean> {
@@ -3066,10 +3148,10 @@ export class PostgresCatalogStore implements CatalogStore {
     } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
   }
 
-  async syncCursor(sourceType: SyncCursor['sourceType'], sourceKey: string) {
+  async syncCursor(sourceType: SyncCursor['sourceType'], sourceKey: string, tenantId: string) {
     const result = await this.pool.query(
-      'SELECT * FROM fuzequality.sync_cursors WHERE source_type=$1 AND source_key=$2',
-      [sourceType, sourceKey],
+      'SELECT * FROM fuzequality.sync_cursors WHERE source_type=$1 AND source_key=$2 AND tenant_id=$3',
+      [sourceType, sourceKey, tenantId],
     )
     const row = result.rows[0]
     if (!row) return undefined
@@ -3079,21 +3161,56 @@ export class PostgresCatalogStore implements CatalogStore {
       cursor: row.cursor ?? undefined,
       lastSuccessAt: row.last_success_at?.toISOString(),
       freshnessStatus: row.freshness_status,
+      failureCode: row.failure_code ?? undefined,
     } as SyncCursor
   }
 
-  async markSyncFailed(sourceType: SyncCursor['sourceType'], sourceKey: string) {
-    await this.pool.query(
-      `INSERT INTO fuzequality.sync_cursors (source_type,source_key,freshness_status)
-       VALUES ($1,$2,'failed')
-       ON CONFLICT (source_type,source_key) DO UPDATE SET freshness_status='failed'`,
+  async syncCursorStatuses(sourceType: SyncCursor['sourceType'], sourceKey: string) {
+    const result = await this.pool.query(
+      'SELECT * FROM fuzequality.sync_cursors WHERE source_type=$1 AND source_key=$2',
       [sourceType, sourceKey],
+    )
+    return result.rows.map(row => ({
+      sourceType: row.source_type,
+      sourceKey: row.source_key,
+      cursor: row.cursor ?? undefined,
+      lastSuccessAt: row.last_success_at?.toISOString(),
+      freshnessStatus: row.freshness_status,
+      failureCode: row.failure_code ?? undefined,
+    } as SyncCursor))
+  }
+
+  async markSyncQueued(sourceType: SyncCursor['sourceType'], sourceKey: string, tenantId: string) {
+    const result = await this.pool.query(
+      `INSERT INTO fuzequality.sync_cursors (source_type,source_key,tenant_id,freshness_status,failure_code)
+       VALUES ($1,$2,$3,'queued',NULL)
+       ON CONFLICT (tenant_id,source_type,source_key) DO UPDATE SET freshness_status='queued',failure_code=NULL
+       RETURNING *`,
+      [sourceType, sourceKey, tenantId],
+    )
+    const row = result.rows[0]
+    return {
+      sourceType: row.source_type,
+      sourceKey: row.source_key,
+      cursor: row.cursor ?? undefined,
+      lastSuccessAt: row.last_success_at?.toISOString(),
+      freshnessStatus: row.freshness_status,
+      failureCode: row.failure_code ?? undefined,
+    } as SyncCursor
+  }
+
+  async markSyncFailed(sourceType: SyncCursor['sourceType'], sourceKey: string, tenantId: string, code: NonNullable<SyncCursor['failureCode']>) {
+    await this.pool.query(
+      `INSERT INTO fuzequality.sync_cursors (source_type,source_key,tenant_id,freshness_status,failure_code)
+       VALUES ($1,$2,$3,'failed',$4)
+       ON CONFLICT (tenant_id,source_type,source_key) DO UPDATE SET freshness_status='failed',failure_code=EXCLUDED.failure_code`,
+      [sourceType, sourceKey, tenantId, code],
     )
   }
 
   async saveIntelligence(
     results: Array<{ requirement: Requirement; suggestions: Suggestion[] }>,
-    sync?: Pick<SyncCursor, 'sourceType' | 'sourceKey' | 'cursor'> & { tenantId?: string }
+    sync?: Pick<SyncCursor, 'sourceType' | 'sourceKey' | 'cursor'> & { tenantId: string }
   ) {
     const client = await this.pool.connect()
     try {
@@ -3116,11 +3233,11 @@ export class PostgresCatalogStore implements CatalogStore {
       }
       if (sync) {
         await client.query(
-          `INSERT INTO fuzequality.sync_cursors (source_type,source_key,cursor,last_success_at,freshness_status)
-           VALUES ($1,$2,$3,now(),'fresh')
-           ON CONFLICT (source_type,source_key) DO UPDATE SET
-             cursor=EXCLUDED.cursor,last_success_at=EXCLUDED.last_success_at,freshness_status='fresh'`,
-          [sync.sourceType, sync.sourceKey, sync.cursor],
+          `INSERT INTO fuzequality.sync_cursors (source_type,source_key,tenant_id,cursor,last_success_at,freshness_status,failure_code)
+           VALUES ($1,$2,$3,$4,now(),'fresh',NULL)
+           ON CONFLICT (tenant_id,source_type,source_key) DO UPDATE SET
+             cursor=EXCLUDED.cursor,last_success_at=EXCLUDED.last_success_at,freshness_status='fresh',failure_code=NULL`,
+          [sync.sourceType, sync.sourceKey, sync.tenantId, sync.cursor],
         )
       }
       await client.query('COMMIT')

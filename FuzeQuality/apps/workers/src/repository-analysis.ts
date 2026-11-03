@@ -1,5 +1,5 @@
 import { TOPICS, type PolicyGateEvaluation, type QualityArtifact, type Repository, type RepositoryAnalysisStatus, type RepositoryFlowCandidate } from '@fuzequality/contracts'
-import { deterministicRepositoryFlows, evaluatePolicyGates, RepositoryFlowAnalysisTimeoutError, type LiteLlmRepositoryFlowAnalyzer } from '@fuzequality/core'
+import { deterministicRepositoryFlows, evaluatePolicyGates, RepositoryFlowAnalysisInvalidResponseError, RepositoryFlowAnalysisTimeoutError, type LiteLlmRepositoryFlowAnalyzer } from '@fuzequality/core'
 import { z } from 'zod'
 
 export const POLICY_GATE_EVALUATION_BATCH_SIZE = 200
@@ -29,9 +29,9 @@ export function shouldRunRepositoryAnalysis(
 }
 
 export function repositoryAnalysisFailureCode(error: unknown): NonNullable<RepositoryAnalysisStatus['errorCode']> {
-  return error instanceof RepositoryFlowAnalysisTimeoutError
-    ? 'INTELLIGENCE_TIMEOUT'
-    : 'INTELLIGENCE_UNAVAILABLE'
+  if (error instanceof RepositoryFlowAnalysisTimeoutError) return 'INTELLIGENCE_TIMEOUT'
+  if (error instanceof RepositoryFlowAnalysisInvalidResponseError) return 'INTELLIGENCE_INVALID_RESPONSE'
+  return 'INTELLIGENCE_UNAVAILABLE'
 }
 
 /**

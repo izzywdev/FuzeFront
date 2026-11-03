@@ -228,4 +228,50 @@ describe("<Text>", () => {
     });
   });
 
+  it("resolves `size` lg / 2xl to the DS type scale (CardTitle / BlockHeading steps)", () => {
+    const cases = [
+      ["lg", "var(--text-lg)"],
+      ["2xl", "var(--text-2xl)"],
+    ];
+    cases.forEach(([size, expected]) => {
+      const { unmount } = render(<Text size={size}>{size}</Text>);
+      expect(screen.getByText(size).style.fontSize).toBe(expected);
+      unmount();
+    });
+  });
+
+  it("defaults `spacingTop` to none — zero margin-block-start (unchanged pre-`spacingTop` behavior)", () => {
+    render(<Text>Default spacing top</Text>);
+    expect(screen.getByText("Default spacing top").style.marginBlockStart).toBe("0");
+  });
+
+  it("resolves every `spacingTop` step to the same DS spacing-scale token as `spacing`, via the logical marginBlockStart (RTL-safe)", () => {
+    const cases = [
+      ["sm", "var(--space-2)"],
+      ["md", "var(--space-4)"],
+      ["lg", "var(--space-6)"],
+      ["xl", "var(--space-8)"],
+    ];
+    cases.forEach(([spacingTop, expected]) => {
+      const { unmount } = render(<Text spacingTop={spacingTop}>{spacingTop}</Text>);
+      expect(screen.getByText(spacingTop).style.marginBlockStart).toBe(expected);
+      unmount();
+    });
+  });
+
+  it("covers the recurring `text-base font-semibold mb-2 mt-4` prose subsection-heading pattern via as+size+weight+spacing+spacingTop", () => {
+    render(
+      <Text as="h3" size="base" weight="semibold" spacing="sm" spacingTop="md">
+        4.2 Price Changes
+      </Text>
+    );
+    const node = screen.getByText("4.2 Price Changes");
+    expect(node.tagName).toBe("H3");
+    expect(node.style.fontSize).toBe("var(--text-base)");
+    expect(node.style.fontWeight).toBe("var(--weight-semibold)");
+    expect(node.style.color).toBe("var(--text-primary)");
+    expect(node.style.marginBlockEnd).toBe("var(--space-2)");
+    expect(node.style.marginBlockStart).toBe("var(--space-4)");
+  });
+
 });

@@ -44,7 +44,11 @@
         "route": "/staff",
         "approved": false,
         "approvedBy": null,
-        "approvedAt": null
+        "approvedAt": null,
+        "responsive": {
+          "exempt": true,
+          "exemptReason": "The internal FuzeFront staff cross-org console at /staff (org explorer + drilldown) is a gated internal operator tool used at a workstation; it has no end-user mobile surface."
+        }
       }
     ],
     "components": [
@@ -118,5 +122,5 @@
       ]
     }
   ],
-  "stamp": "f5aed2b446cae71b4033ee119a3459d943dfcff10c1b9005d027eadff2caae8c"
+  "stamp": "e70b7909397217bb6aa39216132d68edfc3d31bcfce9645b281c797cc71c7073"
 }

@@ -133,6 +133,9 @@ export interface OutboxRelayFromEnvHandle extends OutboxRelayHandle {
 }
 
 /**
+ * @deprecated v1 wiring; Wave C services use `createOutboxRelay` + `kafkaTransport` from
+ * `@izzywdev/fuzefront-events`.
+ *
  * Start the transactional-outbox relay with the Kafka transport wired from the
  * environment — the one-call, install-and-go entry point for any backend
  * service. Returns null (a no-op) when no broker is configured, so events stay

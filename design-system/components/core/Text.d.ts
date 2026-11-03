@@ -5,7 +5,7 @@ import * as React from "react";
  */
 export interface TextProps extends React.HTMLAttributes<HTMLElement> {
   /** Rendered element. @default "p" */
-  as?: "p" | "span" | "div" | "label" | "h3" | "h4";
+  as?: "p" | "span" | "div" | "label" | "h1" | "h2" | "h3" | "h4";
   /**
    * Semantic tone: `primary` = default reading text, `secondary` =
    * de-emphasized supporting copy, `muted` = lowest-emphasis placeholder /
@@ -15,10 +15,11 @@ export interface TextProps extends React.HTMLAttributes<HTMLElement> {
   tone?: "primary" | "secondary" | "muted" | "danger";
   /**
    * Step of the DS type scale. `inherit` (default) reads the surrounding
-   * layout's font size, unchanged from before `size` existed.
+   * layout's font size, unchanged from before `size` existed. `lg` is the
+   * step `CardTitle` builds on; `2xl` the step `BlockHeading` builds on.
    * @default "inherit"
    */
-  size?: "inherit" | "xs" | "sm" | "base" | "md";
+  size?: "inherit" | "xs" | "sm" | "base" | "md" | "lg" | "2xl";
   /**
    * Step of the DS spacing scale applied as `margin-block-end` (a logical
    * property, so it mirrors under RTL). `none` (default) keeps the original
@@ -42,6 +43,13 @@ export interface TextProps extends React.HTMLAttributes<HTMLElement> {
    * @default "inherit"
    */
   weight?: "inherit" | "regular" | "medium" | "semibold" | "bold";
+  /**
+   * Step of the DS spacing scale (same scale as `spacing`) applied as
+   * `margin-block-start` — the logical-property counterpart to `spacing`, so
+   * it also mirrors under RTL. `none` (default) applies no top margin.
+   * @default "none"
+   */
+  spacingTop?: "none" | "sm" | "md" | "lg" | "xl";
   children?: React.ReactNode;
 }
 

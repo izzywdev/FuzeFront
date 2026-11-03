@@ -2,6 +2,7 @@ import express from 'express'
 import request from 'supertest'
 import jwt from 'jsonwebtoken'
 import { v4 as uuidv4 } from 'uuid'
+import { toWireId } from '../src/identity/serializer'
 
 jest.mock('../src/config/permit', () => ({
   __esModule: true,
@@ -206,7 +207,7 @@ describe('POST /api/organizations/:id/invitations — portal-aware invite-by-ema
       .send({ email, role: 'member' })
 
     expect(createRes.status).toBe(201)
-    expect(createRes.body.invitation.portalId).toBe(portalA)
+    expect(createRes.body.invitation.portalId).toBe(toWireId('portal', portalA))
 
     const invitation = await fetchInvitationByEmail(orgA, email)
     expect(invitation).toBeTruthy()
@@ -297,7 +298,7 @@ describe('POST /api/organizations/:id/invitations — portal-aware invite-by-ema
       .send({ email, role: 'viewer' })
 
     expect(createRes.status).toBe(201)
-    expect(createRes.body.invitation.portalId).toBe(portalA)
+    expect(createRes.body.invitation.portalId).toBe(toWireId('portal', portalA))
 
     const invitation = await fetchInvitationByEmail(orgA, email)
     const acceptToken = signToken(existing.id, portalA)
@@ -631,7 +632,7 @@ describe('GET /api/invitations/:token — public resolve (unchanged by the flag)
 
     expect(res.status).toBe(200)
     expect(res.body.invitation.email).toBe('r***@test.local')
-    expect(res.body.organization.id).toBe(orgA)
+    expect(res.body.organization.id).toBe(toWireId('organization', orgA))
   })
 
   it('a nonexistent token 404s', async () => {

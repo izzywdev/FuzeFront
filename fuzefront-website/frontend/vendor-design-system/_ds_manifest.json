@@ -10,6 +10,10 @@
       "sourcePath": "components/billing/PricingCard.jsx"
     },
     {
+      "name": "AmbientGlow",
+      "sourcePath": "components/brand/AmbientGlow.jsx"
+    },
+    {
       "name": "BrandMark",
       "sourcePath": "components/brand/BrandMark.jsx"
     },
@@ -34,6 +38,10 @@
       "sourcePath": "components/core/Badge.jsx"
     },
     {
+      "name": "BlockHeading",
+      "sourcePath": "components/core/BlockHeading.jsx"
+    },
+    {
       "name": "Button",
       "sourcePath": "components/core/Button.jsx"
     },
@@ -42,8 +50,20 @@
       "sourcePath": "components/core/Caption.jsx"
     },
     {
+      "name": "CardTitle",
+      "sourcePath": "components/core/CardTitle.jsx"
+    },
+    {
       "name": "ExternalLink",
       "sourcePath": "components/core/ExternalLink.jsx"
+    },
+    {
+      "name": "GradientText",
+      "sourcePath": "components/core/GradientText.jsx"
+    },
+    {
+      "name": "GroupLabel",
+      "sourcePath": "components/core/GroupLabel.jsx"
     },
     {
       "name": "IconButton",
@@ -52,6 +72,22 @@
     {
       "name": "IconTile",
       "sourcePath": "components/core/IconTile.jsx"
+    },
+    {
+      "name": "InlineLink",
+      "sourcePath": "components/core/InlineLink.jsx"
+    },
+    {
+      "name": "SectionIcon",
+      "sourcePath": "components/core/SectionIcon.jsx"
+    },
+    {
+      "name": "Subheading",
+      "sourcePath": "components/core/Subheading.jsx"
+    },
+    {
+      "name": "SubsectionHeading",
+      "sourcePath": "components/core/SubsectionHeading.jsx"
     },
     {
       "name": "Text",
@@ -198,6 +234,10 @@
       "sourcePath": "components/layout/AuthCard.jsx"
     },
     {
+      "name": "BulletList",
+      "sourcePath": "components/layout/BulletList.jsx"
+    },
+    {
       "name": "Center",
       "sourcePath": "components/layout/Center.jsx"
     },
@@ -210,20 +250,76 @@
       "sourcePath": "components/layout/Container.jsx"
     },
     {
+      "name": "CtaBand",
+      "sourcePath": "components/layout/CtaBand.jsx"
+    },
+    {
+      "name": "CtaHeading",
+      "sourcePath": "components/layout/CtaHeading.jsx"
+    },
+    {
       "name": "Eyebrow",
       "sourcePath": "components/layout/Eyebrow.jsx"
+    },
+    {
+      "name": "HeroBand",
+      "sourcePath": "components/layout/HeroBand.jsx"
+    },
+    {
+      "name": "HeroContent",
+      "sourcePath": "components/layout/HeroContent.jsx"
+    },
+    {
+      "name": "HeroHeading",
+      "sourcePath": "components/layout/HeroHeading.jsx"
+    },
+    {
+      "name": "HeroLead",
+      "sourcePath": "components/layout/HeroLead.jsx"
     },
     {
       "name": "HeroPatternOverlay",
       "sourcePath": "components/layout/HeroPatternOverlay.jsx"
     },
     {
+      "name": "HeroSection",
+      "sourcePath": "components/layout/HeroSection.jsx"
+    },
+    {
+      "name": "IconListItem",
+      "sourcePath": "components/layout/IconListItem.jsx"
+    },
+    {
       "name": "InfoRow",
       "sourcePath": "components/layout/InfoRow.jsx"
     },
     {
+      "name": "InverseHeading",
+      "sourcePath": "components/layout/InverseHeading.jsx"
+    },
+    {
+      "name": "Lead",
+      "sourcePath": "components/layout/Lead.jsx"
+    },
+    {
       "name": "ListStack",
       "sourcePath": "components/layout/ListStack.jsx"
+    },
+    {
+      "name": "PageHeroBand",
+      "sourcePath": "components/layout/PageHeroBand.jsx"
+    },
+    {
+      "name": "PageHeroTitle",
+      "sourcePath": "components/layout/PageHeroTitle.jsx"
+    },
+    {
+      "name": "PageSection",
+      "sourcePath": "components/layout/PageSection.jsx"
+    },
+    {
+      "name": "PageShell",
+      "sourcePath": "components/layout/PageShell.jsx"
     },
     {
       "name": "Panel",
@@ -240,6 +336,18 @@
     {
       "name": "SectionHead",
       "sourcePath": "components/layout/SectionHead.jsx"
+    },
+    {
+      "name": "SectionIntro",
+      "sourcePath": "components/layout/SectionIntro.jsx"
+    },
+    {
+      "name": "SectionLede",
+      "sourcePath": "components/layout/SectionLede.jsx"
+    },
+    {
+      "name": "SectionTitle",
+      "sourcePath": "components/layout/SectionTitle.jsx"
     },
     {
       "name": "Stack",
@@ -927,6 +1035,12 @@
       "definedIn": "tokens/typography.css"
     },
     {
+      "name": "--weight-extrabold",
+      "value": "800",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
       "name": "--text-2xs",
       "value": "0.7rem",
       "kind": "font",
@@ -977,6 +1091,18 @@
     {
       "name": "--text-3xl",
       "value": "2.25rem",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--text-4xl",
+      "value": "2.25rem",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--text-5xl",
+      "value": "3rem",
       "kind": "font",
       "definedIn": "tokens/typography.css"
     },
@@ -1042,6 +1168,66 @@
     },
     {
       "name": "--role-hero-leading",
+      "value": "var(--leading-tight)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--role-marketing-hero-font",
+      "value": "var(--font-display)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--role-marketing-hero-size",
+      "value": "var(--text-4xl)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--role-marketing-hero-size-lg",
+      "value": "var(--text-5xl)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--role-marketing-hero-weight",
+      "value": "var(--weight-extrabold)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--role-marketing-hero-leading",
+      "value": "var(--leading-tight)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--role-page-hero-title-font",
+      "value": "var(--font-sans)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--role-page-hero-title-size",
+      "value": "var(--text-4xl)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--role-page-hero-title-size-lg",
+      "value": "var(--text-5xl)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--role-page-hero-title-weight",
+      "value": "var(--weight-bold)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--role-page-hero-title-leading",
       "value": "var(--leading-tight)",
       "kind": "font",
       "definedIn": "tokens/typography.css"
@@ -1143,6 +1329,60 @@
       "definedIn": "tokens/typography.css"
     },
     {
+      "name": "--role-section-title-font",
+      "value": "var(--font-display)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--role-section-title-size",
+      "value": "1.875rem",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--role-section-title-size-sm",
+      "value": "var(--text-3xl)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--role-section-title-weight",
+      "value": "var(--weight-bold)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--role-section-title-leading",
+      "value": "var(--leading-tight)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--role-cta-heading-font",
+      "value": "var(--font-display)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--role-cta-heading-size",
+      "value": "1.875rem",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--role-cta-heading-weight",
+      "value": "var(--weight-bold)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--role-cta-heading-leading",
+      "value": "var(--leading-tight)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
       "name": "--space-0",
       "value": "0",
       "kind": "spacing",
@@ -1209,6 +1449,12 @@
       "definedIn": "tokens/spacing.css"
     },
     {
+      "name": "--space-14",
+      "value": "3.5rem",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
       "name": "--space-16",
       "value": "4rem",
       "kind": "spacing",
@@ -1223,6 +1469,12 @@
     {
       "name": "--space-24",
       "value": "6rem",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--space-28",
+      "value": "7rem",
       "kind": "spacing",
       "definedIn": "tokens/spacing.css"
     },

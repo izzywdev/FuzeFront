@@ -20,6 +20,7 @@
  * portal rows created by OTHER test files sharing this same Postgres
  * instance (jest runs test files as separate processes against one DB).
  */
+import { prefixDtoIds } from '../src/identity/serializer'
 import request from 'supertest'
 import express from 'express'
 import jwt from 'jsonwebtoken'
@@ -201,7 +202,13 @@ describe('GET /api/v1/admin/portals — Portals Directory (backend slice S1)', (
     const expected = rowToPortal(row, await getPortalDomains(portalId, db))
     // toEqual fails on extra keys too, not just mismatched values — proves
     // neither `identityMode` nor `launchUrl` leaked into the flag-OFF shape.
-    expect(response.body.items[0]).toEqual(JSON.parse(JSON.stringify(expected)))
+    // Ids are always TypeID wire form; normalise the storage-form fixture the same
+    // way the route does so the comparison stays about KEYS, not id encoding.
+    const wire = {
+      ...prefixDtoIds(expected as any, { id: 'portal', organizationId: 'organization' }),
+      domains: (expected as any).domains.map((d: any) => prefixDtoIds(d, { portalId: 'portal' })),
+    }
+    expect(response.body.items[0]).toEqual(JSON.parse(JSON.stringify(wire)))
   })
 
   it('non-admin caller gets 403 regardless of flag state — no portal data (or the new fields) is ever returned', async () => {

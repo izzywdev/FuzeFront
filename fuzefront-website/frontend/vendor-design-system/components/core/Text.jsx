@@ -19,6 +19,8 @@ const SIZES = {
   sm: "var(--text-sm)",
   base: "var(--text-base)",
   md: "var(--text-md)",
+  lg: "var(--text-lg)", // the step CardTitle builds on
+  "2xl": "var(--text-2xl)", // the step BlockHeading builds on
 };
 
 // `spacing` maps to the DS spacing scale for the block's bottom margin —
@@ -33,6 +35,13 @@ const SPACING_BOTTOM = {
   lg: "var(--space-6)",
   xl: "var(--space-8)",
 };
+
+// `spacingTop` is the logical-property counterpart to `spacing`
+// (`margin-block-start`) and reuses the SAME scale — a top and a bottom
+// margin step mean the same gap. Replaces the recurring ad-hoc `mt-{4,6}`
+// utility on a prose subsection heading that follows a preceding paragraph
+// (ds-fp:41a64c22b8c8). `none` (default) applies no top margin.
+const SPACING_TOP = SPACING_BOTTOM;
 
 // `leading` maps to the DS line-height scale — replaces the recurring ad-hoc
 // `leading-{snug,normal,relaxed}` Tailwind utility seen on card/feature
@@ -95,6 +104,13 @@ const WEIGHTS = {
  * Tailwind `font-*` utility: `inherit` (default) applies no inline
  * override — unchanged from before `weight` existed — and `medium` /
  * `semibold` / `bold` resolve to the matching DS weight token.
+ *
+ * `size="lg"` / `size="2xl"` map to `--text-lg` / `--text-2xl` (the steps
+ * `CardTitle` / `BlockHeading` build on), and `spacingTop` (default `none`)
+ * picks a step of the same spacing scale for `margin-block-start`. With
+ * `as="h3"`, `size="base"`, `weight="semibold"`, `spacing="sm"` it covers the
+ * recurring prose subsection-heading pattern (`text-base font-semibold mb-2
+ * mt-{4,5}`, e.g. a legal page's numbered subsections).
  */
 export function Text({
   as: As = "p",
@@ -103,6 +119,7 @@ export function Text({
   spacing = "none",
   leading = "inherit",
   weight = "inherit",
+  spacingTop = "none",
   children,
   style,
   ...rest
@@ -116,6 +133,7 @@ export function Text({
         fontWeight: WEIGHTS[weight] || WEIGHTS.inherit,
         lineHeight: LEADING[leading] || LEADING.inherit,
         color: TONES[tone] || TONES.primary,
+        marginBlockStart: SPACING_TOP[spacingTop] ?? SPACING_TOP.none,
         marginBlockEnd: SPACING_BOTTOM[spacing] ?? SPACING_BOTTOM.none,
         ...style,
       }}

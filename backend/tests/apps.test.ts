@@ -1,6 +1,7 @@
 import request from 'supertest'
 import express from 'express'
 import { v4 as uuidv4 } from 'uuid'
+import { toUuid } from '@izzywdev/fuzefront-identity'
 import appsRoutes from '../src/routes/apps'
 import authRoutes from '../src/routes/auth'
 import {
@@ -100,7 +101,7 @@ describe('Apps Registration Routes', () => {
       expect(response.body.isActive).toBe(true)
 
       // Side effect: the row is actually persisted with the mapped columns.
-      const row = await db('apps').where('id', response.body.id).first()
+      const row = await db('apps').where('id', toUuid(response.body.id)).first()
       expect(row).toBeDefined()
       expect(row.name).toBe(appData.name)
       expect(row.integration_type).toBe('module-federation')
@@ -199,7 +200,7 @@ describe('Apps Registration Routes', () => {
       expect(response.body.integrationType).toBe('iframe')
       expect(response.body.isActive).toBe(true)
 
-      const row = await db('apps').where('id', response.body.id).first()
+      const row = await db('apps').where('id', toUuid(response.body.id)).first()
       expect(row.integration_type).toBe('iframe')
     })
 
@@ -220,7 +221,7 @@ describe('Apps Registration Routes', () => {
       expect(response.body.scope).toBeUndefined()
       expect(response.body.module).toBeUndefined()
 
-      const row = await db('apps').where('id', response.body.id).first()
+      const row = await db('apps').where('id', toUuid(response.body.id)).first()
       expect(row.remote_url).toBeNull()
       expect(row.scope).toBeNull()
       expect(row.module).toBeNull()
@@ -514,7 +515,7 @@ describe('Apps Registration Routes', () => {
       expect(response.body.description).toBe('Description with spaces')
 
       // Side effect: trimmed values persisted.
-      const row = await db('apps').where('id', response.body.id).first()
+      const row = await db('apps').where('id', toUuid(response.body.id)).first()
       expect(row.name).toBe('Whitespace Test App')
       expect(row.url).toBe('http://localhost:8003')
     })
@@ -573,7 +574,7 @@ describe('Apps Registration Routes', () => {
         // so this suite asserts the listing/shape behaviour independent of
         // that scoping (which has its own dedicated coverage below).
         await db('apps')
-          .where('id', res.body.id)
+          .where('id', toUuid(res.body.id))
           .update({ visibility: 'public' })
       }
     })

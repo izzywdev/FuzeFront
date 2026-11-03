@@ -19,4 +19,10 @@ describe('repository analysis status ingestion', () => {
       revision: 'abc', status: 'failed', errorCode: 'INTELLIGENCE_TIMEOUT',
     }).errorCode).toBe('INTELLIGENCE_TIMEOUT')
   })
+
+  it('accepts a safe reviewed-schema failure classification', () => {
+    expect(repositoryAnalysisStatusSchema.parse({
+      revision: 'abc', status: 'failed', errorCode: 'INTELLIGENCE_INVALID_RESPONSE',
+    }).errorCode).toBe('INTELLIGENCE_INVALID_RESPONSE')
+  })
 })

@@ -431,6 +431,32 @@ export async function emitForkEvents(
   return inputs.length;
 }
 
+/**
+ * selection-lists.list.forked for an EXISTING list that was just made a fork of a common list in this transaction
+ * (the SL9 rollout job, design record section 9.6): the list keeps its id, items and edits; only its provenance
+ * (`forked_from_*`) and its items' `origin_item_id` were set. No list.created / item.created events: the list and
+ * its items already exist downstream. `itemMap` maps each common item to the list's item of the same `code`.
+ * Bumps the list's revision (one event, one revision) like every other emitter.
+ */
+export async function emitListForkedRetroactive(
+  trx: OutboxExecutor,
+  ctx: EventContext,
+  fork: {
+    listId: string;
+    source: { listId: string; organizationId: string; listKey: string; listRevision: number };
+    itemMap: Array<{ originItemId: string; itemId: string }>;
+  },
+): Promise<EnqueuedEvent> {
+  const revision = await bumpListRevision(trx, ctx.organizationId, fork.listId);
+  const list = await readList(trx, fork.listId);
+  return send(trx, ctx, TOPICS.SELECTION_LISTS_LIST_FORKED, {
+    ...listBase(ctx, list, revision),
+    list: listSnapshot(list),
+    source: fork.source,
+    itemMap: fork.itemMap,
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Items
 // ---------------------------------------------------------------------------

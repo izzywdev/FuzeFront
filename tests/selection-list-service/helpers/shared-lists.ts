@@ -119,6 +119,14 @@ export const declarePlatformOrg = (orgId: string = PLATFORM_ORG_ID): Promise<voi
 export const declareNonMember = (tenant: string, subject: string): Promise<void> =>
   fixture('/__fixture/non-member', { tenant, subject });
 
+/**
+ * Withdraw ONE tenant-level catalog action (`read_shared`, `resolve`, ...) from ONE subject in ONE tenant, in either id
+ * rendering. For proving that a service decision is made among the rows the caller can READ: the fixed role table has
+ * no tenant role that can `resolve` / `create` without `read_shared`, this is how such a caller is expressed.
+ */
+export const denyCatalogAction = (tenant: string, subject: string, action: string): Promise<void> =>
+  fixture('/__fixture/deny-catalog-action', { tenant, subject, action });
+
 /** Make the stand-in behave like bare Permit for `publish_platform` in ONE tenant (see its header). */
 export const permitPublishAnywhere = (tenant: string): Promise<void> =>
   fixture('/__fixture/publish-anywhere', { tenant });

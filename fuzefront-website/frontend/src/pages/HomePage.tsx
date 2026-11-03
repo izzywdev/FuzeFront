@@ -16,7 +16,7 @@ import {
   Cpu,
   ChevronRight,
 } from 'lucide-react'
-import { Caption, Center, Container, ResponsiveGrid, HeroPatternOverlay, Wrap, Text, Button } from '@fuzefront/design-system'
+import { Caption, Center, Container, ResponsiveGrid, HeroPatternOverlay, Wrap, Text, Button, AmbientGlow, GradientText, IconTile, SectionIcon, PageSection } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { useNewsletter } from '../hooks/useApi'
 
@@ -166,8 +166,8 @@ export const HomePage: React.FC = () => {
       <section className="relative min-h-screen flex items-center bg-gradient-to-br from-secondary-900 via-secondary-800 to-primary-900 overflow-hidden">
         <HeroPatternOverlay />
         {/* Background orbs */}
-        <div className="absolute top-20 left-1/4 w-96 h-96 bg-primary-600/20 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-20 right-1/4 w-80 h-80 bg-accent-600/15 rounded-full blur-3xl pointer-events-none" />
+        <AmbientGlow tone="primary" size={384} style={{ top: '5rem', left: '25%' }} />
+        <AmbientGlow tone="accent" size={320} opacity={0.15} style={{ bottom: '5rem', right: '25%' }} />
 
         <Container size="7xl" className="relative pt-24 pb-20">
           <div className="text-center max-w-4xl mx-auto">
@@ -189,7 +189,9 @@ export const HomePage: React.FC = () => {
               className="text-5xl sm:text-6xl lg:text-7xl font-heading font-extrabold text-white leading-tight mb-6"
             >
               The Software Factory
-              <span className="block gradient-text mt-2">for your SaaS</span>
+              <GradientText as="span" gradient="var(--primary-gradient)" className="block mt-2">
+                for your SaaS
+              </GradientText>
             </motion.h1>
 
             <motion.p
@@ -252,7 +254,7 @@ export const HomePage: React.FC = () => {
       </section>
 
       {/* ── Value Props ── */}
-      <section className="py-24 bg-white">
+      <PageSection>
         <Container size="7xl">
           <SectionWrapper>
             <motion.div variants={fadeUpVariants} className="text-center mb-16">
@@ -270,7 +272,7 @@ export const HomePage: React.FC = () => {
                 return (
                   <motion.div key={prop.title} variants={fadeUpVariants} className="group">
                     <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${prop.gradient} flex items-center justify-center mb-5 shadow-medium group-hover:scale-110 transition-transform duration-300`}>
-                      <Icon size={22} className="text-white" />
+                      <IconTile tone="inverse" variant="plain"><Icon size={22} /></IconTile>
                     </div>
                     <h3 className="text-lg font-semibold text-gray-900 mb-2">{prop.title}</h3>
                     <Text as="p" tone="secondary" size="sm" leading="relaxed">{prop.description}</Text>
@@ -280,7 +282,7 @@ export const HomePage: React.FC = () => {
             </ResponsiveGrid>
           </SectionWrapper>
         </Container>
-      </section>
+      </PageSection>
 
       {/* ── Products Grid ── */}
       <section className="py-24 bg-secondary-50">
@@ -306,7 +308,7 @@ export const HomePage: React.FC = () => {
                       onClick={() => trackEvent('product_card_click', { product: product.slug })}
                     >
                       <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${product.color} flex items-center justify-center mb-4 shadow-sm group-hover:scale-110 transition-transform duration-300`}>
-                        <Icon size={20} className="text-white" />
+                        <IconTile tone="inverse" variant="plain"><Icon size={20} /></IconTile>
                       </div>
                       <p className="text-xs font-medium text-primary-700 uppercase tracking-wider mb-1">{product.tagline}</p>
                       <h3 className="text-lg font-semibold text-gray-900 mb-2 group-hover:text-primary-700 transition-colors">{product.name}</h3>
@@ -334,7 +336,7 @@ export const HomePage: React.FC = () => {
       </section>
 
       {/* ── Industries ── */}
-      <section className="py-24 bg-white">
+      <PageSection>
         <Container size="7xl">
           <SectionWrapper>
             <motion.div variants={fadeUpVariants} className="text-center mb-12">
@@ -369,7 +371,7 @@ export const HomePage: React.FC = () => {
             </motion.div>
           </SectionWrapper>
         </Container>
-      </section>
+      </PageSection>
 
       {/* ── Pricing Teaser ── */}
       <section className="py-24 bg-gradient-to-br from-primary-900 via-secondary-900 to-accent-900 relative overflow-hidden">
@@ -427,11 +429,13 @@ export const HomePage: React.FC = () => {
       </section>
 
       {/* ── Newsletter ── */}
-      <section className="py-20 bg-white">
+      <PageSection spacing="md">
         <div className="max-w-2xl mx-auto px-4 sm:px-6 text-center">
           <SectionWrapper>
             <motion.div variants={fadeUpVariants}>
-              <Users size={32} className="text-primary-500 mx-auto mb-4" />
+              <SectionIcon tone="accent" gap="md">
+                <Users size={32} />
+              </SectionIcon>
               <h2 className="text-2xl sm:text-3xl font-heading font-bold text-gray-900 mb-3">
                 Stay in the loop
               </h2>
@@ -469,7 +473,7 @@ export const HomePage: React.FC = () => {
             </motion.div>
           </SectionWrapper>
         </div>
-      </section>
+      </PageSection>
 
       {/* ── Final CTA ── */}
       <section className="py-20 bg-secondary-50 border-t border-secondary-100">

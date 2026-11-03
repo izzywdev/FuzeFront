@@ -37,6 +37,10 @@ on:
       - 'services/app-registry-service/openapi.yaml'
       - 'deploy/helm/fuzefront/files/app-registry-openapi.yaml'
       - 'deploy/helm/fuzefront/files/mcp-tools.overrides.yaml'
+      - 'services/selection-list-service/openapi.yaml'
+      - 'deploy/helm/fuzefront/files/selection-list-service-openapi.yaml'
+      - 'deploy/helm/fuzefront/files/mcp-tools-selection-lists.overrides.yaml'
+      - 'mcp/*.json'
       - 'services/config-service/openapi.yaml'
       - 'deploy/helm/fuzefront/files/config-service-openapi.yaml'
       - 'deploy/helm/fuzefront/files/mcp-tools-config.overrides.yaml'
@@ -49,6 +53,10 @@ on:
       - 'services/app-registry-service/openapi.yaml'
       - 'deploy/helm/fuzefront/files/app-registry-openapi.yaml'
       - 'deploy/helm/fuzefront/files/mcp-tools.overrides.yaml'
+      - 'services/selection-list-service/openapi.yaml'
+      - 'deploy/helm/fuzefront/files/selection-list-service-openapi.yaml'
+      - 'deploy/helm/fuzefront/files/mcp-tools-selection-lists.overrides.yaml'
+      - 'mcp/*.json'
       - 'services/config-service/openapi.yaml'
       - 'deploy/helm/fuzefront/files/config-service-openapi.yaml'
       - 'deploy/helm/fuzefront/files/mcp-tools-config.overrides.yaml'
@@ -90,3 +98,13 @@ jobs:
             --spec services/app-registry-service/openapi.yaml \
             --overrides deploy/helm/fuzefront/files/mcp-tools.overrides.yaml \
             --cache deploy/helm/fuzefront/files/mcp-tool-descriptions.cache.json
+
+      - name: Overrides and tool manifests match their specs
+        # Every override key must be a real operationId (a stale key is silently
+        # ignored by the gateway otherwise, and the gateway now refuses to boot on
+        # one), and mcp/*.json must list the same tools with the same `mutates` the
+        # gateway derives. Deterministic: no network, no secrets.
+        working-directory: packages/mcp-gateway
+        run: |
+          npm install --no-audit --no-fund
+          npx vitest run test/overrides-conformance.test.ts

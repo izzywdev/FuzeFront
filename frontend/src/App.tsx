@@ -62,6 +62,7 @@ import ConfigCatalogPage from './pages/ConfigCatalogPage'
 import ConfigKeyDefinitionPage from './pages/ConfigKeyDefinitionPage'
 import ConfigAuditHistoryPage from './pages/ConfigAuditHistoryPage'
 import ConnectorsPage from './pages/ConnectorsPage'
+import ConnectorDetailPage from './pages/ConnectorDetailPage'
 import { PortalShell, PortalLoginFlow, isMultiTenantPortalsEnabled } from '@fuzefront/portal-branding-ui'
 import FuzePickerMentionsPage from './pages/FuzePickerMentionsPage'
 import {
@@ -322,8 +323,9 @@ function App() {
  * `/embed/selection-list-picker` harness.
  *
  * Release flag `fuzefront.selection-lists.shared-lists` (default OFF). Read
- * through the shell's `useFlag` with an explicit OFF fallback, so it is OFF
- * while `/api/flags` is loading, on any fetch failure, with no session token
+ * through the shell's `useFlagState` with an explicit OFF fallback, so it is OFF
+ * (and `ready` is false, which defers every request-issuing consumer) while
+ * `/api/flags` is loading, and OFF with `ready` true on any fetch failure, with no session token
  * (the public embed), and when the key is absent. `/api/flags` evaluates the
  * flag WITHOUT an org context, so it is global, not per organization; no org
  * context is invented here. The provider treats anything but boolean `true` as
@@ -335,11 +337,17 @@ function App() {
  * no DOM of its own.
  */
 function SharedListsHost({ children }: { children: ReactNode }) {
-  const sharedLists = useFlag(SHARED_LISTS_FLAG_KEY, false)
+  // `ready` is false until `/api/flags` settles. The package defers every
+  // request-issuing consumer (the public embedded picker mounts before the flag
+  // does) until then, so no consumer runs the 4.0.0 path first and the shared
+  // path again when the flag flips ON. A flag that cannot be read (no session
+  // token on the public embed, 5xx, network) settles to OFF with ready=true.
+  const { enabled: sharedLists, ready } = useFlagState(SHARED_LISTS_FLAG_KEY, false)
   const { activeOrganization } = useOrganizations()
   return (
     <SharedListsFeatureProvider
       sharedLists={sharedLists}
+      ready={ready}
       isPlatformOrg={activeOrganization?.type === 'platform'}
       organizationId={activeOrganization?.id}
       organizationName={activeOrganization?.name}
@@ -465,6 +473,7 @@ function AppContent() {
             <Route path="/account/security/mfa/recovery-codes" element={<AccountMfaPage view="recovery-codes" />} />
             <Route path="/account/security/verify/phone" element={<AccountVerifyPhonePage />} />
             <Route path="/connectors" element={<ConnectorsPage />} />
+            <Route path="/connectors/:connectorId" element={<ConnectorDetailPage />} />
             <Route path="/billing" element={<BillingPage />} />
             <Route path="/billing/invoices" element={<BillingPage />} />
             <Route path="/billing/payments" element={<BillingPage />} />

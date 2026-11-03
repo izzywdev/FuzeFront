@@ -420,7 +420,10 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain("executions.evidence_collection->>'status'=$24")
     expect(String(sql)).toContain("$25='post-production-video-missing'")
     expect(String(sql)).toContain("$25='evidence-url-invalid'")
+    expect(String(sql)).toContain("$25='provider-collection-failure'")
     expect(String(sql)).toContain("$25='github-run-provenance-missing'")
+    expect(String(sql)).toContain("$25='attempt-provenance-unverified'")
+    expect(String(sql)).toContain("executions.evidence_collection->'issues'")
     expect(String(sql)).toContain("executions.provider='github-actions'")
     expect(String(sql)).toContain('executions.head_repository IS NULL')
     expect(String(sql)).toContain('executions.workflow_path IS NULL')
@@ -451,14 +454,14 @@ describe('test execution evidence', () => {
   })
 
   it('aggregates complete tenant-scoped outcome history by UTC day in Postgres', async () => {
-    const query = vi.fn().mockResolvedValue({ rows: [{ date: '2026-10-10', total: 3, passed: 2, failed: 1, cancelled: 0, running: 0, pass_rate: 2 / 3, duration_sample_count: 2, average_duration_ms: '2592000000', maximum_duration_ms: '2678400000', retry_attempt_count: 3, successful_retry_count: 2, recovered_run_count: 1, evidence_complete_count: 1, evidence_partial_count: 1, evidence_unavailable_count: 1, evidence_not_collected_count: 0, invalid_evidence_url_count: 1, github_run_provenance_missing_count: 2, post_production_video_missing_count: 1, terminal_timing_missing_count: 1, gate_evaluation_count: 4, gate_passed_count: 2, gate_failed_count: 1, gate_cancelled_count: 0, gate_running_count: 1, gate_unevaluated_execution_count: 1, threshold_evaluation_count: 5, threshold_passed_count: 3, threshold_failed_count: 2, performance_execution_without_threshold_count: 1 }] })
+    const query = vi.fn().mockResolvedValue({ rows: [{ date: '2026-10-10', total: 3, passed: 2, failed: 1, cancelled: 0, running: 0, pass_rate: 2 / 3, duration_sample_count: 2, average_duration_ms: '2592000000', maximum_duration_ms: '2678400000', retry_attempt_count: 3, successful_retry_count: 2, recovered_run_count: 1, evidence_complete_count: 1, evidence_partial_count: 1, evidence_unavailable_count: 1, evidence_not_collected_count: 0, evidence_collection_failure_count: 2, invalid_evidence_url_count: 1, github_run_provenance_missing_count: 2, attempt_provenance_unverified_count: 1, post_production_video_missing_count: 1, terminal_timing_missing_count: 1, gate_evaluation_count: 4, gate_passed_count: 2, gate_failed_count: 1, gate_cancelled_count: 0, gate_running_count: 1, gate_unevaluated_execution_count: 1, threshold_evaluation_count: 5, threshold_passed_count: 3, threshold_failed_count: 2, performance_execution_without_threshold_count: 1 }] })
     const store = new PostgresCatalogStore('postgres://unused')
     ;(store as unknown as { pool: unknown }).pool = { query }
 
     await expect(store.executionOutcomeTrend('repo-1', 'org-1', {
       kind: 'integration', name: 'Integration suite', externalRunId: 'provider-run-42', branch: 'feature/checkout', headRepository: 'acme/app', evidenceKind: 'report', evidenceCollectionStatus: 'complete', evidenceCollectionErrorCode: 'PROVIDER_RESPONSE_INVALID', evidenceCheckedAfter: '2026-10-01T00:00:00.000Z', evidenceCheckedBefore: '2026-10-09T00:00:00.000Z', evidenceRequirement: 'post-production-video-missing', thresholdOutcome: 'passed', gateOutcome: 'passed', policyArtifactId: 'policy-1', gateArtifactId: 'gate-1', minimumDurationMs: 60_000, maximumDurationMs: 180_000, beforeDate: '2026-10-11', limit: 51,
     })).resolves.toEqual([
-      { date: '2026-10-10', total: 3, passed: 2, failed: 1, cancelled: 0, running: 0, passRate: 2 / 3, durationSampleCount: 2, averageDurationMs: 2_592_000_000, maximumDurationMs: 2_678_400_000, retryAttemptCount: 3, successfulRetryCount: 2, recoveredRunCount: 1, evidenceCompleteCount: 1, evidencePartialCount: 1, evidenceUnavailableCount: 1, evidenceNotCollectedCount: 0, invalidEvidenceUrlCount: 1, githubRunProvenanceMissingCount: 2, postProductionVideoMissingCount: 1, terminalTimingMissingCount: 1, gateEvaluationCount: 4, gatePassedCount: 2, gateFailedCount: 1, gateCancelledCount: 0, gateRunningCount: 1, gateUnevaluatedExecutionCount: 1, thresholdEvaluationCount: 5, thresholdPassedCount: 3, thresholdFailedCount: 2, performanceExecutionWithoutThresholdCount: 1 },
+      { date: '2026-10-10', total: 3, passed: 2, failed: 1, cancelled: 0, running: 0, passRate: 2 / 3, durationSampleCount: 2, averageDurationMs: 2_592_000_000, maximumDurationMs: 2_678_400_000, retryAttemptCount: 3, successfulRetryCount: 2, recoveredRunCount: 1, evidenceCompleteCount: 1, evidencePartialCount: 1, evidenceUnavailableCount: 1, evidenceNotCollectedCount: 0, evidenceCollectionFailureCount: 2, invalidEvidenceUrlCount: 1, githubRunProvenanceMissingCount: 2, attemptProvenanceUnverifiedCount: 1, postProductionVideoMissingCount: 1, terminalTimingMissingCount: 1, gateEvaluationCount: 4, gatePassedCount: 2, gateFailedCount: 1, gateCancelledCount: 0, gateRunningCount: 1, gateUnevaluatedExecutionCount: 1, thresholdEvaluationCount: 5, thresholdPassedCount: 3, thresholdFailedCount: 2, performanceExecutionWithoutThresholdCount: 1 },
     ])
 
     const [sql, parameters] = query.mock.calls[0]
@@ -485,6 +488,7 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain('evidence_complete_count')
     expect(String(sql)).toContain('invalid_evidence_url_count')
     expect(String(sql)).toContain('github_run_provenance_missing_count')
+    expect(String(sql)).toContain('attempt_provenance_unverified_count')
     expect(String(sql)).toContain('post_production_video_missing_count')
     expect(String(sql)).toContain('terminal_timing_missing_count')
     expect(String(sql)).toContain('effective_gate_evaluations')
@@ -495,6 +499,7 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain('evidence_partial_count')
     expect(String(sql)).toContain('evidence_unavailable_count')
     expect(String(sql)).toContain('evidence_not_collected_count')
+    expect(String(sql)).toContain('evidence_collection_failure_count')
     expect(String(sql)).toContain('previous.external_run_id=executions.external_run_id')
     expect(String(sql)).toContain("previous.status='failed'")
     expect(String(sql)).toContain('executions.external_run_id=$16')
@@ -511,7 +516,9 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain("executions.evidence_collection->>'status'=$24")
     expect(String(sql)).toContain("$25='post-production-video-missing'")
     expect(String(sql)).toContain("$25='evidence-url-invalid'")
+    expect(String(sql)).toContain("$25='provider-collection-failure'")
     expect(String(sql)).toContain("$25='github-run-provenance-missing'")
+    expect(String(sql)).toContain("$25='attempt-provenance-unverified'")
     expect(String(sql)).toContain("$25='terminal-timing-missing'")
     expect(String(sql)).toContain("$25='performance-threshold-missing'")
     expect(String(sql)).toContain("$25='policy-gate-outcome-missing'")
@@ -569,7 +576,9 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain("executions.evidence_collection->>'status'=$27")
     expect(String(sql)).toContain("$28='post-production-video-missing'")
     expect(String(sql)).toContain("$28='evidence-url-invalid'")
+    expect(String(sql)).toContain("$28='provider-collection-failure'")
     expect(String(sql)).toContain("$28='github-run-provenance-missing'")
+    expect(String(sql)).toContain("$28='attempt-provenance-unverified'")
     expect(String(sql)).toContain("required_evidence.value->>'url' ~* '^https://[^/?#[:space:]]+'")
     expect(String(sql)).toContain("$28='terminal-timing-missing'")
     expect(String(sql)).toContain("$28='performance-threshold-missing'")
@@ -649,10 +658,10 @@ describe('test execution evidence', () => {
       })
 
       await expect(store.executionOutcomeTrend('repo-1', 'org-1', { snapshotAt })).resolves.toEqual([
-        { date: '2026-10-10', total: 1, passed: 0, failed: 0, cancelled: 0, running: 1, passRate: 0, durationSampleCount: 0, averageDurationMs: 0, maximumDurationMs: 0, retryAttemptCount: 0, successfulRetryCount: 0, recoveredRunCount: 0, evidenceCompleteCount: 0, evidencePartialCount: 0, evidenceUnavailableCount: 0, evidenceNotCollectedCount: 1, invalidEvidenceUrlCount: 0, githubRunProvenanceMissingCount: 1, postProductionVideoMissingCount: 0, terminalTimingMissingCount: 0, gateEvaluationCount: 0, gatePassedCount: 0, gateFailedCount: 0, gateCancelledCount: 0, gateRunningCount: 0, gateUnevaluatedExecutionCount: 1, thresholdEvaluationCount: 0, thresholdPassedCount: 0, thresholdFailedCount: 0, performanceExecutionWithoutThresholdCount: 0 },
+        { date: '2026-10-10', total: 1, passed: 0, failed: 0, cancelled: 0, running: 1, passRate: 0, durationSampleCount: 0, averageDurationMs: 0, maximumDurationMs: 0, retryAttemptCount: 0, successfulRetryCount: 0, recoveredRunCount: 0, evidenceCompleteCount: 0, evidencePartialCount: 0, evidenceUnavailableCount: 0, evidenceNotCollectedCount: 1, evidenceCollectionFailureCount: 0, invalidEvidenceUrlCount: 0, githubRunProvenanceMissingCount: 1, attemptProvenanceUnverifiedCount: 0, postProductionVideoMissingCount: 0, terminalTimingMissingCount: 0, gateEvaluationCount: 0, gatePassedCount: 0, gateFailedCount: 0, gateCancelledCount: 0, gateRunningCount: 0, gateUnevaluatedExecutionCount: 1, thresholdEvaluationCount: 0, thresholdPassedCount: 0, thresholdFailedCount: 0, performanceExecutionWithoutThresholdCount: 0 },
       ])
       await expect(store.executionOutcomeTrend('repo-1', 'org-1')).resolves.toEqual([
-        { date: '2026-10-11', total: 1, passed: 1, failed: 0, cancelled: 0, running: 0, passRate: 1, durationSampleCount: 1, averageDurationMs: 420_000, maximumDurationMs: 420_000, retryAttemptCount: 0, successfulRetryCount: 0, recoveredRunCount: 0, evidenceCompleteCount: 0, evidencePartialCount: 0, evidenceUnavailableCount: 0, evidenceNotCollectedCount: 1, invalidEvidenceUrlCount: 0, githubRunProvenanceMissingCount: 1, postProductionVideoMissingCount: 0, terminalTimingMissingCount: 0, gateEvaluationCount: 0, gatePassedCount: 0, gateFailedCount: 0, gateCancelledCount: 0, gateRunningCount: 0, gateUnevaluatedExecutionCount: 1, thresholdEvaluationCount: 0, thresholdPassedCount: 0, thresholdFailedCount: 0, performanceExecutionWithoutThresholdCount: 0 },
+        { date: '2026-10-11', total: 1, passed: 1, failed: 0, cancelled: 0, running: 0, passRate: 1, durationSampleCount: 1, averageDurationMs: 420_000, maximumDurationMs: 420_000, retryAttemptCount: 0, successfulRetryCount: 0, recoveredRunCount: 0, evidenceCompleteCount: 0, evidencePartialCount: 0, evidenceUnavailableCount: 0, evidenceNotCollectedCount: 1, evidenceCollectionFailureCount: 0, invalidEvidenceUrlCount: 0, githubRunProvenanceMissingCount: 1, attemptProvenanceUnverifiedCount: 0, postProductionVideoMissingCount: 0, terminalTimingMissingCount: 0, gateEvaluationCount: 0, gatePassedCount: 0, gateFailedCount: 0, gateCancelledCount: 0, gateRunningCount: 0, gateUnevaluatedExecutionCount: 1, thresholdEvaluationCount: 0, thresholdPassedCount: 0, thresholdFailedCount: 0, performanceExecutionWithoutThresholdCount: 0 },
       ])
     } finally {
       vi.useRealTimers()

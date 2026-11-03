@@ -29,6 +29,24 @@ describe('FuzeQuality portal API identity context', () => {
     expect(headers.get('x-fuzefront-tenant-id')).toBe('tenant-1')
   })
 
+  it('queues requirement analysis inside the selected portal tenant', async () => {
+    ;(window as any).__FUZEFRONT__ = {
+      getContext: () => ({ tenantId: 'tenant-1', activeOrganization: null }),
+    }
+    configurePlatformSecurity(() => 'portal-token')
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      status: 'queued', scopeId: 'default', sync: { sourceType: 'jira', sourceKey: 'default', freshnessStatus: 'queued' },
+    }), { status: 202, headers: { 'content-type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(api.syncRequirements()).resolves.toMatchObject({ status: 'queued' })
+
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/jira/sync')
+    expect(fetchMock.mock.calls[0][1].method).toBe('POST')
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ scopeId: 'default' })
+    expect(new Headers(fetchMock.mock.calls[0][1].headers).get('x-fuzefront-tenant-id')).toBe('tenant-1')
+  })
+
   it('uses the host-owned federation session while the runtime bridge is initializing', async () => {
     ;(window as any).__FRONTFUSE_CONTEXT__ = {
       session: { tenantId: 'personal-tenant-1' },

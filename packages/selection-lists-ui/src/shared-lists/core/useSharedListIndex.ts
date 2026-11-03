@@ -73,7 +73,7 @@ interface MoreState {
 export function useSharedListIndex(
   options: UseSharedListIndexOptions = {}
 ): SharedListIndex {
-  const { enabled: sharedLists } = useSharedLists()
+  const { enabled: sharedLists, ready } = useSharedLists()
   const { status, includeShared, visibility, locale, limit } = options
   const query = useMemo<SharedListsQuery>(
     () => ({ status, includeShared, visibility, locale, limit }),
@@ -89,7 +89,8 @@ export function useSharedListIndex(
   })
 
   const { settled, reload, token } = useResource(
-    JSON.stringify(params),
+    // Not ready ⇒ the query's shape (shared params or not) is not known yet: ask nothing.
+    ready ? JSON.stringify(params) : null,
     signal => listSharedLists(params, signal)
   )
 

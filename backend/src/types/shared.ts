@@ -1,5 +1,7 @@
 export interface User {
   id: string
+  /** Authenticated server session; never accepted from client input. */
+  sessionId?: string
   email: string
   defaultAppId?: string
   roles: string[]
@@ -20,6 +22,10 @@ export interface User {
   // (undefined — e.g. authenticateToken didn't run) is distinguishable from
   // "looked up, root/platform user" (null).
   homePortalId?: string | null
+  // The organization selected for this request. It is only a selector;
+  // connector delegation verifies membership before signing it. Null means
+  // the caller is operating in their personal context.
+  activeOrganizationId?: string | null
 }
 
 export interface Organization {

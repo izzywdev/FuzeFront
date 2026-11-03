@@ -20,6 +20,11 @@ export function isPostgres(k: Knex | Knex.Transaction): boolean {
  * change it describes: no distributed transaction, no dual-write gap. A separate
  * relay (`startOutboxRelay`) later publishes pending rows to Kafka.
  *
+ * @deprecated v1 outbox write (no eventId / aggregate ordering). New and migrated services use
+ * `enqueueEvent(trx, buildEvent({...}))` from `@izzywdev/fuzefront-events` (envelope v2, Wave C).
+ * Kept unchanged for current callers; backend/core intentionally takes NO dependency on the
+ * events package (seven service Dockerfiles build core; adding one is a Wave C infra change).
+ *
  * MUST be called with the same `trx` that performs the state change — if the
  * transaction rolls back, the event is dropped with it (proven by tests).
  */

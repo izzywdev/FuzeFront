@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { MAX_DELIVERY_ATTEMPTS, failureCode, retry, retryDelayMs } from './runtime'
+import { FlowAnalysisInvalidResponseError, FlowAnalysisTimeoutError } from '@fuzequality/core'
 
 describe('worker delivery reliability', () => {
   it('retries transient delivery with bounded exponential backoff', async () => {
@@ -19,6 +20,8 @@ describe('worker delivery reliability', () => {
     expect(failureCode(new Error('Jira search returned 401 for https://example/?token=secret'))).toBe('JIRA_UNAVAILABLE')
     expect(failureCode(new Error('Chroma connection refused'))).toBe('SEMANTIC_INDEX_UNAVAILABLE')
     expect(failureCode(new Error('LiteLLM returned 500'))).toBe('INTELLIGENCE_UNAVAILABLE')
+    expect(failureCode(new FlowAnalysisTimeoutError(10))).toBe('INTELLIGENCE_TIMEOUT')
+    expect(failureCode(new FlowAnalysisInvalidResponseError())).toBe('INTELLIGENCE_INVALID_RESPONSE')
     expect(MAX_DELIVERY_ATTEMPTS).toBe(3)
   })
 

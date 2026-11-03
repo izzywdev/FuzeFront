@@ -69,6 +69,12 @@
  *                            relying on this stand-in having already denied it. Per-tenant, so
  *                            suites running in parallel workers never see each other's setting.
  *
+ *   - `POST /__fixture/deny-catalog-action` {tenant, subject, action} withdraws ONE catalog action (e.g.
+ *     `read_shared`) from ONE subject in ONE tenant, whatever their tenant role says (per subject, so parallel
+ *     workers never see each other's setting). It models a Permit state the fixed role table cannot reach on
+ *     its own - a caller who may `resolve` / `create` but holds no shared read - which is how a suite proves a
+ *     service decision is made among the rows the caller can READ (Permit-aware duplicate winner).
+ *
  * Workload bootstrap accepts one CI-only projected token and mints the two narrow
  * scopes the real Security API registers for this service:
  *   selection-list:owner-grant    may bootstrap list-owner only (POST)
@@ -147,6 +153,9 @@ const publishAnywhere = new Set();
  * from id shapes; everyone else is a member of the tenant they are asked about.
  */
 const NON_MEMBERS = new Set();
+
+/** Canonical `${tenant}|${subject}|${action}` catalog actions withdrawn from one subject (/__fixture/deny-catalog-action). */
+const DENIED_CATALOG_ACTIONS = new Set();
 
 /** role -> actions, verbatim from the openapi §Authorization table. */
 const ROLE_ACTIONS = {
@@ -241,6 +250,7 @@ function decide(q, claims) {
   if (resource.type === 'SelectionListCatalog') {
     if (resource.key) return false; // the catalog has no instances
     if (!TENANT_ROLE_ACTIONS[tenantRoleOf(claims, subject, tenant)].includes(action)) return false;
+    if (DENIED_CATALOG_ACTIONS.has(`${tenant}|${subject}|${action}`)) return false;
     // publish_platform is granted to tenant `admin` but only EFFECTIVE in the platform org's tenant (D5).
     if (action === 'publish_platform') return tenant === platformOrgId || publishAnywhere.has(tenant);
     return true;
@@ -311,6 +321,12 @@ const server = http.createServer(async (req, res) => {
     const b = await readBody(req);
     if (!b || typeof b.tenant !== 'string' || typeof b.subject !== 'string') return send(res, 400, { code: 'MALFORMED' });
     NON_MEMBERS.add(`${canon(b.tenant)}|${canon(b.subject)}`);
+    return send(res, 204);
+  }
+  if (path === '/__fixture/deny-catalog-action' && req.method === 'POST') {
+    const b = await readBody(req);
+    if (!b || typeof b.tenant !== 'string' || typeof b.subject !== 'string' || typeof b.action !== 'string') return send(res, 400, { code: 'MALFORMED' });
+    DENIED_CATALOG_ACTIONS.add(`${canon(b.tenant)}|${canon(b.subject)}|${b.action}`);
     return send(res, 204);
   }
   if (path === '/__fixture/publish-anywhere' && req.method === 'POST') {

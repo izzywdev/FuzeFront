@@ -72,6 +72,13 @@ file tries to:
 3. call a safe method `irreversible` (if a `GET` really mutates, the spec is
    what needs fixing).
 
+It also refuses to start when the overrides file has a key that matches no
+operation in the spec: tools are looked up by exact `operationId`, so a stale or
+misspelled key would otherwise be silently ignored and the tool left on its
+method-derived classification while the file claims a reviewed decision.
+`test/overrides-conformance.test.ts` checks every checked-in overrides file and
+`mcp/*.json` tool manifest against their specs in CI.
+
 A gateway that boots with a mis-declared irreversible tool is worse than one
 that does not boot, because nobody finds out until something unrecoverable has
 already happened.

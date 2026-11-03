@@ -11,7 +11,6 @@ import rateLimit from 'express-rate-limit'
 import { authenticateToken } from '../middleware/auth'
 import { db } from '../config/database'
 import { resolvePortalScopeDecision, applyPortalScope } from '../utils/scopeToPortal'
-import { isPrefixedIdsEnabled } from '../identity/flags'
 import { prefixDtoIds } from '../identity/serializer'
 
 const router = express.Router()
@@ -115,11 +114,9 @@ router.get('/', readLimiter, authenticateToken, async (req: any, res: Response) 
     const page = hasMore ? rows.slice(0, limit) : rows
     const nextCursor = hasMore ? encodeCursor(page[page.length - 1]) : null
 
-    const flagCtx = { userId: req.user?.id }
-    const prefixed = await isPrefixedIdsEnabled(flagCtx)
 
     res.json({
-      items: page.map(row => prefixDtoIds(rowToUserSummary(row), prefixed, { id: 'user', homePortalId: 'portal' })),
+      items: page.map(row => prefixDtoIds(rowToUserSummary(row), { id: 'user', homePortalId: 'portal' })),
       page: { nextCursor, hasMore },
     })
   } catch (error) {
@@ -174,11 +171,9 @@ router.get('/search', readLimiter, authenticateToken, async (req: any, res: Resp
     const page = hasMore ? rows.slice(0, limit) : rows
     const nextCursor = hasMore ? encodeCursor(page[page.length - 1]) : null
 
-    const flagCtx = { userId: req.user?.id }
-    const prefixed = await isPrefixedIdsEnabled(flagCtx)
 
     res.json({
-      items: page.map(row => prefixDtoIds(rowToUserSummary(row), prefixed, { id: 'user', homePortalId: 'portal' })),
+      items: page.map(row => prefixDtoIds(rowToUserSummary(row), { id: 'user', homePortalId: 'portal' })),
       page: { nextCursor, hasMore },
     })
   } catch (error) {
@@ -215,11 +210,8 @@ router.get('/:id', readLimiter, authenticateToken, async (req: any, res: Respons
       return res.status(404).json({ error: 'NOT_FOUND', message: 'User not found.' })
     }
 
-    const flagCtx = { userId: req.user?.id }
-    const prefixed = await isPrefixedIdsEnabled(flagCtx)
     const summary = prefixDtoIds(
       { ...rowToUserSummary(row), roles: Array.isArray(row.roles) ? row.roles : JSON.parse(row.roles || '["user"]') },
-      prefixed,
       { id: 'user', homePortalId: 'portal' }
     )
 

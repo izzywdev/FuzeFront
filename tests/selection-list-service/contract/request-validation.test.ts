@@ -18,8 +18,8 @@
  *       `missing`; the spec says 400 VALIDATION_ERROR. It also accepted duplicate ids (`uniqueItems`),
  *       an unsupported `locale`, and an empty `ids` (`minItems: 1`) with 200.
  *   D3  `limit=0` on the paginated GETs (spec `minimum: 1`) was silently treated as the default.
- *   D4  (OPEN, `it.failing` at the bottom) `GET .../items?status=all` answers 400 although the spec's items
- *       `status` enum is [active, archived, all].
+ *   D4  (FIXED, plain test at the bottom) `GET .../items?status=all` used to answer 400 although the spec's
+ *       items `status` enum is [active, archived, all]; the service now implements `all`.
  *   D5  (OPEN, `it.failing` at the bottom) `POST /v1/resolve` sends an ETag but no `Cache-Control`, which the
  *       spec documents.
  */
@@ -150,12 +150,11 @@ describe('what the service already enforces (regression pins)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// D4 - KNOWN, TICKETED DEVIATION (found by the SL9 suites; pre-existing on master, unrelated to SL9).
-// openapi.yaml declares the items `status` filter as `enum: [active, archived, all]`;
-// `GET /v1/selection-lists/{listId}/items?status=all` answers 400 "status must be active or archived."
-// (src/routes/items.ts). Pinned `it.failing`: when the service is fixed this goes red ("expected to fail
-// but passed") and the `.failing` must be removed in the same PR. Never weaken the assertion.
-// The SL9 suites avoid the parameter (helpers/shared-lists.ts walkItems composes active + archived).
+// D4 - FIXED (contract 4.2.0 conformance PR). openapi.yaml declares the items `status` filter as
+// `enum: [active, archived, all]`; `GET /v1/selection-lists/{listId}/items?status=all` used to answer 400
+// (src/routes/items.ts). The `.failing` pin was removed in the same PR as the fix, as its comment required.
+// Never weaken the assertion. (helpers/shared-lists.ts walkItems still composes active + archived, which is
+// equivalent and left alone.)
 // ---------------------------------------------------------------------------
 // D5 - KNOWN, TICKETED DEVIATION (same provenance as D4): `POST /v1/resolve` is documented as "cacheable ...
 // Responses carry `Cache-Control` and an `ETag`", but the service sends only Express's default weak ETag, no
@@ -174,7 +173,7 @@ describe('D5: resolve responses carry Cache-Control (documented)', () => {
 });
 
 describe('D4: items status=all (a documented filter value)', () => {
-  it.failing('GET .../items?status=all returns active AND archived items (spec enum [active, archived, all])', async () => {
+  it('GET .../items?status=all returns active AND archived items (spec enum [active, archived, all])', async () => {
     const second = await call('POST', `${L()}/items`, { code: 'V2', label: 'Two' });
     expect(second.status).toBe(201);
     const id = (second.body as { id: string }).id;

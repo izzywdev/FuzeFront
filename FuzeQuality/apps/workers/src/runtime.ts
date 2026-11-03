@@ -1,5 +1,6 @@
 import { Kafka, type EachMessagePayload } from 'kafkajs'
 import { z } from 'zod'
+import { FlowAnalysisInvalidResponseError, FlowAnalysisTimeoutError } from '@fuzequality/core'
 
 export const MAX_DELIVERY_ATTEMPTS = 3
 
@@ -8,6 +9,8 @@ export function retryDelayMs(attempt: number) {
 }
 
 export function failureCode(error: unknown) {
+  if (error instanceof FlowAnalysisTimeoutError) return 'INTELLIGENCE_TIMEOUT'
+  if (error instanceof FlowAnalysisInvalidResponseError) return 'INTELLIGENCE_INVALID_RESPONSE'
   const message = error instanceof Error ? error.message : String(error)
   if (/jira/i.test(message)) return 'JIRA_UNAVAILABLE'
   if (/chroma|embedding|semantic/i.test(message)) return 'SEMANTIC_INDEX_UNAVAILABLE'

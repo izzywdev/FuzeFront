@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildTools, toolNameFor, type OpenApiDoc } from '../src/spec.js';
+import { buildTools, findUnknownOverrideKeys, toolNameFor, type OpenApiDoc } from '../src/spec.js';
 
 const doc: OpenApiDoc = {
   openapi: '3.1.0',
@@ -104,6 +104,23 @@ describe('buildTools', () => {
     expect(() =>
       buildTools(doc, { decideApproval: { mutates: false, reversibility: 'irreversible' } })
     ).toThrow(/irreversible/i);
+  });
+
+  it('refuses to boot on an override key that matches no operation (a stale or misspelled key is never silently ignored)', () => {
+    expect(() => buildTools(doc, { decideAproval: { mutates: true, reversibility: 'irreversible' } })).toThrow(
+      /do not exist in the spec: "decideAproval"/
+    );
+    // Reports every offender, not just the first.
+    expect(() => buildTools(doc, { archiveList: { mutates: true }, revokeAccess: { mutates: true } })).toThrow(
+      /2 tool\(s\).*"archiveList", "revokeAccess"/
+    );
+    // A key that does match still builds.
+    expect(() => buildTools(doc, { decideApproval: { mutates: true, reversibility: 'irreversible' } })).not.toThrow();
+  });
+
+  it('findUnknownOverrideKeys reports exactly the keys not present among the tools', () => {
+    expect(findUnknownOverrideKeys({ a: {}, b: {} }, new Set(['a']))).toEqual(['b']);
+    expect(findUnknownOverrideKeys({}, new Set(['a']))).toEqual([]);
   });
 
   it('rejects duplicate tool names', () => {

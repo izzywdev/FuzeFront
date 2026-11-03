@@ -8,6 +8,7 @@ import React, { useState, useEffect, useCallback, useRef, useId } from 'react'
 import { useParams } from 'react-router-dom'
 import { CommonAccessGuard } from './shared-lists/fork'
 import { useSharedLists } from './shared-lists/core'
+import { PanelSkeleton } from './shared-lists/browse/PanelState'
 import type { AccessGrant, ApiError } from './types'
 import {
   getAccessGrants,
@@ -695,6 +696,9 @@ export function SelectionListAccessFlow({
       </div>
     )
   }
+  // The host's shared-lists flag has not settled: the Access panel's visibility
+  // control (flag ON) and its 4.0.0 form must not each fire their own reads.
+  if (!shared.ready) return <PanelSkeleton label="Loading" />
 
   return (
     <AccessPanel

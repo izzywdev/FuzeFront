@@ -579,6 +579,16 @@ Order matters (fail-closed authz): **Permit schema → service → flag → data
 Existing app packs (`seed.requested`) keep seeding `private` until each app opts
 into `visibility: org` in a new pack version.
 
+**Implemented (task 10).** Steps 4 and 6, and the pre-flag duplicate audit and reconcile, are idempotent,
+flag-independent CLI jobs in the service image (`services/selection-list-service/src/rollout/`; operator procedure,
+dry-run output and rollback for each in `docs/runbooks/selection-lists-rollout.md` §10.0–10.5):
+`visibility-org` (step 4), `retro-forks` (step 6), `audit` and `reconcile-duplicates`. Two points the design text above
+leaves open, settled by the code: (1) step 6 converts a copy only when its **current key equals the common list's key** and
+its seed provenance matches — the `list.forked` contract says a fork keeps its source key, so a copy a user renamed cannot be
+announced as a fork and is reported instead; (2) step 6 emits a synthetic `selection-lists.list.forked` (with the `itemMap` of
+code-matched items) for each converted copy, so read models learn the provenance. Step 5 (publishing the common lists) and the
+pack-version bump of step 4 are **not** part of these jobs.
+
 ## 10. Implementation wave — ordered task list
 
 Every stream gates on this contract PR being **merged**.
@@ -623,12 +633,12 @@ Every stream gates on this contract PR being **merged**.
 | 14 | **Not merged** | `packages/selection-lists-ui/src/shared-lists/` does not exist on master (stage 1 "core infrastructure" was an open PR on 2026-10-26). The picker still uses the exact-match `?key=` lookup, not `getEffectiveList` |
 | 15 | **Not merged** | RED Playwright specs for the five flows were an open PR on 2026-10-26; no shared-lists spec exists on master |
 | 16 | **Partly** | `mcp/tools-selection-lists.json` lists `forkSelectionList` and the gateway derives tools from the spec; the explicit override + override-key guard were an open PR on 2026-10-26 |
-| 17 | **Not built (contract only)** | Contract 4.2.0 freezes `SelectionList.revision` (spec, Helm copy, clients 2.2.0); the service does not emit it yet (`src/routes/listShape.ts`). Work list: §13.4 |
+| 17 | **Service done (4.2.0 conformance PR)** | `src/routes/listShape.ts` selects `sl.revision` and `formatList` emits it unconditionally; `GET .../items?status=all` implemented. Tests: `tests/list-shape.revision.test.ts`, `tests/list-revision.db.test.ts`, `tests/items.status-all.db.test.ts`. Still open: §13.4 items 6-8 as acceptance-suite tests (`test-engineer`), then the MINOR that moves `revision` into `required` |
 
-Known gap behind task 13's "behind source" indicator: `forked_from.revision` is the source revision at
-copy time (never updated), and until 4.2.0 the spec's `SelectionList` had no `revision` to compare it
-with. Contract 4.2.0 (§13) adds it as an optional field; until the service emits it (task 17) a client
-reads *unknown* and the UI can only show "comparison unavailable".
+Known gap behind task 13's "behind source" indicator (closed on the service side by task 17): `forked_from.revision`
+is the source revision at copy time (never updated), and until 4.2.0 the spec's `SelectionList` had no `revision`
+to compare it with. Contract 4.2.0 (§13) adds it as an optional field; the service now always emits it, so a client
+of a service that predates task 17 still reads *unknown* ("comparison unavailable").
 
 ## 11. Test plan (acceptance, summarised)
 
@@ -793,3 +803,17 @@ moves `revision` into `SelectionList.required` (with `visibility`, `forked_from`
 it), and `product-designer` retires the frames' `contractGaps` / `contractDependency` entry
 in a frames-only PR (this contract PR may not touch `design/frames/**`), after which
 `frontend-engineer` wires `BehindSourceIndicator` to `compareForkToSource`.
+
+### 13.5 Implementation notes (service PR for 4.2.0)
+
+- **No migration, as §13.4 item 3 predicted.** The existing `selection_lists.revision` column (BIGINT NOT NULL DEFAULT 1,
+  check `>= 1`, monotonic trigger) is bumped by `bumpListRevision` under the per-organization outbox advisory lock in the
+  same transaction as the change, so concurrent writers neither skip nor duplicate a value; every existing row already
+  holds its true counter (backfill = nothing to do). `data-contract.json` is unchanged (no new stored field).
+- **Semantics chosen: exactly R1/R5** (response `revision` == the list's stored counter == latest committed
+  `listRevision`; access grants and the two event-less housekeeping writers do not move it).
+- **Org-deleted soft cascade (R5, last sentence) is deliberately NOT changed here.** The frozen 4.2.0 text lists "an
+  organization-deletion cascade" among the writes that do *not* change `revision` and publish no list event. Emitting
+  `list.archived` per list (and so bumping `revision`) would contradict that sentence and therefore needs a contract
+  amendment first (plus a decision on the event `actor` for a system cascade and on batching for orgs with many lists);
+  it stays an open pre-existing event-parity gap for `contract-designer` + `backend-engineer`.

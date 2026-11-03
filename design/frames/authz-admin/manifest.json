@@ -47,7 +47,11 @@
         "route": "/settings/access",
         "approved": false,
         "approvedBy": null,
-        "approvedAt": null
+        "approvedAt": null,
+        "responsive": {
+          "exempt": true,
+          "exemptReason": "Tenant/org access administration at /settings/access (members, roles, invite/add, change-role, remove) is a gated org-admin console; it has no end-user mobile surface."
+        }
       }
     ],
     "components": [
@@ -158,5 +162,5 @@
       ]
     }
   ],
-  "stamp": "d3b5b7bd90ad7782097b343112e3aff2c09f0f06dc9009bd763d0172539e98bb"
+  "stamp": "fd7ade5c4839ce39a0a16085f2dabb5f81b5b2d625b01d53ebab1fede6d624f5"
 }

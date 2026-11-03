@@ -108,23 +108,34 @@ const MOCK_ITEM_ARCHIVED = {
   source_hash: 'def456',
 }
 
+/**
+ * Quota responses use the contract's `SelectionListQuotaStatus` envelope,
+ * exactly as `GET /v1/selection-lists/quota` sends it:
+ * `{ organization_id, quotas: [{ scope, applies_to, limit, current }] }` (4 entries).
+ * (An earlier revision of these mocks served `{ scopes: [...] }`, a shape the
+ * service never emits, which is how the UI shipped reading the wrong key.)
+ */
+const MOCK_QUOTA_ORG_ID = 'org_01h455vb4pex5vsknk084sn02q'
+
 /** Quota response at-limit. */
 const MOCK_QUOTA_AT_LIMIT = {
-  scopes: [
-    { scope: 'org_lists', current: 100, limit: 100 },
-    { scope: 'user_lists', current: 25, limit: 25 },
-    { scope: 'list_items', current: null, limit: 1000 },
-    { scope: 'list_locales', current: null, limit: 11 },
+  organization_id: MOCK_QUOTA_ORG_ID,
+  quotas: [
+    { scope: 'org_lists', applies_to: 'organization', current: 100, limit: 100 },
+    { scope: 'user_lists', applies_to: 'user', current: 25, limit: 25 },
+    { scope: 'list_items', applies_to: 'list', current: null, limit: 1000 },
+    { scope: 'list_locales', applies_to: 'list', current: null, limit: 11 },
   ],
 }
 
 /** Quota response near-limit (>=80%). */
 const MOCK_QUOTA_NEAR_LIMIT = {
-  scopes: [
-    { scope: 'org_lists', current: 85, limit: 100 },
-    { scope: 'user_lists', current: 21, limit: 25 },
-    { scope: 'list_items', current: null, limit: 1000 },
-    { scope: 'list_locales', current: null, limit: 11 },
+  organization_id: MOCK_QUOTA_ORG_ID,
+  quotas: [
+    { scope: 'org_lists', applies_to: 'organization', current: 85, limit: 100 },
+    { scope: 'user_lists', applies_to: 'user', current: 21, limit: 25 },
+    { scope: 'list_items', applies_to: 'list', current: null, limit: 1000 },
+    { scope: 'list_locales', applies_to: 'list', current: null, limit: 11 },
   ],
 }
 
@@ -966,8 +977,13 @@ test.describe('Selection Lists list-management — frame 05-reorder', () => {
     ).toBeVisible()
   })
 
-  test('[data-error="FORBIDDEN"] appears and drag handles are absent for roles without update_value', async ({ page }) => {
+  test('a role without update_value: the reorder PUT answers 403 -> [data-error="FORBIDDEN"], order restored, drag handles removed (fail-closed)', async ({ page }) => {
+    // The contract has no pre-flight permission read for `update_value` (HEAD …/items/reorder is not an
+    // operation: the real service 404s it and the browser logs a console error), so a role without it
+    // learns from the reorder's own answer. The affordance is then removed entirely.
+    const reorderMethods: string[] = []
     await page.route(`**/v1/selection-lists/${LIST_ID}/items/reorder`, async route => {
+      reorderMethods.push(route.request().method())
       await route.fulfill({
         status: 403,
         contentType: 'application/json',
@@ -976,18 +992,54 @@ test.describe('Selection Lists list-management — frame 05-reorder', () => {
     })
     await injectListDetailData(page)
     await gotoListDetail(page)
-    // Wait for the value editor to render — this fails when the UI is absent and
-    // avoids the count()==0 false-GREEN that a bare handles.count() check creates.
+    await expect(
+      page.locator("[data-panel='value-editor']"),
+      '[data-panel="value-editor"] must render before checking the handles',
+    ).toBeVisible()
+    const firstHandle = page.locator('[data-drag-handle]').first()
+    await expect(firstHandle, 'the handles render until a reorder is refused').toBeVisible()
+    expect(reorderMethods, 'nothing probes the reorder route before the user reorders (no HEAD)').toEqual([])
+    await firstHandle.focus()
+    await page.keyboard.press('Space')
+    await page.keyboard.press('ArrowDown')
+    await page.keyboard.press('Space')
+    await expect(
+      page.locator("[data-error='FORBIDDEN']").first(),
+      '[data-error="FORBIDDEN"] must appear when the reorder is refused',
+    ).toBeVisible()
+    await expect(
+      page.locator('[data-drag-handle]'),
+      '[data-drag-handle] must be removed for a role without update_value (fail-closed)',
+    ).toHaveCount(0)
+    expect(reorderMethods).toEqual(['PUT'])
+  })
+
+  test('a list the caller can only read (`editable: false`) renders no drag handles and the FORBIDDEN notice, without any reorder request', async ({ page }) => {
+    const reorderRequests: string[] = []
+    page.on('request', req => {
+      if (req.url().includes('/items/reorder')) reorderRequests.push(req.method())
+    })
+    await injectListDetailData(page)
+    // Registered after injectListDetailData => tried first (LIFO): the list says the caller cannot edit it.
+    await page.route(`**/v1/selection-lists/${LIST_ID}*`, async route => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ ...MOCK_LIST_COUNTRIES, editable: false }),
+        })
+      } else {
+        await route.fallback()
+      }
+    })
+    await gotoListDetail(page)
     await expect(
       page.locator("[data-panel='value-editor']"),
       '[data-panel="value-editor"] must render before checking handle absence',
     ).toBeVisible()
-    // For roles without update_value, [data-drag-handle] must NOT be rendered —
-    // the reorder affordance is removed entirely (fail-closed).
-    await expect(
-      page.locator('[data-drag-handle]').first(),
-      '[data-drag-handle] must not render for roles without update_value',
-    ).not.toBeVisible()
+    await expect(page.locator("[data-error='FORBIDDEN']").first()).toBeVisible()
+    await expect(page.locator('[data-drag-handle]')).toHaveCount(0)
+    expect(reorderRequests, 'no request is made to the reorder route on load').toEqual([])
   })
 
   /**
@@ -1031,7 +1083,7 @@ test.describe('Selection Lists list-management — frame 05-reorder', () => {
       }
     })
     await page.route(`**/v1/selection-lists/${LIST_ID}/items/reorder`, async route => {
-      // The UI may HEAD-probe this endpoint for permission; only the PUT carries a body.
+      // Only the PUT carries a body (the UI no longer HEAD-probes this route).
       if (route.request().method() === 'PUT') {
         reorderPuts.push(route.request().postDataJSON())
         await route.fulfill({ status: 204, body: '' })
