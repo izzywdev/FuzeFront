@@ -9,26 +9,35 @@
  * plus every OTHER service's lines on the same trace.
  *
  * No live collector or Tempo needed — this only asserts the JSON shape pino
- * actually writes, captured off `process.stdout.write` since `logger.ts`'s
+ * actually writes, captured from pino's destination stream (see captureStdoutJson); `logger.ts`'s
  * singleton logger writes there by default (matching how the service really
  * runs; no test-only stream injection point to route around).
  */
-import { withReqId } from '../src/lib/logger'
+import pino from 'pino'
+import { logger, withReqId } from '../src/lib/logger'
 
 function captureStdoutJson(fn: () => void): Record<string, unknown>[] {
   const lines: Record<string, unknown>[] = []
-  const spy = jest.spyOn(process.stdout, 'write').mockImplementation((chunk: any) => {
-    const text = chunk.toString()
-    for (const line of text.split('\n')) {
-      if (!line.trim()) continue
-      lines.push(JSON.parse(line))
-    }
-    return true
-  })
+  // Swap the singleton logger's pino destination for the duration of `fn`.
+  // pino's default destination is a SonicBoom on fd 1 — asynchronous, and not
+  // routed through `process.stdout.write` unless something has tampered with
+  // stdout before the logger was constructed — so spying on stdout only
+  // happens to work in some runners (in-band) and silently captures nothing in
+  // others (jest workers). Replacing the stream via pino's own `streamSym`
+  // captures exactly the line pino serialises, synchronously, everywhere.
+  const stream = (logger as any)[pino.symbols.streamSym]
+  ;(logger as any)[pino.symbols.streamSym] = {
+    write(chunk: string) {
+      for (const line of String(chunk).split('\n')) {
+        if (!line.trim()) continue
+        lines.push(JSON.parse(line))
+      }
+    },
+  }
   try {
     fn()
   } finally {
-    spy.mockRestore()
+    ;(logger as any)[pino.symbols.streamSym] = stream
   }
   return lines
 }

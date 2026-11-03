@@ -95,6 +95,16 @@ function isReservedOrganizationType(type: unknown): boolean {
 }
 
 function sanitizeInput(data: any) {
+  const metadata =
+    data.metadata && typeof data.metadata === 'object' ? { ...data.metadata } : {}
+  // `metadata.personal` is a SERVER-OWNED marker: `ensurePersonalOrg` stamps it
+  // on the per-user personal org, and the host treats any org carrying it as the
+  // Personal workspace — hidden from the switcher and resolved to the null
+  // context (frontend isPersonalWorkspaceOrg). A client must never set it, or it
+  // could make an ordinary organization permanently invisible in every member's
+  // switcher. Strip it on every create/update; only the provisioning path writes
+  // it. (`type: 'platform'` is reserved separately, in isReservedOrganizationType.)
+  delete (metadata as Record<string, unknown>).personal
   return {
     name: data.name?.trim(),
     slug: data.slug?.trim().toLowerCase(),
@@ -102,8 +112,7 @@ function sanitizeInput(data: any) {
     parent_id: data.parent_id?.trim() || null,
     settings:
       data.settings && typeof data.settings === 'object' ? data.settings : {},
-    metadata:
-      data.metadata && typeof data.metadata === 'object' ? data.metadata : {},
+    metadata,
   }
 }
 
@@ -616,6 +625,17 @@ router.put(
         }
       }
 
+      // Preserve the SERVER-OWNED `metadata.personal` marker. sanitizeInput
+      // already stripped any client-supplied value; this UPDATE replaces the
+      // whole metadata column, so without re-applying the stored value an edit
+      // would silently un-mark a personal workspace — the duplicate "Personal"
+      // row reappears and 015/017's personal-org repair loses the signal it keys
+      // on. Reserved key only; all other metadata is the client's.
+      const currentOrg = await db('organizations').where('id', id).first()
+      if (currentOrg && parseJsonb(currentOrg.metadata)?.personal === true) {
+        input.metadata = { ...input.metadata, personal: true }
+      }
+
       // Update organization + emit identity.org.updated in one transaction so
       // the event commits atomically with the change (see enqueueEvent).
       let updatedOrganization: any
@@ -1125,6 +1145,10 @@ const ORG_ROLE_CATALOG: { key: string; name: string; assignable: boolean }[] = [
  *                       permissions:
  *                         type: array
  *                         items: { type: string }
+ *                 platformRoles:
+ *                   type: array
+ *                   description: Present only when fuzefront.identity.employee-console is ON
+ *                   items: { type: object }
  *                 resources:
  *                   type: array
  *                   items:
@@ -1179,6 +1203,18 @@ router.get('/:id/roles', authenticateToken, async (req: any, res) => {
         name: def.name,
       })),
     }))
+
+    // FF-EPIC-17-S8: additive, flag-gated platform-role entry (Employee). It
+    // lives in its own field — never merged into `roles`, which stays the
+    // org-assignable set — and is omitted entirely when the flag is OFF so the
+    // default response is unchanged.
+    if (await isEmployeeConsoleEnabled({ userId: req.user.id })) {
+      return res.json({
+        roles,
+        resources,
+        platformRoles: [EMPLOYEE_ROLE_CATALOG_ENTRY],
+      })
+    }
 
     res.json({ roles, resources })
   } catch (error: any) {
