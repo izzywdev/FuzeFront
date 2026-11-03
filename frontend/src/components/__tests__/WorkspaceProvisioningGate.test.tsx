@@ -549,5 +549,60 @@ describe('WorkspaceProvisioningGate', () => {
         expect(screen.getByTestId('active-org')).toHaveTextContent('org-2')
       })
     })
+
+    it('maps a persisted OVER-RECLASSIFIED personal org (type=organization + metadata.personal) to Personal', async () => {
+      // The row UserMenu hides via isSwitcherContextOrg. If the gate kept it as
+      // the active org, the switcher would show no checked row and the user
+      // could not deselect it. isPersonalWorkspaceOrg must treat it as Personal
+      // (null) here too — otherwise the duplicate "Personal" row is merely
+      // replaced by an unrepresented active context.
+      personalContextFlag = true
+      const overReclassified = {
+        id: 'org-ovr',
+        name: 'Personal',
+        type: 'organization',
+        user_role: 'owner',
+        metadata: { personal: true },
+      }
+      vi.spyOn(shared, 'getPersistedActiveOrganizationId').mockReturnValue('org-ovr')
+      vi.spyOn(api.organizationsAPI, 'getOrganizations').mockResolvedValue([
+        overReclassified,
+        acme,
+      ])
+
+      renderGate()
+
+      await waitFor(() => {
+        expect(screen.getByText('App content')).toBeInTheDocument()
+      })
+      expect(screen.getByTestId('active-org')).toHaveTextContent(/^$/)
+    })
+
+    it('KEEPS a persisted over-reclassified org active when a genuine type=personal sibling exists (025 collision — distinct tenant)', async () => {
+      // Two DISTINCT personal tenants: migration 025 skipped the restore because
+      // the genuine personal org already had content. The over-reclassified org
+      // must stay selectable or the user loses access to its data — it is NOT
+      // the Personal (null) context; the genuine type='personal' org is.
+      personalContextFlag = true
+      const overReclassified = {
+        id: 'org-ovr',
+        name: 'Personal',
+        type: 'organization',
+        user_role: 'owner',
+        metadata: { personal: true },
+      }
+      vi.spyOn(shared, 'getPersistedActiveOrganizationId').mockReturnValue('org-ovr')
+      vi.spyOn(api.organizationsAPI, 'getOrganizations').mockResolvedValue([
+        personalOrg, // genuine type='personal'
+        overReclassified,
+      ])
+
+      renderGate()
+
+      await waitFor(() => {
+        expect(screen.getByText('App content')).toBeInTheDocument()
+      })
+      expect(screen.getByTestId('active-org')).toHaveTextContent('org-ovr')
+    })
   })
 })
