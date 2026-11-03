@@ -80,6 +80,7 @@ on:
       - 'deploy/helm/fuzefront/**'
       - '.github/workflows/release.yml'
       - 'scripts/publish-release-gitops.sh'
+      - 'scripts/release-allow-bump.sh'
       - 'scripts/__tests__/test_release_gitops.py'
 
 concurrency:
@@ -580,28 +581,32 @@ jobs:
           # is newer-or-equal). A concurrent release that already shipped a newer
           # S keeps it. --unshallow so the ancestry check can resolve stored
           # short-shas (a shallow clone can't, and would wrongly skip everything).
-          git fetch --unshallow origin master 2>/dev/null || git fetch origin master
+          # The clone MUST be complete: ancestry of stored short-shas cannot be
+          # resolved in a shallow one. There is deliberately NO plain-fetch fallback
+          # after a failed unshallow — that silently left the clone shallow and
+          # froze services.
+          if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+            git fetch --unshallow origin master
+          else
+            git fetch origin master
+          fi
           MASTER_SHA="$(git rev-parse FETCH_HEAD)"
           if [ "$MASTER_SHA" != "$GITHUB_SHA" ]; then
             echo "::notice::master advanced ${GITHUB_SHA} -> ${MASTER_SHA} during build; rebasing bump onto current master (per-service ancestry-guarded)"
             git show "${MASTER_SHA}:${FILE}" > /tmp/vp-current.yaml
+            git diff --name-only "$GITHUB_SHA" "$MASTER_SHA" > /tmp/master-changed.txt
           else
             cp "$FILE" /tmp/vp-current.yaml
+            : > /tmp/master-changed.txt
           fi
-          # Per-service gate: built this run ($1) AND not a regression vs the tag
-          # currently in master ($2 = image basename). Fails CLOSED (skip) when a
-          # short-sha can't be resolved, so we never risk publishing older over newer.
-          allow_bump() {
-            [ "$1" = "1" ] || { echo 0; return; }
-            local cur
-            cur=$(awk -v img="repository: ghcr.io/izzywdev/$2" '
-              found { sub(/\r$/,""); if ($1=="tag:") print $2; exit }
-              index($0, img) { found=1 }' /tmp/vp-current.yaml)
-            cur=${cur//\"/}
-            [ -z "$cur" ] && { echo 1; return; }
-            [ "$cur" = "$SHA" ] && { echo 1; return; }
-            if git merge-base --is-ancestor "$cur" "$GITHUB_SHA" 2>/dev/null; then echo 1; else echo 0; fi
-          }
+          # Per-service gate lives in scripts/release-allow-bump.sh (executed from
+          # THIS released checkout; the tree is never swapped to master's): built
+          # this run AND not a regression vs master's tag AND master did not change
+          # the service's inputs after our build. Every skip is logged per service.
+          : > /tmp/skip-log
+          export SHA GITHUB_SHA MASTER_SHA
+          export VP_CURRENT=/tmp/vp-current.yaml CHANGED_FILES=/tmp/master-changed.txt SKIP_LOG=/tmp/skip-log
+          allow_bump() { bash scripts/release-allow-bump.sh "$1" "$2"; }
           BACKEND_ALLOW=$(allow_bump 1 fuzefront-backend)
           FRONTEND_ALLOW=$(allow_bump 1 fuzefront-frontend)
           EMAIL_ALLOW=$(allow_bump "$EMAIL_OK" fuzefront-email-service)
@@ -706,19 +711,37 @@ jobs:
             echo "::error::expected ${EXPECTED} core-app tag rewrites in ${FILE}, got ${COUNT} — file layout changed; update the bump step"
             exit 1
           fi
+          if [ "$EXPECTED" -eq 0 ]; then
+            # Every built service was skipped. This is NOT "already at ${SHA}":
+            # no tag moved and nothing ships from this run. Legitimate only when
+            # every skip means a newer master build/change owns the service;
+            # a pinned/unresolvable tag needs a human, so fail loudly.
+            if grep -qv ' newer$' /tmp/skip-log; then
+              echo "::error::release of ${SHA} bumped NOTHING and at least one service was skipped for an unresolvable/hand-pinned tag; see skip notices above"
+              exit 1
+            fi
+            echo "::warning::release of ${SHA} bumped NOTHING: every built service was skipped because master already ships newer builds or changed its inputs (a newer master release owns them). values-prod.yaml is NOT at ${SHA}."
+            exit 0
+          fi
           if cmp -s /tmp/vp-current.yaml /tmp/vp-new.yaml; then
-            echo "values-prod.yaml already at ${SHA} — nothing to bump"
+            echo "values-prod.yaml already at ${SHA} for all ${EXPECTED} allowed service(s) — nothing to bump"
             exit 0
           fi
           # When we rebased, base the release PR on CURRENT master so its only
           # diff is the values-prod bump. The build steps may have left
           # design-system-sync edits in the working tree; -f discards them — we
           # commit only values-prod. Happy path (master unchanged) is untouched.
+          #
+          # The publish script is copied OUT before the tree swap and run from the
+          # copy: the executing logic stays the RELEASED commit's, never whatever
+          # master's script happens to be. Only values-prod comes from master
+          # (via /tmp/vp-new.yaml, built from master's file).
+          cp scripts/publish-release-gitops.sh /tmp/publish-release-gitops.sh
           if [ "$MASTER_SHA" != "$GITHUB_SHA" ]; then
             git checkout -q -f -B release-rebase "$MASTER_SHA"
           fi
           cp /tmp/vp-new.yaml "$FILE"
-          bash scripts/publish-release-gitops.sh "$FILE" "$SHA" "$GITHUB_SHA"
+          bash /tmp/publish-release-gitops.sh "$FILE" "$SHA" "$GITHUB_SHA"
 
       # -----------------------------------------------------------------------
       # Dispatch only after the checked PR merged (or tags were already exact).

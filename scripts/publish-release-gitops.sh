@@ -10,6 +10,7 @@ source_sha=${3:?source commit required}
 [[ "$file" == deploy/helm/fuzefront/values-prod.yaml ]] || exit 1
 [[ "$source_sha" =~ ^[0-9a-f]{40}$ && "$tag" == "${source_sha:0:12}" ]] || exit 1
 branch="release/gitops-bump-${tag}"
+bot_email=release-bump@users.noreply.github.com
 expected_blob=$(git hash-object "$file")
 
 set_output() {
@@ -23,10 +24,28 @@ pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --base master --head "$branch" \
 if [[ -n "$pr" ]]; then
   # Re-runs may reuse exactly the intended branch, never overwrite others' work.
   actual_blob=$(gh api "repos/${GITHUB_REPOSITORY}/contents/${file}?ref=${branch}" --jq '.sha')
-  [[ "$actual_blob" == "$expected_blob" ]] || {
-    echo "::error::existing release PR differs; refusing to overwrite it"
-    exit 1
-  }
+  if [[ "$actual_blob" != "$expected_blob" ]]; then
+    # The committed blob is a function of master's HEAD at bump time, so a re-run
+    # after master moved legitimately produces a different blob for the SAME
+    # tag-keyed branch. Refusing wedged that release forever. Relax ONLY for the
+    # bot's own release branch: exact name, exact bot title, head commit authored
+    # by the release bot. A human-edited PR (anything else) is still refused.
+    old_head=$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json headRefOid --jq '.headRefOid')
+    pr_title=$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json title --jq '.title')
+    head_author=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${old_head}" --jq '.commit.author.email')
+    if [[ "$old_head" =~ ^[0-9a-f]{40}$ && "$pr_title" == "release: fuzefront images ${tag}" \
+          && "$head_author" == "$bot_email" ]]; then
+      echo "::notice::bot release branch ${branch} is stale (master moved); updating it to the rebased bump"
+      git add -- "$file"
+      git commit -m "release: fuzefront images ${tag}" -- "$file"
+      # Lease on the exact head we just verified as bot-authored: a concurrent
+      # writer makes this fail rather than being overwritten.
+      git push "--force-with-lease=refs/heads/${branch}:${old_head}" origin "HEAD:refs/heads/${branch}"
+    else
+      echo "::error::existing release PR differs and is not the bot's own untouched branch; refusing to overwrite it"
+      exit 1
+    fi
+  fi
 else
   if git ls-remote --exit-code --heads origin "refs/heads/${branch}" >/dev/null; then
     echo "::error::release branch already exists without an open PR; inspect before retrying"
@@ -60,9 +79,20 @@ head=$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json headRefOid --jq '.hea
 # release. Still require source_sha to be a real ancestor of current master
 # (a sane build off master history), and reject only a divergent/garbage source.
 cur_master="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/master" --jq '.object.sha')"
-if [[ "$cur_master" != "$source_sha" ]] && ! git merge-base --is-ancestor "$source_sha" "$cur_master" 2>/dev/null; then
-  echo "::error::source ${source_sha} is not in current master (${cur_master}) history; refusing"
-  exit 1
+if [[ "$cur_master" != "$source_sha" ]]; then
+  # cur_master comes fresh from the API; the local clone may predate it. Fetch it
+  # first (loudly) so a nonzero --is-ancestor genuinely means "not an ancestor"
+  # and not "Not a valid object name" misread as divergence.
+  git fetch origin "$cur_master" || { echo "::error::cannot fetch current master ${cur_master}"; exit 1; }
+  rc=0
+  git merge-base --is-ancestor "$source_sha" "$cur_master" || rc=$?
+  if [[ "$rc" == 1 ]]; then
+    echo "::error::source ${source_sha} is not in current master (${cur_master}) history; refusing"
+    exit 1
+  elif [[ "$rc" != 0 ]]; then
+    echo "::error::ancestry check failed (exit ${rc}) for ${source_sha} vs ${cur_master}"
+    exit 1
+  fi
 fi
 # Do not approve our own PR or bypass any review/check/signature requirement.
 if [[ "$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json autoMergeRequest --jq '.autoMergeRequest != null')" != true ]]; then
