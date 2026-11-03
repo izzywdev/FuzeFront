@@ -211,9 +211,9 @@ function LoginPage() {
       setCallbackNotice(buildAuthLabels(ti).mfaNotice ?? '')
       return
     }
+    let user: Awaited<ReturnType<typeof authAPI.getCurrentUser>>
     try {
-      const user = await authAPI.getCurrentUser()
-      setUser(user)
+      user = await authAPI.getCurrentUser()
     } catch (err) {
       console.error('Failed to hydrate user after sign-in:', err)
       // Step-up callers own a retryable state (the challenge is already consumed).
@@ -230,6 +230,9 @@ function LoginPage() {
     // longer allowlisted / dead session) is surfaced in place; it never
     // silently falls through to the FuzeFront dashboard, which would strand
     // the product's user mid-flow with no way back to where they started.
+    // The user is NOT published to the app context here: doing so flips
+    // `isAuthenticated`, and App unmounts this page for /dashboard before a
+    // handoff failure (or its retry) can be shown.
     if (brokerParams) {
       try {
         const { redirectUri } = await authAPI.brokerHandoff(brokerParams)
@@ -245,6 +248,8 @@ function LoginPage() {
       }
       return
     }
+
+    setUser(user)
 
     // Ordinary (non-broker) sign-in: honour the allowlisted deep-link stashes
     // (fuzepicker mention / signup-verify) set on page load, else the dashboard.

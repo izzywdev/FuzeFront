@@ -363,6 +363,9 @@ describe('LoginPage — MFA step-up', () => {
       expect(box.textContent).toContain('redirect_uri no longer allowed')
       expect(document.querySelector('[data-action="verify-mfa"]')).toBeNull()
       expect((document.querySelector('[data-action="retry-load-account"]') as HTMLButtonElement).disabled).toBe(false)
+      // Publishing the user would flip isAuthenticated and unmount this page for /dashboard.
+      const ctx = (sharedMock.useCurrentUser as ReturnType<typeof vi.fn>).mock.results[0].value
+      expect(ctx.setUser).not.toHaveBeenCalled()
     })
 
     it('Try again retries the handoff from the persisted session (never re-verifies) and redirects on success', async () => {
