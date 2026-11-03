@@ -639,10 +639,27 @@ billingService:
   # (2026-06-30, 142 commits behind) while enabled: true, i.e. prod ran a
   # month-old billing image. The anchor exists as of this change, so the next
   # release DOES rewrite this tag — do not hand-pin it.
+  #
+  # EXCEPTION — this bump to ffa47b570ce2 IS a deliberate hand-pin (2026-11-03).
+  # The automated bump could not run: release.yml's "Prepare and merge checked
+  # GitOps PR" step (scripts/publish-release-gitops.sh) has failed on every run
+  # since 2026-10-27, so NO service tag has shipped since — the whole platform
+  # sat on the 2026-10-25 images. For billing that was an INCIDENT: dbe338ab82c8
+  # predates #1752 (f0de17a, "bind /health before Kafka connect"), so it does
+  # `await producer.connect()` BEFORE binding /health. On a restart around
+  # 2026-10-30 with Kafka briefly unreachable the pod never became Ready ->
+  # CrashLoopBackOff -> the ingress returned HTTP 503 for the Stripe webhook at
+  # /api/v1/billing/webhooks/stripe (Stripe threatened to disable the endpoint
+  # 2026-11-08). ffa47b570ce2 is the billing image release run 40559384599 built
+  # and pushed from master ffa47b57 (which CONTAINS #1752) — its build step
+  # succeeded; only the GitOps-publish step failed. This pins billing to that
+  # known-good, health-first image. The broken release step is tracked
+  # separately (it is platform-wide, not billing-specific); once it runs again a
+  # newer SHA supersedes this pin, which is fine.
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-billing-service
-    tag: dbe338ab82c8
+    tag: ffa47b570ce2
   # Enable the checkout payment path for the Mendys datasets marketplace:
   # product-key allowlist + currency/amount bounds (BILLING_PRODUCT_KEYS,
   # BILLING_PAYMENT_CURRENCIES, BILLING_PAYMENT_MAX_TOTAL_CENTS).
