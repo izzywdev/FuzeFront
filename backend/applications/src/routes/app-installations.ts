@@ -44,7 +44,8 @@ import {
   IdentityError,
   RefIndexError,
 } from '@izzywdev/fuzefront-identity'
-import { isRefEnforceEnabled } from '../app-registry/flags'
+import { isRefEnforceEnabled, isEffectiveAccessEnabled } from '../app-registry/flags'
+import { getOwnedOrgIds } from '../app-registry/caller'
 import { KnexRefIndexRepository } from '../repositories/ref-index.repository'
 import { prefixDtoIds } from '../identity/serializer'
 import {
@@ -160,6 +161,26 @@ async function getMemberOrgIds(userId: string): Promise<string[]> {
     .where('status', 'active')
     .select('organization_id')
   return rows.map((r: any) => r.organization_id).filter(Boolean)
+}
+
+/**
+ * FFRNT-377 / S2 — widen a membership org-id set to the EFFECTIVE read set
+ * (memberships ∪ orgs the caller OWNS) when the effective-access flag is on.
+ * This MUST match the app-registry canRead/list rule so an app the caller can
+ * SEE in GET /apps is also loadable here — otherwise an org owner with no
+ * membership row gets a "visible yet uninstallable" 404 from the install paths
+ * while list()/canRead show the app. Flag OFF → unchanged (raw membership).
+ * Used ONLY for the loadVisibleApp VISIBILITY gate; the per-record install
+ * filters below stay membership-scoped so this never widens which installation
+ * ROWS a caller sees, only whether the app itself is visible.
+ */
+async function effectiveReadOrgIds(
+  userId: string,
+  memberOrgIds: string[]
+): Promise<string[]> {
+  if (!(await isEffectiveAccessEnabled({ userId }))) return memberOrgIds
+  const ownedOrgIds = await getOwnedOrgIds(userId)
+  return Array.from(new Set([...memberOrgIds, ...ownedOrgIds]))
 }
 
 /** The caller's role on one organization, or null when not an active member. */
@@ -333,7 +354,10 @@ router.get(
     try {
       const userId = req.user.id
       const memberOrgIds = await getMemberOrgIds(userId)
-      const app = await loadVisibleApp(req.params.id, memberOrgIds)
+      const app = await loadVisibleApp(
+        req.params.id,
+        await effectiveReadOrgIds(userId, memberOrgIds)
+      )
       if (!app) {
         return res
           .status(404)
@@ -417,7 +441,10 @@ router.post(
     try {
       const userId = req.user.id
       const memberOrgIds = await getMemberOrgIds(userId)
-      const app = await loadVisibleApp(req.params.id, memberOrgIds)
+      const app = await loadVisibleApp(
+        req.params.id,
+        await effectiveReadOrgIds(userId, memberOrgIds)
+      )
       if (!app) {
         return res
           .status(404)
@@ -658,7 +685,10 @@ router.delete(
     try {
       const userId = req.user.id
       const memberOrgIds = await getMemberOrgIds(userId)
-      const app = await loadVisibleApp(req.params.id, memberOrgIds)
+      const app = await loadVisibleApp(
+        req.params.id,
+        await effectiveReadOrgIds(userId, memberOrgIds)
+      )
       if (!app) {
         return res
           .status(404)

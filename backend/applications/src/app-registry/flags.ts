@@ -226,13 +226,25 @@ export function isMarketplacePublishingEnabled(ctx?: Partial<FlagContext>): Prom
 
 /**
  * FFRNT-377 / S2 — release flag shipped ON (owner directive): do registry
- * READS use effective access (memberships ∪ owned orgs, plus app-creator) in
- * place of raw membership? Default/fallback is TRUE — OFF is the kill-switch
- * back to the pre-S2 raw-membership path. See the FLAGS.EFFECTIVE_ACCESS doc.
+ * READS use effective access (memberships ∪ orgs the caller OWNS) in place of
+ * raw membership? Default/fallback is TRUE — OFF is the kill-switch back to the
+ * pre-S2 raw-membership path. See the FLAGS.EFFECTIVE_ACCESS doc.
+ *
+ * DELIBERATELY fails OPEN (true), unlike every other release flag in this
+ * module, which fail closed. That is safe here specifically BECAUSE the
+ * widening is bounded: the effective set is only ever `memberships ∪ orgs the
+ * CALLER owns`, so an outage that forces this ON cannot expose any app to a
+ * third party — at most it keeps an org owner able to read their OWN org's
+ * apps (the exact "owner sees nothing" bug this fixes). The kill-switch still
+ * works whenever the flag store is reachable; the only state it cannot reach is
+ * a store outage, during which the safe-and-correct behavior is "owners keep
+ * seeing their own orgs", not "owners suddenly see nothing". A classic
+ * over-exposure flag (one that could reveal another tenant's data) would fail
+ * closed; this one cannot over-expose, so it tracks the shipped-ON intent.
  */
 export async function isEffectiveAccessEnabled(ctx?: Partial<FlagContext>): Promise<boolean> {
   const client = resolveClient()
-  if (!client) return true // shipped ON: feature is normally on
+  if (!client) return true // shipped ON; bounded widening cannot over-expose (see doc)
   try {
     return await client.getBooleanValue(FLAGS.EFFECTIVE_ACCESS, true, buildContext(ctx))
   } catch {
