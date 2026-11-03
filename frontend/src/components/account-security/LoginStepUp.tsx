@@ -13,6 +13,11 @@ import { authError, buildAuthLabels, buildSignupLabels, type TFn } from '../../p
 /** Support contact for the step-up "no verification method" fail-closed state. */
 const SUPPORT_MAILTO = 'mailto:support@frontfuse.dev'
 
+function userMessageOf(err: unknown): string | undefined {
+  const message = (err as { userMessage?: unknown } | null)?.userMessage
+  return typeof message === 'string' && message ? message : undefined
+}
+
 export interface StepUpChallenge {
   challengeId: string
   factors?: { factorId: string; type: 'totp' | 'sms' | 'email' | 'webauthn' }[]
@@ -43,9 +48,12 @@ export function resolveStepUpVariant(compact: boolean): 'desktop' | 'mobile' {
  *  - `view` is the step-up UI to render in place of the sign-in panel, or null.
  */
 export function useLoginStepUp(
-  /** Persist the minted session and hydrate the user. REJECTS when hydration fails. */
+  /**
+   * Persist the minted session and finish sign-in (hydrate, then route or broker handoff).
+   * REJECTS when that fails; a rejection's `userMessage`, if any, is shown in the retry state.
+   */
   onSession: (session: { token: string; sessionId?: string }) => void | Promise<void>,
-  /** Hydrate again from the already-persisted session. Must never re-verify. */
+  /** Finish sign-in again from the already-persisted session. Must never re-verify. */
   onRetryHydrate: (session: { token: string; sessionId?: string }) => void | Promise<void>,
   t: TFn
 ): {
@@ -53,9 +61,9 @@ export function useLoginStepUp(
   view: ReactNode
 } {
   const [challenge, setChallenge] = useState<StepUpChallenge | null>(null)
-  // Set when verification SUCCEEDED but loading the account failed afterwards.
+  // Set when verification SUCCEEDED but finishing sign-in (account load / broker handoff) failed.
   const [hydrate, setHydrate] = useState<
-    { session: { token: string; sessionId?: string }; retrying: boolean } | null
+    { session: { token: string; sessionId?: string }; retrying: boolean; message?: string } | null
   >(null)
   const retrying = useRef(false)
   const variant = resolveStepUpVariant(isCompactViewport())
@@ -73,11 +81,11 @@ export function useLoginStepUp(
     const retry = async () => {
       if (retrying.current) return
       retrying.current = true
-      setHydrate({ session: hydrate.session, retrying: true })
+      setHydrate({ ...hydrate, retrying: true })
       try {
         await onRetryHydrate(hydrate.session)
-      } catch {
-        setHydrate({ session: hydrate.session, retrying: false })
+      } catch (err) {
+        setHydrate({ session: hydrate.session, retrying: false, message: userMessageOf(err) })
       } finally {
         retrying.current = false
       }
@@ -108,7 +116,7 @@ export function useLoginStepUp(
               </>
             }
           >
-            {authError(t, 'profileLoad')}
+            {hydrate.message ?? authError(t, 'profileLoad')}
           </StatusCallout>
         </div>
       ),
@@ -129,8 +137,8 @@ export function useLoginStepUp(
           void (async () => {
             try {
               await onSession(session)
-            } catch {
-              setHydrate({ session, retrying: false })
+            } catch (err) {
+              setHydrate({ session, retrying: false, message: userMessageOf(err) })
             }
           })()
         }}

@@ -325,4 +325,53 @@ describe('LoginPage — MFA step-up', () => {
       expect(document.querySelector('[data-component="mfa-challenge"]')).toBeNull()
     })
   })
+
+  describe('broker sign-in: verified, but the handoff fails', () => {
+    const REDIRECT = 'https://datasets.example.com/auth/callback'
+    afterEach(() => vi.unstubAllGlobals())
+
+    const reach = async (brokerHandoff: ReturnType<typeof vi.fn>) => {
+      const search = `?client=mendys-datasets&redirect_uri=${encodeURIComponent(REDIRECT)}`
+      const loc = { search, pathname: '/login', href: `https://app.fuzefront.com/login${search}`, origin: 'https://app.fuzefront.com', assign: vi.fn() }
+      Object.defineProperty(global, 'location', { value: loc, writable: true, configurable: true })
+      vi.spyOn(authAPI, 'getBrokerClient').mockResolvedValue(null)
+      vi.spyOn(authAPI, 'brokerHandoff').mockImplementation(brokerHandoff as never)
+      vi.spyOn(authAPI, 'completeMfaSession').mockImplementation(() => {})
+      vi.spyOn(authAPI, 'getCurrentUser').mockResolvedValue({ id: 'u1' } as never)
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      const fetchMock = vi.fn(async () =>
+        new Response(JSON.stringify({ token: 'tok_b', sessionId: 'sess_b' }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      )
+      vi.stubGlobal('fetch', fetchMock)
+      const user = userEvent.setup()
+      render(<LoginPage />)
+      const otp = await waitFor(() => {
+        const el = document.querySelector('[data-component="otp-input"] input')
+        if (!el) throw new Error('missing otp input')
+        return el
+      })
+      await user.click(otp)
+      await user.keyboard('123456')
+      await user.click(document.querySelector('[data-action="verify-mfa"]')!)
+      await waitFor(() => expect(document.querySelector('[data-state="signed-in-load-failed"]')).toBeTruthy())
+      return { user, fetchMock, loc }
+    }
+
+    it('leaves the verifying state for a retryable state that shows the handoff error', async () => {
+      await reach(vi.fn().mockRejectedValue({ response: { data: { error: 'redirect_uri no longer allowed' } } }))
+      const box = document.querySelector('[data-state="signed-in-load-failed"]')!
+      expect(box.textContent).toContain('redirect_uri no longer allowed')
+      expect(document.querySelector('[data-action="verify-mfa"]')).toBeNull()
+      expect((document.querySelector('[data-action="retry-load-account"]') as HTMLButtonElement).disabled).toBe(false)
+    })
+
+    it('Try again retries the handoff from the persisted session (never re-verifies) and redirects on success', async () => {
+      const brokerHandoff = vi.fn().mockRejectedValueOnce(new Error('503')).mockResolvedValueOnce({ redirectUri: `${REDIRECT}?code=c1` })
+      const { user, fetchMock, loc } = await reach(brokerHandoff)
+      await user.click(document.querySelector('[data-action="retry-load-account"]')!)
+      await waitFor(() => expect(loc.href).toBe(`${REDIRECT}?code=c1`))
+      expect(brokerHandoff).toHaveBeenCalledTimes(2)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    })
+  })
 })

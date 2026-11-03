@@ -182,8 +182,8 @@ function LoginPage() {
   const [callbackError, setCallbackError] = useState('')
   const [callbackNotice, setCallbackNotice] = useState('')
   // MFA step-up (FFRNT-141/362) behind default-OFF flags; flag OFF = unchanged.
-  // The verify has already consumed the challenge, so a hydrate failure must be retried by
-  // re-running ONLY getCurrentUser() (the session is already persisted) — never by re-verifying.
+  // The verify has already consumed the challenge, so a hydrate or broker-handoff failure must be
+  // retried from the already-persisted session — never by re-verifying.
   const finishStepUp = (session: { token: string; sessionId?: string }) =>
     completeSession({ status: 'authenticated', ...session } as unknown as SessionResult, { propagateHydrateError: true })
   const stepUp = useLoginStepUp(
@@ -236,10 +236,12 @@ function LoginPage() {
         window.location.href = redirectUri
       } catch (err: any) {
         console.error('Broker handoff failed:', err)
-        setBrokerError(
+        const message =
           err?.response?.data?.error ||
-            'Signed in, but could not hand off to the requesting application. Please try again.'
-        )
+          'Signed in, but could not hand off to the requesting application. Please try again.'
+        // Step-up callers own the retry (the challenge is consumed): hand them the message.
+        if (opts.propagateHydrateError) throw Object.assign(new Error(message), { userMessage: message })
+        setBrokerError(message)
       }
       return
     }
