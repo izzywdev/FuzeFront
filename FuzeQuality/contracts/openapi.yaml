@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.84.18
+  version: 0.84.25
   license:
     name: UNLICENSED
 servers:
@@ -360,6 +360,10 @@ paths:
         - name: revision
           in: query
           schema: { type: string, minLength: 1, maxLength: 500 }
+        - name: targetId
+          in: query
+          description: Exact revision-grounded route, component, or evidence artifact identifier referenced by the flow.
+          schema: { type: string, minLength: 1, maxLength: 500 }
         - name: model
           in: query
           description: Exact FuzeInfra LiteLLM model identity stored with the proposal.
@@ -540,7 +544,7 @@ paths:
                 status: { type: string, enum: [queued, running, complete, failed] }
                 startedAt: { type: string, format: date-time }
                 finishedAt: { type: string, format: date-time }
-                errorCode: { type: string, enum: [INTELLIGENCE_UNAVAILABLE, INTELLIGENCE_TIMEOUT] }
+                errorCode: { type: string, enum: [INTELLIGENCE_UNAVAILABLE, INTELLIGENCE_TIMEOUT, INTELLIGENCE_INVALID_RESPONSE] }
                 counts:
                   type: object
                   additionalProperties: false
@@ -603,6 +607,10 @@ paths:
           in: query
           description: Exact case-insensitive policy or gate subject retained with the finding.
           schema: { type: string, minLength: 1, maxLength: 200 }
+        - name: sourcePath
+          in: query
+          description: Exact repository-relative policy or gate source path retained with the finding.
+          schema: { type: string, minLength: 1, maxLength: 1000 }
         - name: policyArtifactId
           in: query
           description: Exact policy artifact or logical identifier participating in the relationship.
@@ -704,6 +712,10 @@ paths:
           in: query
           description: Exact case-insensitive policy or gate subject retained with the finding.
           schema: { type: string, minLength: 1, maxLength: 200 }
+        - name: sourcePath
+          in: query
+          description: Exact repository-relative policy or gate source path retained with the finding.
+          schema: { type: string, minLength: 1, maxLength: 1000 }
         - name: policyArtifactId
           in: query
           description: Exact policy artifact or logical identifier participating in the relationship.
@@ -1530,8 +1542,8 @@ components:
     ExecutionEvidenceRequirement:
       name: evidenceRequirement
       in: query
-      description: Select executions missing evidence required for a reviewed quality claim. Invalid URL finds retained artifact links that are malformed or do not use HTTPS. GitHub run provenance requires the head repository, normalized workflow path, and HTTPS provider run URL. Policy–gate outcome requires an explicit retained pair or an unambiguous legacy one-policy/one-gate association. Performance thresholds apply only to load and stress executions. Terminal timing requires both start and completion timestamps for a non-running execution.
-      schema: { type: string, enum: [evidence-url-invalid, github-run-provenance-missing, policy-gate-outcome-missing, post-production-video-missing, performance-threshold-missing, terminal-timing-missing] }
+      description: Select executions missing evidence required for a reviewed quality claim. Invalid URL finds retained artifact links that are malformed or do not use HTTPS. Provider collection failure selects any retained artifact-discovery failure, independent of its normalized error code. GitHub run provenance requires the head repository, normalized workflow path, and HTTPS provider run URL. Attempt provenance selects runs whose provider artifacts were withheld because they could not be proven to belong to the exact retry attempt. Policy–gate outcome requires an explicit retained pair or an unambiguous legacy one-policy/one-gate association. Performance thresholds apply only to load and stress executions. Terminal timing requires both start and completion timestamps for a non-running execution.
+      schema: { type: string, enum: [evidence-url-invalid, provider-collection-failure, github-run-provenance-missing, attempt-provenance-unverified, policy-gate-outcome-missing, post-production-video-missing, performance-threshold-missing, terminal-timing-missing] }
     ExecutionThresholdOutcome:
       name: thresholdOutcome
       in: query
@@ -1746,7 +1758,7 @@ components:
             status: { type: string, enum: [queued, running, complete, failed] }
             startedAt: { type: string, format: date-time }
             finishedAt: { type: string, format: date-time }
-            errorCode: { type: string, enum: [INTELLIGENCE_UNAVAILABLE, INTELLIGENCE_TIMEOUT] }
+            errorCode: { type: string, enum: [INTELLIGENCE_UNAVAILABLE, INTELLIGENCE_TIMEOUT, INTELLIGENCE_INVALID_RESPONSE] }
             counts:
               type: object
               additionalProperties: false
@@ -2311,7 +2323,7 @@ components:
     ExecutionOutcomeTrend:
       type: object
       additionalProperties: false
-      required: [date, total, passed, failed, cancelled, running, passRate, durationSampleCount, averageDurationMs, maximumDurationMs, retryAttemptCount, successfulRetryCount, recoveredRunCount, evidenceCompleteCount, evidencePartialCount, evidenceUnavailableCount, evidenceNotCollectedCount, invalidEvidenceUrlCount, githubRunProvenanceMissingCount, postProductionVideoMissingCount, terminalTimingMissingCount, gateEvaluationCount, gatePassedCount, gateFailedCount, gateCancelledCount, gateRunningCount, gateUnevaluatedExecutionCount, thresholdEvaluationCount, thresholdPassedCount, thresholdFailedCount, performanceExecutionWithoutThresholdCount]
+      required: [date, total, passed, failed, cancelled, running, passRate, durationSampleCount, averageDurationMs, maximumDurationMs, retryAttemptCount, successfulRetryCount, recoveredRunCount, evidenceCompleteCount, evidencePartialCount, evidenceUnavailableCount, evidenceNotCollectedCount, evidenceCollectionFailureCount, invalidEvidenceUrlCount, githubRunProvenanceMissingCount, attemptProvenanceUnverifiedCount, postProductionVideoMissingCount, terminalTimingMissingCount, gateEvaluationCount, gatePassedCount, gateFailedCount, gateCancelledCount, gateRunningCount, gateUnevaluatedExecutionCount, thresholdEvaluationCount, thresholdPassedCount, thresholdFailedCount, performanceExecutionWithoutThresholdCount]
       properties:
         date: { type: string, format: date }
         total:
@@ -2356,6 +2368,10 @@ components:
           type: integer
           minimum: 0
           description: Executions with no retained provider evidence collection attempt.
+        evidenceCollectionFailureCount:
+          type: integer
+          minimum: 0
+          description: Provider evidence collections that retained a normalized failure code.
         invalidEvidenceUrlCount:
           type: integer
           minimum: 0
@@ -2364,6 +2380,10 @@ components:
           type: integer
           minimum: 0
           description: GitHub Actions executions missing repository, workflow, or safe run URL provenance.
+        attemptProvenanceUnverifiedCount:
+          type: integer
+          minimum: 0
+          description: Retry attempts whose exact provider-attempt provenance could not be verified.
         postProductionVideoMissingCount:
           type: integer
           minimum: 0

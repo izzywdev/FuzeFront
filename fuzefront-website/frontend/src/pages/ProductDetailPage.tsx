@@ -5,7 +5,7 @@ import {
   Layers, Shield, Server, ClipboardList, Palette, Bot,
   Key, MessageSquare, CheckCircle2, Rocket, ArrowRight, ArrowLeft
 } from 'lucide-react'
-import { ResponsiveGrid, Wrap, Text, Button } from '@fuzefront/design-system'
+import { ResponsiveGrid, Wrap, Text, Button, IconTile, PageSection, Stack, IconListItem } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface ProductData {
@@ -290,9 +290,9 @@ export const ProductDetailPage: React.FC = () => {
               <ArrowLeft size={14} /> All products
             </Link>
 
-            <div className="flex items-center gap-4 mb-6">
+            <Stack gap="md" mb="lg">
               <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center">
-                <Icon size={30} className="text-white" />
+                <IconTile tone="inverse" variant="plain"><Icon size={30} /></IconTile>
               </div>
               <div>
                 <h1 className="text-3xl sm:text-4xl font-heading font-extrabold text-white">
@@ -300,7 +300,7 @@ export const ProductDetailPage: React.FC = () => {
                 </h1>
                 <p className="text-white/90 text-lg mt-1">{product.tagline}</p>
               </div>
-            </div>
+            </Stack>
 
             <p className="text-white text-lg leading-relaxed max-w-2xl mb-8">
               {product.heroDescription}
@@ -327,7 +327,7 @@ export const ProductDetailPage: React.FC = () => {
       </section>
 
       {/* Features */}
-      <section className="py-20 bg-white">
+      <PageSection spacing="md">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
           <h2 className="text-2xl sm:text-3xl font-heading font-bold text-gray-900 mb-12 text-center">
             Key capabilities
@@ -342,7 +342,7 @@ export const ProductDetailPage: React.FC = () => {
                 className="flex gap-4"
               >
                 <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${product.gradient} flex-shrink-0 flex items-center justify-center shadow-sm`}>
-                  <CheckCircle2 size={16} className="text-white" />
+                  <IconTile tone="inverse" variant="plain"><CheckCircle2 size={16} /></IconTile>
                 </div>
                 <div>
                   <h3 className="text-base font-semibold text-gray-900 mb-1">{feature.title}</h3>
@@ -352,7 +352,7 @@ export const ProductDetailPage: React.FC = () => {
             ))}
           </div>
         </div>
-      </section>
+      </PageSection>
 
       {/* Use cases */}
       <section className="py-16 bg-secondary-50">
@@ -362,10 +362,16 @@ export const ProductDetailPage: React.FC = () => {
           </h2>
           <ResponsiveGrid columns={2} gap="md">
             {product.useCases.map((useCase) => (
-              <div key={useCase} className="flex items-start gap-3 bg-white rounded-xl border border-gray-100 p-5">
-                <CheckCircle2 size={18} className="text-success-500 flex-shrink-0 mt-0.5" />
+              <IconListItem
+                key={useCase}
+                as="div"
+                icon={CheckCircle2}
+                size={18}
+                gap="md"
+                className="bg-white rounded-xl border border-gray-100 p-5"
+              >
                 <p className="text-sm text-gray-700 leading-relaxed">{useCase}</p>
-              </div>
+              </IconListItem>
             ))}
           </ResponsiveGrid>
         </div>

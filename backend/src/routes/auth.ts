@@ -4,7 +4,7 @@ import rateLimit from 'express-rate-limit'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { v4 as uuidv4 } from 'uuid'
-import { mintId, toUuid } from '@izzywdev/fuzefront-identity'
+import { mintId, parseId, toUuid } from '@izzywdev/fuzefront-identity'
 import { db } from '../config/database'
 import { authenticateToken } from '../middleware/auth'
 import { User } from '../types/shared'
@@ -21,7 +21,6 @@ import { getRequestPortalsEnabled } from '../utils/portalFlag'
 import { getRequestPortalScopingEnabled } from '../utils/identityFlag'
 import { checkOrganizationPermission } from '../utils/permit/permission-check'
 import { ROOT_ORG_ID } from '../migrations/015_seed_root_platform_organization'
-import { isPrefixedIdsEnabled } from '../identity/flags'
 import { prefixDtoIds, toWireId } from '../identity/serializer'
 
 const FRONTEND_BASE = (process.env.FRONTEND_URL || 'http://fuzefront.dev.local').replace(/\/$/, '')
@@ -548,12 +547,10 @@ router.post('/login', async (req, res) => {
     // Self-heal provisioning in the background (does not block the response).
     selfHealProvisioningOnLogin(user.id)
 
-    const flagCtx = { userId: user.id }
-    const prefixed = await isPrefixedIdsEnabled(flagCtx)
     res.json({
       token,
-      user: prefixDtoIds(user, prefixed, { id: 'user', defaultAppId: 'app' }),
-      sessionId: toWireId('session', sessionId, prefixed),
+      user: prefixDtoIds(user, { id: 'user', defaultAppId: 'app' }),
+      sessionId: toWireId('session', sessionId),
     })
   } catch (error) {
     console.error(`💥 [${requestId}] Login error:`, {
@@ -615,10 +612,8 @@ const getUserRateLimiter = rateLimit({
 
 // GET /auth/user - Get current user
 router.get('/user', getUserRateLimiter, authenticateToken, async (req: any, res) => {
-  const flagCtx = { userId: req.user?.id }
-  const prefixed = await isPrefixedIdsEnabled(flagCtx)
   res.json({
-    user: prefixDtoIds(req.user, prefixed, { id: 'user', defaultAppId: 'app', portalId: 'portal', homePortalId: 'portal' }),
+    user: prefixDtoIds(req.user, { id: 'user', defaultAppId: 'app', portalId: 'portal', homePortalId: 'portal' }),
   })
 })
 
@@ -669,6 +664,40 @@ router.post('/logout', authenticateToken, async (req: any, res) => {
     res.json({ message: 'Logged out successfully' })
   } catch (error) {
     res.status(500).json({ error: 'Logout failed' })
+  }
+})
+
+// Authenticated session mutation — throttle to block brute-force/abuse of the
+// membership check while leaving normal user-driven context switches unaffected.
+const sessionActiveOrgRateLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Try again later.' },
+})
+
+// Persist the user-selected context in the authenticated server session so
+// connector delegation never trusts a browser-supplied organization id.
+router.patch('/session/active-organization', sessionActiveOrgRateLimiter, authenticateToken, async (req: any, res) => {
+  const supplied = req.body?.organizationId
+  if (supplied !== null && typeof supplied !== 'string') {
+    return res.status(400).json({ error: 'organizationId must be a string or null' })
+  }
+  if (!req.user?.sessionId) return res.status(401).json({ error: 'Session context is required' })
+  try {
+    const organizationId = supplied === null ? null : toUuid(parseId('organization', supplied))
+    if (organizationId && !await isActiveOrgMember(req.user.id, organizationId)) {
+      return res.status(403).json({ error: 'Active organization membership required' })
+    }
+    const updated = await db('sessions')
+      .where({ id: req.user.sessionId, user_id: req.user.id })
+      .where('expires_at', '>', new Date())
+      .update({ active_organization_id: organizationId })
+    if (updated !== 1) return res.status(401).json({ error: 'Session context is unavailable' })
+    return res.json({ activeOrganizationId: supplied })
+  } catch {
+    return res.status(400).json({ error: 'A valid organization identifier is required' })
   }
 })
 
@@ -887,13 +916,11 @@ router.post('/oidc/password', passwordLoginRateLimiter, async (req, res) => {
 
     selfHealProvisioningOnLogin(user.id)
 
-    const flagCtx = { userId: user.id }
-    const prefixed = await isPrefixedIdsEnabled(flagCtx)
     console.log('🎉 Authentik password login successful', { requestId, userId: user.id })
     return res.json({
       token,
-      user: prefixDtoIds(user, prefixed, { id: 'user', defaultAppId: 'app' }),
-      sessionId: toWireId('session', sessionId, prefixed),
+      user: prefixDtoIds(user, { id: 'user', defaultAppId: 'app' }),
+      sessionId: toWireId('session', sessionId),
     })
   } catch (error) {
     if (error instanceof InvalidCredentialsError) {
@@ -1053,8 +1080,7 @@ router.post('/token-exchange', async (req, res) => {
     return res.status(401).json({ error: 'invalid or expired code' })
   }
   pendingCodes.delete(code)
-  const prefixed = await isPrefixedIdsEnabled()
-  return res.json({ token: pending.token, sessionId: toWireId('session', pending.sessionId, prefixed) })
+  return res.json({ token: pending.token, sessionId: toWireId('session', pending.sessionId) })
 })
 
 /**

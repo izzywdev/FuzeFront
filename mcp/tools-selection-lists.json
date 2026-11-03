@@ -2,11 +2,11 @@
   "product": "fuzefront",
   "generatedFrom": "services/selection-list-service/openapi.yaml",
   "protocolVersion": "2025-06-18",
-  "note": "Static tool manifest for the selection-list-mcp gateway. The gateway (packages/mcp-gateway) derives these at runtime from the OpenAPI spec (services/selection-list-service/openapi.yaml) + deploy/helm/fuzefront/files/mcp-tools-selection-lists.overrides.yaml; this file is the checked-in record that CI and the mcp-maintainer agent use to detect drift. Regenerate by running the gateway locally and capturing GET /tools.json, or update manually when the spec changes. `mutates` is the load-bearing field — a wrong value is a safety defect, not a cosmetic one. This gateway ships dark (selectionListService.enabled AND selectionListsMcp.enabled both required). `resolveSelectionListItems` is POST-but-read-only by the spec's explicit design decision; mutates stays false.",
+  "note": "Static tool manifest for the selection-list-mcp gateway. The gateway (packages/mcp-gateway) derives these at runtime from the OpenAPI spec (services/selection-list-service/openapi.yaml) + deploy/helm/fuzefront/files/mcp-tools-selection-lists.overrides.yaml; this file is the checked-in record that CI and the mcp-maintainer agent use to detect drift. Regenerate by running the gateway locally and capturing GET /tools.json, or update manually when the spec changes. `mutates` is the load-bearing field — a wrong value is a safety defect, not a cosmetic one. This gateway ships dark (selectionListService.enabled AND selectionListsMcp.enabled both required). Override keys in the overrides file must be exact operationIds (forkSelectionList is a reversible write); the gateway refuses to boot on an unknown key and packages/mcp-gateway/test/overrides-conformance.test.ts asserts tool names + mutates against this file. `resolveSelectionListItems` is POST-but-read-only by the spec's explicit design decision; mutates stays false.",
   "tools": [
     {
       "name": "listSelectionLists",
-      "description": "[READ-ONLY] List selection lists in the caller's organization (GET /v1/selection-lists). Cursor-paginated. With include_shared=true also returns shared org/platform lists readable through visibility.",
+      "description": "[READ-ONLY] List selection lists in the caller's organization (GET /v1/selection-lists). Cursor-paginated; pages may be shorter than limit — even empty — while hasMore is true (rows the caller cannot read are filtered out after the page is cut). Always follow nextCursor until hasMore is false; an empty page does NOT mean no results. With include_shared=true also returns shared org/platform lists readable through visibility.",
       "mutates": false,
       "inputSchema": {
         "type": "object",
@@ -225,7 +225,7 @@
     },
     {
       "name": "forkSelectionList",
-      "description": "[WRITE] Fork a common list into the caller's organization (POST /v1/selection-lists/{listId}/fork). Copies a platform list as an editable list in the caller's org, keeping the same key. Idempotent per (org, source) — returns the existing fork on a second call. Subject to org_lists, user_lists and list_items quotas.",
+      "description": "[WRITE] Fork a common list into the caller's organization (POST /v1/selection-lists/{listId}/fork). Copies a platform list as an editable list in the caller's org, keeping the same key. Idempotent per (org, source) — returns the existing fork on a second call. Subject to org_lists, user_lists and list_items quotas. Reversible by archiving the fork (reverts the org to the common list); purging it is the separate irreversible DELETE.",
       "mutates": true,
       "inputSchema": {
         "type": "object",

@@ -46,7 +46,12 @@ export function requirePlatformPermission(resource: string, action: string) {
         return response.status(401).json({ error: 'Authentication required', code: 'IDENTITY_INVALID' })
       }
       const body = await sessionResponse.json() as { identity?: Partial<Identity> }
-      if (!body.identity?.userId || !body.identity.tenantId) return response.status(403).json({ error: 'A tenant-scoped identity is required', code: 'TENANT_UNRESOLVED' })
+      if (typeof body.identity?.userId !== 'string' || !body.identity.userId.trim() ||
+          typeof body.identity.tenantId !== 'string' || !body.identity.tenantId.trim()) return response.status(403).json({ error: 'A tenant-scoped identity is required', code: 'TENANT_UNRESOLVED' })
+      if (body.identity.roles !== undefined &&
+          (!Array.isArray(body.identity.roles) || body.identity.roles.some(role => typeof role !== 'string'))) {
+        return response.status(403).json({ error: 'A valid platform identity is required', code: 'IDENTITY_MALFORMED' })
+      }
       const identity = body.identity as PlatformIdentity
       // A selected workspace is part of the authorization boundary. Even
       // though Security proves membership, do not silently fall back to a

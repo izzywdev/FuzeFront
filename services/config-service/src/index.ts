@@ -6,15 +6,35 @@ import { createPool, runMigrations } from './db';
 import { startLifecycleConsumers, LifecycleConsumers } from './events/consumer';
 import { createConfigChangePublisher } from './events/publisher';
 
-// governance/identifier-standard.md §8 ("Migration"): portal/organization/user
-// ids are spine types minted elsewhere in the family that have NOT yet been
-// backfilled to the prefixed TypeID form everywhere they are written (see the
-// `--source` backstop's ~41-site backlog). config_values.scope_id references
-// exactly those three types, so this widens assertRef()/parseId() to accept
-// today's bare-UUID reality rather than rejecting every real scope reference
-// the moment FFRNT-157/158 wire this scaffold to HTTP. Narrow this (drop the
-// widening) once the family-wide `fuzefront.identity.prefixed-ids` rollout
-// backfills portal/organization/user.
+// Dual-accept window for portal/organization/user — DELIBERATELY STILL OPEN
+// (FFRNT-185 follow-up; governance/identifier-standard.md §8). Do not "tidy" it
+// closed: the family-wide removal criterion ("TypeID is the sole format") is
+// blocked here, and this comment is the tracked blocker.
+//
+// Why it cannot be emptied today: config-service's stored ids are fine
+// (config_values.scope_id is a native uuid, rendered back to TypeID on the wire
+// by fromUuid), but one INPUT path is not. A write's ancestor chain is built from
+// the caller's JWT claims (routes/config.write.ts -> buildWriteChain, which adds
+// `principal.portalId` and, for user-scope writes, `principal.orgId`), and
+// ValueRepository runs assertRef(<type>, scopeId) on every chain entry. Those
+// claims are minted by the security service as BARE database uuids:
+//   - `orgId`  = organizations.id via canonicalSessionTenant()
+//                (backend/security/src/services/orgSessionToken.ts)
+//   - `portalId` is read as-is from the claim (src/middleware/auth.ts)
+// With the window closed, assertRef throws LEGACY_NOT_PERMITTED for those bare
+// claims and every user-scope write by an org-scoped session fails. The
+// prefixed-ids flag does not help: it only changes API *response* bodies, not
+// token claims. `user` stays listed because the JWT `userId` claim is likewise a
+// bare users.id and a client may echo it as a user-scope id; that is not
+// provably unused, so it is not narrowed here.
+//
+// To close it, one of these must land first (then empty this set and drop the
+// matching legacyUuidTypes in tests/routes/*.test.ts, tests/repositories/*.test.ts):
+//   (a) the security service mints orgId/userId/portalId claims in wire form, or
+//   (b) config-service canonicalises principal claims to wire form at its auth
+//       boundary (src/middleware/auth.ts) before they reach buildWriteChain.
+// Client-supplied scope ids (body/query) are TypeID once the shell consumes the
+// prefixed responses; only the JWT-claim path is outstanding.
 configureIdentity({
   legacyUuidTypes: new Set(['portal', 'organization', 'user']),
 });

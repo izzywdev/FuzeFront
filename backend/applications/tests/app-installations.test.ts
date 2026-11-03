@@ -34,6 +34,7 @@ import express from 'express'
 import rateLimit from 'express-rate-limit'
 import { v4 as uuidv4 } from 'uuid'
 import { mintId, toUuid } from '@izzywdev/fuzefront-identity'
+import { toWireId } from '../src/identity/serializer'
 
 // Raise the rate-limit ceilings BEFORE importing the router — it reads them at
 // module load. The limiter is deliberately NOT disabled: a control that switches
@@ -102,7 +103,7 @@ const OUTSIDER = {
 }
 
 const _orgTypeId = mintId('organization')
-const ORG_ID = toUuid(_orgTypeId) // bare UUID — DB inserts and response checks
+const ORG_ID = toUuid(_orgTypeId) // bare UUID — DB inserts
 const ORG_ID_WIRE = _orgTypeId // TypeID — HTTP request bodies
 
 const _otherOrgTypeId = mintId('organization')
@@ -309,10 +310,10 @@ describe('app installations', () => {
 
       expect(res.status).toBe(201)
       expect(res.body.installation).toMatchObject({
-        appId: BOTH_APP_ID,
+        appId: toWireId('app', BOTH_APP_ID),
         scope: 'personal',
         mode: 'self',
-        userId: OWNER.id,
+        userId: toWireId('user', OWNER.id),
         organizationId: null,
         status: 'active',
       })
@@ -362,7 +363,7 @@ describe('app installations', () => {
       expect(personal.body.installation).toMatchObject({
         scope: 'personal',
         mode: 'self',
-        userId: OWNER.id,
+        userId: toWireId('user', OWNER.id),
       })
 
       const selfOnly = await request(app)
@@ -385,7 +386,7 @@ describe('app installations', () => {
         scope: 'organization',
         mode: 'everyone',
         userId: null,
-        organizationId: ORG_ID,
+        organizationId: ORG_ID_WIRE,
       })
     })
 
@@ -416,8 +417,8 @@ describe('app installations', () => {
       expect(res.body.installation).toMatchObject({
         scope: 'organization',
         mode: 'self',
-        userId: OWNER.id,
-        organizationId: ORG_ID,
+        userId: toWireId('user', OWNER.id),
+        organizationId: ORG_ID_WIRE,
       })
     })
 
@@ -553,8 +554,8 @@ describe('app installations', () => {
 
       expect(res.status).toBe(200)
       const appIds = res.body.map((r: any) => r.appId)
-      expect(appIds).toContain(ORG_APP_ID)
-      expect(appIds).not.toContain(BOTH_APP_ID)
+      expect(appIds).toContain(toWireId('app', ORG_APP_ID))
+      expect(appIds).not.toContain(toWireId('app', BOTH_APP_ID))
     })
 
     it("does not leak another org's installs when the caller is not a member", async () => {

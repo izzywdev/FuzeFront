@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Publish only a normally checked PR; successful return requires a real merge.
+# Publish a normally checked GitOps PR and hand the merge to GitHub's persistent
+# auto-merge queue. Image builds are bounded; independent reviews are not.
 set -euo pipefail
 
 file=${1:?values file required}
@@ -9,10 +10,13 @@ source_sha=${3:?source commit required}
 [[ "$file" == deploy/helm/fuzefront/values-prod.yaml ]] || exit 1
 [[ "$source_sha" =~ ^[0-9a-f]{40}$ && "$tag" == "${source_sha:0:12}" ]] || exit 1
 branch="release/gitops-bump-${tag}"
-timeout=${GITOPS_MERGE_TIMEOUT_SECONDS:-1800}
-interval=${GITOPS_POLL_SECONDS:-10}
-[[ "$timeout" =~ ^[0-9]+$ && "$interval" =~ ^[1-9][0-9]*$ ]] || exit 1
 expected_blob=$(git hash-object "$file")
+
+set_output() {
+  if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+    printf '%s=%s\n' "$1" "$2" >> "$GITHUB_OUTPUT"
+  fi
+}
 
 pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --base master --head "$branch" \
   --state open --json number --jq '.[0].number // empty')
@@ -57,33 +61,11 @@ head=$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json headRefOid --jq '.hea
 if [[ "$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json autoMergeRequest --jq '.autoMergeRequest != null')" != true ]]; then
   gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" --auto --squash --match-head-commit "$head"
 fi
-deadline=$((SECONDS + timeout))
-while :; do
-  state=$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json state --jq '.state')
-  case "$state" in
-    MERGED)
-      echo "GitOps PR #${pr} merged; production verification is still required"
-      exit 0
-      ;;
-    OPEN) ;;
-    *) echo "::error::release PR is ${state}, not merged"; exit 1 ;;
-  esac
-  if [[ "$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json headRefOid --jq '.headRefOid')" != "$head" ]]; then
-    gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" --disable-auto
-    echo "::error::release PR head changed; auto-merge disabled pending inspection"
-    exit 1
-  fi
-  current_master=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/master" --jq '.object.sha')
-  if [[ "$current_master" != "$source_sha" ]]; then
-    gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" --disable-auto
-    echo "::error::source advanced while waiting; auto-merge disabled, rebuild current master"
-    exit 1
-  fi
-  if (( SECONDS >= deadline )); then
-    # A late unattended merge must not occur after verification was abandoned.
-    gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" --disable-auto
-    echo "::error::GitOps PR #${pr} is still pending required checks/review; no deployment claimed"
-    exit 1
-  fi
-  sleep "$interval"
-done
+
+# Tags are immutable and this PR changes only reviewed deployment values. A
+# later master commit is a new candidate, not evidence this built candidate is
+# unsafe. Disabling auto-merge here created an endless build/review/stale loop.
+# The closed-PR workflow is the merge receipt and dispatches verification.
+set_output gitops_pr "$pr"
+set_output merged false
+echo "GitOps PR #${pr} is queued for normal checks and independent approval; post-deploy verification runs after it merges"

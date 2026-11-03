@@ -1,13 +1,13 @@
 import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
-import { Center, Container } from '@fuzefront/design-system'
+import { Center, Container, GradientText, PageShell } from '@fuzefront/design-system'
 
 export const BlogPage: React.FC = () => {
   const [heroRef, heroInView] = useInView({ triggerOnce: true })
 
   return (
-    <div className="bg-white pt-16">
+    <PageShell>
       <section ref={heroRef} className="py-24 bg-gradient-to-br from-primary-50 to-secondary-50">
         <Container size="7xl">
           <Center
@@ -17,7 +17,7 @@ export const BlogPage: React.FC = () => {
             transition={{ duration: 0.8 }}
           >
             <h1 className="text-4xl sm:text-5xl font-bold text-gray-900 mb-6">
-              <span className="gradient-text">Blog</span> & Insights
+              <GradientText gradient="var(--primary-gradient)">Blog</GradientText> & Insights
             </h1>
             <p className="text-xl text-gray-600 max-w-2xl mx-auto">
               Stay updated with the latest in SaaS development, best practices, and FuzeFront updates.
@@ -39,6 +39,6 @@ export const BlogPage: React.FC = () => {
           </Center>
         </Container>
       </section>
-    </div>
+    </PageShell>
   )
 }

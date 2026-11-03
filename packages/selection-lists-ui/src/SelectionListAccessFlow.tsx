@@ -6,6 +6,9 @@
  */
 import React, { useState, useEffect, useCallback, useRef, useId } from 'react'
 import { useParams } from 'react-router-dom'
+import { CommonAccessGuard } from './shared-lists/fork'
+import { useSharedLists } from './shared-lists/core'
+import { PanelSkeleton } from './shared-lists/browse/PanelState'
 import type { AccessGrant, ApiError } from './types'
 import {
   getAccessGrants,
@@ -13,6 +16,10 @@ import {
   revokeAccessGrant,
   searchUsers,
 } from './api'
+import {
+  VisibilityControl,
+  type AccessObservation,
+} from './shared-lists/visibility'
 
 // ── Inline styles using DS tokens only ────────────────────────────────────────
 const s = {
@@ -385,29 +392,42 @@ function AddAccessModal({ listId, existingGrantUserIds, onClose, onGranted }: Ad
 // ─────────────────────────────────────────────────────────────────────────────
 interface AccessPanelProps {
   listId: string
+  organizationName?: string
+  activeOrganizationId?: string
 }
 
-function AccessPanel({ listId }: AccessPanelProps) {
+function AccessPanel({ listId, organizationName, activeOrganizationId }: AccessPanelProps) {
   const [grants, setGrants] = useState<AccessGrant[]>([])
   const [loadState, setLoadState] = useState<'loading' | 'error' | 'loaded'>('loading')
+  // What the roster call proved about `manage_access` (SL9 visibility control):
+  // 200 = can manage, 403 = cannot. Observed, never guessed.
+  const [accessProbe, setAccessProbe] = useState<AccessObservation>('loading')
   // Panel-level FORBIDDEN: set after any 403, locks down all controls
   const [panelForbidden, setPanelForbidden] = useState(false)
+  // The grants read itself was refused 403 (SL9: on a common list, "managed by the platform")
+  const [loadForbidden, setLoadForbidden] = useState(false)
   // Per-row UI state (keyed by userId)
   const [rowUIs, setRowUIs] = useState<Map<string, RowUI>>(new Map())
   const [showModal, setShowModal] = useState(false)
 
   const loadGrants = useCallback(async () => {
     setLoadState('loading')
+    setAccessProbe(prev => (prev === 'granted' ? prev : 'loading'))
     setPanelForbidden(false)
+    setLoadForbidden(false)
     try {
       const data = await getAccessGrants(listId)
+      setAccessProbe('granted')
       setGrants(data)
       // Initialize per-row UI state
       const map = new Map<string, RowUI>()
       data.forEach(g => map.set(g.user_id, { role: g.role, saving: false, error: null, errorCase: null }))
       setRowUIs(map)
       setLoadState('loaded')
-    } catch {
+    } catch (err) {
+      const apiErr = err as ApiError & { status?: number }
+      setLoadForbidden(apiErr.status === 403 || apiErr.code === 'FORBIDDEN')
+      setAccessProbe(apiErr.status === 403 ? 'forbidden' : 'error')
       setLoadState('error')
     }
   }, [listId])
@@ -483,6 +503,15 @@ function AccessPanel({ listId }: AccessPanelProps) {
 
   return (
     <div data-frame="10-access-panel" style={s.frame}>
+      {/* SL9 visibility control: renders nothing while the shared-lists flag is OFF. */}
+      <VisibilityControl
+        listId={listId}
+        // A later 403 (e.g. the roster refresh after demoting yourself) revokes what the first read proved.
+        access={panelForbidden ? 'forbidden' : accessProbe}
+        onRetryAccess={loadGrants}
+        organizationName={organizationName}
+        activeOrganizationId={activeOrganizationId}
+      />
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-4)' }}>
         <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>
           Access Control
@@ -514,14 +543,18 @@ function AccessPanel({ listId }: AccessPanelProps) {
         {loadState === 'loading' && (
           <div style={{ padding: 'var(--space-4)', color: 'var(--text-tertiary)' }}>Loading access grants...</div>
         )}
-        {loadState === 'error' && (
-          <div data-state="error" style={{ padding: 'var(--space-4)', color: 'var(--danger)' }}>
-            Failed to load access grants.
-            <button onClick={loadGrants} style={{ ...s.btn, marginLeft: 'var(--space-3)' }}>
-              Retry
-            </button>
-          </div>
-        )}
+        {loadState === 'error' && (() => {
+          const loadFailed = (
+            <div data-state="error" style={{ padding: 'var(--space-4)', color: 'var(--danger)' }}>
+              Failed to load access grants.
+              <button onClick={loadGrants} style={{ ...s.btn, marginLeft: 'var(--space-3)' }}>
+                Retry
+              </button>
+            </div>
+          )
+          // SL9: a 403 on a common list is "managed by the platform"; any other list keeps the 4.0.0 error.
+          return loadForbidden ? <CommonAccessGuard listId={listId} fallback={loadFailed} /> : loadFailed
+        })()}
         {loadState === 'loaded' && grants.length === 0 && (
           <div data-state="empty" style={{ padding: 'var(--space-4)', color: 'var(--text-tertiary)', textAlign: 'center' }}>
             No access grants. Click "Add Access" to grant access.
@@ -642,8 +675,19 @@ function AccessPanel({ listId }: AccessPanelProps) {
 // ─────────────────────────────────────────────────────────────────────────────
 // SelectionListAccessFlow — Route orchestrator
 // ─────────────────────────────────────────────────────────────────────────────
-export function SelectionListAccessFlow() {
+export interface SelectionListAccessFlowProps {
+  /** Display name of the active organization (used by the visibility control's copy). */
+  organizationName?: string
+  /** Id of the active organization (gates the platform visibility option to platform-owned lists). */
+  activeOrganizationId?: string
+}
+
+export function SelectionListAccessFlow({
+  organizationName,
+  activeOrganizationId,
+}: SelectionListAccessFlowProps = {}) {
   const { listId } = useParams<{ listId: string }>()
+  const shared = useSharedLists()
 
   if (!listId) {
     return (
@@ -652,8 +696,19 @@ export function SelectionListAccessFlow() {
       </div>
     )
   }
+  // The host's shared-lists flag has not settled: the Access panel's visibility
+  // control (flag ON) and its 4.0.0 form must not each fire their own reads.
+  if (!shared.ready) return <PanelSkeleton label="Loading" />
 
-  return <AccessPanel listId={listId} />
+  return (
+    <AccessPanel
+      key={listId}
+      listId={listId}
+      // Props override; otherwise the host's SharedListsFeatureProvider supplies the active org.
+      organizationName={organizationName ?? shared.organizationName}
+      activeOrganizationId={activeOrganizationId ?? shared.organizationId}
+    />
+  )
 }
 
 export default SelectionListAccessFlow

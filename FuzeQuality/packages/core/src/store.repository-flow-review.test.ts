@@ -86,6 +86,23 @@ describe('repository flow review lifecycle', () => {
     expect(matches.map(item => item.id).sort()).toEqual(['maximum', 'minimum'])
   })
 
+  it('filters exact revision-grounded evidence, step, and wireframe target IDs', async () => {
+    const store = new MemoryCatalogStore()
+    await store.saveRepositoryFlowCandidates([
+      { ...candidate, id: 'evidence-only', title: 'Evidence target', evidence: ['route-evidence'], steps: [{ ...candidate.steps[0], targetIds: [] }], wireframe: { kind: 'sequence', nodes: [{ label: 'Evidence', targetIds: [] }] } },
+      { ...candidate, id: 'step-only', title: 'Step target', evidence: [], steps: [{ ...candidate.steps[0], targetIds: ['route-step'] }], wireframe: { kind: 'sequence', nodes: [{ label: 'Step', targetIds: [] }] } },
+      { ...candidate, id: 'wireframe-only', title: 'Wireframe target', evidence: [], steps: [{ ...candidate.steps[0], targetIds: [] }], wireframe: { kind: 'sequence', nodes: [{ label: 'Wireframe', targetIds: ['component-wireframe'] }] } },
+      { ...candidate, id: 'other-tenant-target', title: 'Other tenant target', tenantId: 'tenant-2', evidence: ['route-evidence'] },
+    ])
+
+    await expect(store.repositoryFlowCandidates(candidate.repositoryId, candidate.tenantId, { targetId: 'route-evidence' }))
+      .resolves.toEqual([expect.objectContaining({ id: 'evidence-only' })])
+    await expect(store.repositoryFlowCandidates(candidate.repositoryId, candidate.tenantId, { targetId: 'route-step' }))
+      .resolves.toEqual([expect.objectContaining({ id: 'step-only' })])
+    await expect(store.repositoryFlowCandidates(candidate.repositoryId, candidate.tenantId, { targetId: 'component-wireframe' }))
+      .resolves.toEqual([expect.objectContaining({ id: 'wireframe-only' })])
+  })
+
   it('isolates tenant-scoped LiteLLM review risks', async () => {
     const store = new MemoryCatalogStore()
     const analysis = {
@@ -116,6 +133,7 @@ describe('repository flow review lifecycle', () => {
       minConfidence: 0.7,
       maxConfidence: 0.9,
       analysisRisk: 'grounding-gaps',
+      targetId: 'route-1',
       after: { createdAt: candidate.createdAt, id: candidate.id },
       limit: 25,
     })
@@ -127,6 +145,11 @@ describe('repository flow review lifecycle', () => {
     expect(String(statement)).toContain("analysis_provenance->'grounding'->>'rejectedArtifactCount'")
     expect(String(statement)).toContain("$12='prompt-truncated'")
     expect(String(statement)).toContain("$12='provenance-missing'")
+    expect(String(statement)).toContain("jsonb_array_elements_text(COALESCE(evidence, '[]'::jsonb))")
+    expect(String(statement)).toContain("jsonb_array_elements(COALESCE(steps, '[]'::jsonb))")
+    expect(String(statement)).toContain("jsonb_array_elements(COALESCE(wireframe->'nodes', '[]'::jsonb))")
+    expect(String(statement)).toContain('step_target.value=$16')
+    expect(String(statement)).toContain('node_target.value=$16')
     expect(String(statement)).toContain('(created_at,id) < ($13::timestamptz,$14::text)')
     expect(parameters).toEqual([
       candidate.repositoryId,
@@ -144,6 +167,7 @@ describe('repository flow review lifecycle', () => {
       candidate.createdAt,
       candidate.id,
       25,
+      'route-1',
     ])
   })
 

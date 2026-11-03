@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FuzeFront App Registry API
-  version: 1.6.1
+  version: 1.6.2
   description: >-
     REST API for the FuzeFront **app registry** — the contract by which a
     federated (or standalone) application is registered, activated, and surfaced
@@ -36,6 +36,13 @@ info:
     may keep purely as a live UI push).
 
     ### Changelog
+      * **1.6.2** — non-breaking format correction, completing the 1.6.1 fix.
+        `App.organizationId` and `RegisterAppRequest.organizationId` are
+        wire-typed TypeID-or-UUID strings, not `format: uuid` — with
+        `fuzefront.identity.prefixed-ids` ON at 100% in prod these fields carry
+        `org_…` TypeIDs, which are not syntactic UUIDs and failed the old
+        constraint (exactly the `PublicationQueueItem.organizationId` bug fixed in
+        1.6.1). Loosening a `format` is additive/non-breaking.
       * **1.6.1** — corrections to 1.6.0 before release (non-breaking):
         `PublicationQueueItem.organizationId` is a wire-typed TypeID-or-UUID
         string, not `format: uuid` (a prefixed `org_…` id is not a syntactic
@@ -1362,8 +1369,13 @@ components:
         builtin: { type: boolean }
         organizationId:
           type: [string, 'null']
-          format: uuid
-          description: Owning org, or null for platform-global apps.
+          description: >-
+            Owning org as a wire-typed reference — a TypeID (`org_…`, the value
+            `fuzefront.identity.prefixed-ids` returns in prod) or a bare UUID
+            (legacy/unprefixed). NOT `format: uuid`: a prefixed TypeID is not a
+            syntactic UUID and would fail that constraint. `null` is reserved for
+            a genuinely platform-global app with no owning org. A reference/read,
+            never an identity or a capability (authority is Permit + org role).
         manifest: { $ref: '#/components/schemas/AppManifest' }
         isHealthy:
           type: [boolean, 'null']
@@ -1422,8 +1434,13 @@ components:
         manifest: { $ref: '#/components/schemas/AppManifest' }
         organizationId:
           type: [string, 'null']
-          format: uuid
-          description: Owning org for org-scoped apps; omit for platform-global.
+          description: >-
+            Owning org for org-scoped apps as a wire-typed reference — a TypeID
+            (`org_…`, the value `fuzefront.identity.prefixed-ids` returns in prod)
+            or a bare UUID (legacy/unprefixed). NOT `format: uuid`: a prefixed
+            TypeID is not a syntactic UUID and would fail that constraint. Omit
+            (or send `null`) for a platform-global app. A reference to an org that
+            already exists, never an identity minted here.
 
     ProductResourceDecl:
       type: object

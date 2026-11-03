@@ -267,8 +267,9 @@ router.get('/:listId/items', requireListRead(), async (req: Request, res: Respon
   const rawCursor = req.query.cursor as string | undefined;
   const statusFilter = (req.query.status as string) ?? 'active';
 
-  if (!['active', 'archived'].includes(statusFilter)) {
-    res.status(400).json({ code: 'VALIDATION_ERROR', message: 'status must be active or archived.' });
+  // openapi `listSelectionListItems`: status is `active` (default) | `archived` | `all` (active + archived).
+  if (!['active', 'archived', 'all'].includes(statusFilter)) {
+    res.status(400).json({ code: 'VALIDATION_ERROR', message: 'status must be one of: active, archived, all.' });
     return;
   }
 
@@ -294,8 +295,12 @@ router.get('/:listId/items', requireListRead(), async (req: Request, res: Respon
   const localeCoalesce = `COALESCE(${localeChain.map((_, i) => `t${i}.locale`).join(', ')})`;
   const machineCoalesce = `COALESCE(${localeChain.map((_, i) => `t${i}.is_machine`).join(', ')})`;
 
-  const whereClause: string[] = ['i.list_id = ?', 'i.status = ?'];
-  const whereParams: (string | number | boolean | null)[] = [listId, statusFilter];
+  const whereClause: string[] = ['i.list_id = ?'];
+  const whereParams: (string | number | boolean | null)[] = [listId];
+  if (statusFilter !== 'all') {
+    whereClause.push('i.status = ?');
+    whereParams.push(statusFilter);
+  }
 
   if (cursor) {
     whereClause.push('(i.sort_order > ? OR (i.sort_order = ? AND i.id > ?))');
@@ -342,8 +347,10 @@ router.get('/:listId/items', requireListRead(), async (req: Request, res: Respon
     }
 
     const countResult = await db.raw<{ rows: [{ total: string }] }>(
-      `SELECT COUNT(*) AS total FROM selection_list_items WHERE list_id = ? AND status = ?`,
-      [listId, statusFilter],
+      statusFilter === 'all'
+        ? `SELECT COUNT(*) AS total FROM selection_list_items WHERE list_id = ?`
+        : `SELECT COUNT(*) AS total FROM selection_list_items WHERE list_id = ? AND status = ?`,
+      statusFilter === 'all' ? [listId] : [listId, statusFilter],
     );
     const total = parseInt(countResult.rows[0]?.total ?? '0', 10);
 

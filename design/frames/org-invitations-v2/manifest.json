@@ -62,9 +62,9 @@
             "packages/identity-ui/src/components/invitations/invite/**"
           ]
         },
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-27T07:21:28.450Z"
       },
       {
         "id": "accept-bind",
@@ -76,9 +76,9 @@
             "frontend/src/pages/InvitationAcceptPage.tsx"
           ]
         },
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-27T07:21:45.462Z"
       },
       {
         "id": "root-customer-invite",
@@ -89,9 +89,9 @@
             "packages/identity-ui/src/components/invitations/root-customer/**"
           ]
         },
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-27T07:21:52.814Z"
       }
     ],
     "components": [

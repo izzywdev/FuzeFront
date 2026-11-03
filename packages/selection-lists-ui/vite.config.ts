@@ -8,7 +8,9 @@ const dsRoot = fileURLToPath(new URL('../../design-system', import.meta.url))
 export default defineConfig({
   plugins: [
     react(),
-    dts({ insertTypesEntry: true }),
+    // Declarations come from the build tsconfig (tests excluded; the client's
+    // types resolved from its built d.ts, so dist/ stays flat).
+    dts({ insertTypesEntry: true, tsconfigPath: './tsconfig.build.json' }),
   ],
   build: {
     lib: {

@@ -18,9 +18,6 @@ jest.mock('../src/utils/permit/role-assignment', () => ({
 jest.mock('../src/utils/identityFlag', () => ({
   getRequestPortalScopingEnabled: jest.fn().mockResolvedValue(false),
 }))
-jest.mock('../src/identity/flags', () => ({
-  isPrefixedIdsEnabled: jest.fn().mockResolvedValue(false),
-}))
 jest.mock('@fuzefront/core', () => ({
   ...jest.requireActual('@fuzefront/core'),
   enqueueEvent: jest.fn().mockResolvedValue(undefined),

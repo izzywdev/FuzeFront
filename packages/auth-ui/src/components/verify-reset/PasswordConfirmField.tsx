@@ -1,5 +1,6 @@
 import React from 'react'
 import { InlineValidatedInput } from '@fuzefront/design-system'
+import { AUTH_INPUT_STYLE } from '../controlStyles'
 import { DEFAULT_VERIFY_RESET_LABELS, type VerifyResetLabels } from './types'
 
 export interface PasswordConfirmFieldProps {
@@ -36,6 +37,8 @@ export function PasswordConfirmField({
       type="password"
       label={label ?? labels.confirmPasswordLabel}
       autoComplete="new-password"
+      aria-required="true"
+      style={AUTH_INPUT_STYLE}
       value={value}
       onChange={(e: React.ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
       data-match={typed ? String(matches) : undefined}

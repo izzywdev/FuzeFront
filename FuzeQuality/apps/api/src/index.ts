@@ -56,7 +56,7 @@ import { repositoryFlowFilterSchema } from './repository-flow-filter'
 import { repositoryFlowAnalysisProvenanceConflict, repositoryFlowArtifactReferenceConflict, repositoryFlowGroundingRationaleConflict, repositoryFlowReviewConflict, repositoryFlowReviewStateConflict, repositoryFlowWireframeConflict } from './repository-flow-review'
 import { repositoryFlowCandidateById, repositoryFlowDetail } from './repository-flow-detail'
 import { policyGateArtifactReferenceConflict, policyGateArtifactReferenceError, policyGateEvaluationIngestionSchema, policyGateOwnershipError } from './policy-gate-ingestion'
-import { policyGateFilterSchema } from './policy-gate-filter'
+import { policyGateFilterSchema, policyGateStoreQuery } from './policy-gate-filter'
 import { policyGateEvaluationForReview, policyGateReviewConflict, policyGateReviewRationaleConflict, policyGateReviewStateConflict } from './policy-gate-review'
 import { policyGateDetail } from './policy-gate-detail'
 import { decodeHistoryCursor, decodeUuidHistoryCursor, historyPage, historyPageQuerySchema } from './history-pagination'
@@ -70,6 +70,7 @@ import { repositoryProcessingStatus } from './repository-processing-status'
 import { dispatchWebhookScans } from './webhook-scan-dispatch'
 import { testExecutionDetail } from './test-execution-detail'
 import { testSuiteDispatchLogicalId, testSuiteDispatchPage } from './test-suite-dispatch-pagination'
+import { queueRequirementSync } from './requirement-sync'
 import { persistTerminalTestSuiteDispatch } from './test-suite-dispatch-audit'
 import {
   buildImplementationManifest,
@@ -137,9 +138,10 @@ const policyGateReviewSchema = z.object({
   expectedReviewedAt: z.string().datetime().nullable().optional(),
 }).strict()
 const intelligenceFailureSchema = z.object({
+  tenantId: z.string().trim().min(1).max(200),
   sourceType: z.literal('jira'),
   sourceKey: z.string().trim().min(1).max(200),
-  code: z.enum(['JIRA_UNAVAILABLE', 'INTELLIGENCE_UNAVAILABLE', 'SEMANTIC_INDEX_UNAVAILABLE']),
+  code: z.enum(['JIRA_UNAVAILABLE', 'INTELLIGENCE_UNAVAILABLE', 'INTELLIGENCE_TIMEOUT', 'INTELLIGENCE_INVALID_RESPONSE', 'SEMANTIC_INDEX_UNAVAILABLE']),
 }).strict()
 const repositoryAdministrationSchema = z.object({
   ownership: z.object({
@@ -312,7 +314,7 @@ app.get('/health/ready', async (_request, response) => {
 })
 app.get('/metrics', async (_request, response) => {
   const portfolio = await store.portfolio()
-  const jiraFreshness = await store.syncCursor('jira', 'default')
+  const jiraFreshness = await store.syncCursorStatuses('jira', 'default')
   response.type('text/plain').send(
     [
       '# HELP fuzequality_repositories Number of onboarded repositories',
@@ -329,7 +331,7 @@ app.get('/metrics', async (_request, response) => {
       `fuzequality_requirement_review_findings ${portfolio.findings.filter(item => item.status === 'open' && item.policyVersion === 'requirement-review-v1').length}`,
       '# HELP fuzequality_jira_sync_freshness Jira requirement synchronization freshness: 1 fresh, 0 otherwise',
       '# TYPE fuzequality_jira_sync_freshness gauge',
-      `fuzequality_jira_sync_freshness ${jiraFreshness?.freshnessStatus === 'fresh' ? 1 : 0}`,
+      `fuzequality_jira_sync_freshness ${jiraFreshness.length > 0 && jiraFreshness.every(item => item.freshnessStatus === 'fresh') ? 1 : 0}`,
     ].join('\n')
   )
 })
@@ -462,20 +464,11 @@ app.get('/api/v1/internal/repositories/:id/policy-gate-evaluations', async (requ
   const cursor = decodeHistoryCursor(filter.data.cursor)
   if (!cursor.success) return response.status(400).json({ error: cursor.error })
   const limit = filter.data.limit
-  const evaluations = await store.policyGateEvaluations(repositoryId, repository.tenantId ?? 'legacy', {
-    kind: filter.data.kind,
-    remediationAction: filter.data.remediationAction,
-    severity: filter.data.severity,
-    reviewStatus: filter.data.reviewStatus,
-    revision: filter.data.revision,
-    subject: filter.data.subject,
-    policyArtifactId: filter.data.policyArtifactId,
-    gateArtifactId: filter.data.gateArtifactId,
-    minConfidence: filter.data.minConfidence,
-    maxConfidence: filter.data.maxConfidence,
-    after: cursor.data,
-    limit: limit + 1,
-  })
+  const evaluations = await store.policyGateEvaluations(
+    repositoryId,
+    repository.tenantId ?? 'legacy',
+    policyGateStoreQuery(filter.data, cursor.data),
+  )
   response.json(historyPage(evaluations, limit))
 })
 app.post('/api/v1/internal/policy-gate-evaluations', async (request, response) => {
@@ -737,12 +730,12 @@ app.get('/api/v1/repositories/:id/policy-gate-evaluations', mayReadCatalog, asyn
   if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
   const cursor = decodeHistoryCursor(filter.data.cursor)
   if (!cursor.success) return response.status(400).json({ error: cursor.error })
-  const { limit, cursor: _cursor, ...query } = filter.data
-  const evaluations = await store.policyGateEvaluations(repositoryId, tenantId, {
-    ...query,
-    after: cursor.data,
-    limit: limit + 1,
-  })
+  const { limit } = filter.data
+  const evaluations = await store.policyGateEvaluations(
+    repositoryId,
+    tenantId,
+    policyGateStoreQuery(filter.data, cursor.data),
+  )
   response.json(historyPage(evaluations, limit))
 })
 app.get('/api/v1/repositories/:id/policy-gate-evaluations/:evaluationId', mayReadCatalog, async (request, response) => {
@@ -1512,12 +1505,12 @@ app.post('/api/v1/internal/intelligence/results', async (request, response) => {
 })
 app.post('/api/v1/internal/intelligence/failure', async (request, response) => {
   const failure = intelligenceFailureSchema.parse(request.body)
-  await store.markSyncFailed(failure.sourceType, failure.sourceKey)
-  console.error(JSON.stringify({ event: 'intelligence_sync_failed', sourceType: failure.sourceType, sourceKey: failure.sourceKey, code: failure.code, retryable: true }))
+  await store.markSyncFailed(failure.sourceType, failure.sourceKey, failure.tenantId, failure.code)
+  console.error(JSON.stringify({ event: 'intelligence_sync_failed', tenantId: failure.tenantId, sourceType: failure.sourceType, sourceKey: failure.sourceKey, code: failure.code, retryable: true }))
   response.status(202).json({ accepted: true })
 })
-app.get('/api/v1/requirements/freshness', mayReadRequirements, async (_request, response) =>
-  response.json(await store.syncCursor('jira', 'default') ?? { sourceType: 'jira', sourceKey: 'default', freshnessStatus: 'unknown' })
+app.get('/api/v1/requirements/freshness', mayReadRequirements, async (request, response) =>
+  response.json(await store.syncCursor('jira', 'default', requestIdentity(request)!.tenantId) ?? { sourceType: 'jira', sourceKey: 'default', freshnessStatus: 'unknown' })
 )
 app.post('/api/v1/internal/coverage/rebuild', async (_request, response) => {
   try {
@@ -1537,15 +1530,25 @@ app.post('/api/v1/internal/coverage/rebuild', async (_request, response) => {
 })
 
 app.post('/api/v1/jira/sync', maySyncRequirements, async (request, response) => {
+  const serviceRequest = isFuzeQualityServiceRequest(request)
+  const tenantIds = serviceRequest
+    ? await store.activeTenantIds()
+    : [requestIdentity(request)!.tenantId]
   const scopeId = request.body?.scopeId ?? 'default'
-  const cursor = await store.syncCursor('jira', scopeId)
-  await events.publish(TOPICS.REQUIREMENT_SYNC_REQUESTED, {
-    tenantId: requestIdentity(request)!.tenantId,
+  const queued = await queueRequirementSync(
+    tenantIds,
     scopeId,
-    jql: request.body?.jql ?? process.env.JIRA_JQL ?? 'project = FUZE',
-    ...(cursor?.cursor ? { since: cursor.cursor } : {}),
-  })
-  response.status(202).json({ status: 'queued', scopeId, incrementalFrom: cursor?.cursor })
+    request.body?.jql ?? process.env.JIRA_JQL ?? 'project = FUZE',
+    {
+      syncCursor: tenantId => store.syncCursor('jira', scopeId, tenantId),
+      publish: (topic, payload) => events.publish(topic, payload),
+      markQueued: tenantId => store.markSyncQueued('jira', scopeId, tenantId),
+    },
+  )
+  if (serviceRequest) {
+    return response.status(202).json({ status: 'queued', scopeId, tenantsQueued: queued.length })
+  }
+  response.status(202).json({ status: 'queued', scopeId, incrementalFrom: queued[0]?.incrementalFrom, sync: queued[0].sync })
 })
 
 app.post('/api/v1/webhooks/github', async (request, response) => {

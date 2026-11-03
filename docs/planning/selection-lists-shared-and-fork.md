@@ -1,17 +1,20 @@
 # Selection lists — shared lists, common (platform) lists and copy-on-write forks
 
-**Status (updated 2026-10-26, `origin/master` @ `bac173471`):** contract FROZEN in
-`services/selection-list-service/openapi.yaml` **4.1.0** (byte-identical Helm copy),
-`@fuzeone/selection-list-client` **2.1.1**, `fuzefront-selection-list-client` **2.1.0**,
-`@fuzefront/shared` **1.3.0** (`/kafka`), Permit schema-as-code
-(`backend/src/permit/schema.ts`, `backend/security/src/permit/schema.ts`).
-**The service side (§10 tasks 1-11) is implemented and merged, and ships dark**: every
+**Status (updated 2026-10-26, `origin/master` @ `bac173471`; 4.2.0 amendment
+2026-10-27):** contract FROZEN in `services/selection-list-service/openapi.yaml`
+**4.2.0** (byte-identical Helm copy), `@fuzeone/selection-list-client` **2.2.0**,
+`fuzefront-selection-list-client` **2.2.0**, `@fuzefront/shared` **1.3.0**
+(`/kafka`), Permit schema-as-code (`backend/src/permit/schema.ts`,
+`backend/security/src/permit/schema.ts`).
+**The 4.1.0 service side (§10 tasks 1-11) is implemented and merged, and ships dark**: every
 user-visible behaviour is behind the release flag `fuzefront.selection-lists.shared-lists`
-(default OFF, additionally requires `fuzefront.selection-lists.service`). **Not built:** the UI
-stages (§10 tasks 14-15; the frames of task 13 are approved), `SelectionList.revision` (so the
-"behind source" comparison is impossible over HTTP), the rollout data jobs (§9 steps 4 and 6)
-and a platform pack v2. Section 10 below carries a status table per task. The text of
-sections 2-9 is the **design** as decided; where it says "the service wave will…" it has since
+(default OFF, additionally requires `fuzefront.selection-lists.service`). **Amended by 4.2.0**
+(`SelectionList.revision`, clients **2.2.0**): contract only — the service work it needs is §13
+(task 17); until it lands, responses omit `revision`, clients read *unknown* and the "behind
+source" comparison shows "comparison unavailable". **Not built:** the UI stages (§10 tasks 14-15;
+the frames of task 13 are approved), the 4.2.0 service work (task 17), the rollout data jobs (§9
+steps 4 and 6) and a platform pack v2. Section 10 below carries a status table per task. The text
+of sections 2-9 is the **design** as decided; where it says "the service wave will…" it has since
 been built, and the as-built behaviour, status codes and caveats are in
 `docs/guides/SELECTION_LIST_SERVICE.md` § "Shared lists, common lists and forks". If this
 document and the spec disagree, **the spec wins** and this document is stale; if it and the
@@ -576,6 +579,16 @@ Order matters (fail-closed authz): **Permit schema → service → flag → data
 Existing app packs (`seed.requested`) keep seeding `private` until each app opts
 into `visibility: org` in a new pack version.
 
+**Implemented (task 10).** Steps 4 and 6, and the pre-flag duplicate audit and reconcile, are idempotent,
+flag-independent CLI jobs in the service image (`services/selection-list-service/src/rollout/`; operator procedure,
+dry-run output and rollback for each in `docs/runbooks/selection-lists-rollout.md` §10.0–10.5):
+`visibility-org` (step 4), `retro-forks` (step 6), `audit` and `reconcile-duplicates`. Two points the design text above
+leaves open, settled by the code: (1) step 6 converts a copy only when its **current key equals the common list's key** and
+its seed provenance matches — the `list.forked` contract says a fork keeps its source key, so a copy a user renamed cannot be
+announced as a fork and is reported instead; (2) step 6 emits a synthetic `selection-lists.list.forked` (with the `itemMap` of
+code-matched items) for each converted copy, so read models learn the provenance. Step 5 (publishing the common lists) and the
+pack-version bump of step 4 are **not** part of these jobs.
+
 ## 10. Implementation wave — ordered task list
 
 Every stream gates on this contract PR being **merged**.
@@ -598,6 +611,7 @@ Every stream gates on this contract PR being **merged**.
 | 14 | `frontend-engineer` (after 13) | `@fuzeone/selection-lists-ui`: picker uses `getEffectiveList`; list management shows `visibility`/`editable`, fork flow; visibility control for owners | e2e per approved frames; console-clean |
 | 15 | `frontend-test-engineer` | Playwright specs RED-first from the approved frames, then verify | e2e green |
 | 16 | `mcp-maintainer` | Gateway overrides for `forkSelectionList` (and the pre-existing override-key drift noted in the skill) | gateway exposes the op correctly |
+| 17 | `backend-engineer` → `test-engineer` | **4.2.0:** emit `SelectionList.revision` — the work list in §13.4 | §13.4 "done when" |
 
 ### Implementation status per task (2026-10-26, `origin/master` @ `bac173471`)
 
@@ -619,10 +633,12 @@ Every stream gates on this contract PR being **merged**.
 | 14 | **Not merged** | `packages/selection-lists-ui/src/shared-lists/` does not exist on master (stage 1 "core infrastructure" was an open PR on 2026-10-26). The picker still uses the exact-match `?key=` lookup, not `getEffectiveList` |
 | 15 | **Not merged** | RED Playwright specs for the five flows were an open PR on 2026-10-26; no shared-lists spec exists on master |
 | 16 | **Partly** | `mcp/tools-selection-lists.json` lists `forkSelectionList` and the gateway derives tools from the spec; the explicit override + override-key guard were an open PR on 2026-10-26 |
+| 17 | **Service done (4.2.0 conformance PR)** | `src/routes/listShape.ts` selects `sl.revision` and `formatList` emits it unconditionally; `GET .../items?status=all` implemented. Tests: `tests/list-shape.revision.test.ts`, `tests/list-revision.db.test.ts`, `tests/items.status-all.db.test.ts`. Still open: §13.4 items 6-8 as acceptance-suite tests (`test-engineer`), then the MINOR that moves `revision` into `required` |
 
-Known gap behind task 13's "behind source" indicator: the spec's `SelectionList` has no `revision`
-(`forked_from.revision` is the source revision at copy time, never updated), so the UI can only show
-"comparison unavailable". A contract MINOR adding it was proposed as an open PR and is not merged.
+Known gap behind task 13's "behind source" indicator (closed on the service side by task 17): `forked_from.revision`
+is the source revision at copy time (never updated), and until 4.2.0 the spec's `SelectionList` had no `revision`
+to compare it with. Contract 4.2.0 (§13) adds it as an optional field; the service now always emits it, so a client
+of a service that predates task 17 still reads *unknown* ("comparison unavailable").
 
 ## 11. Test plan (acceptance, summarised)
 
@@ -681,3 +697,123 @@ Known gap behind task 13's "behind source" indicator: the spec's `SelectionList`
   damage, not the volume). Mitigations that DO exist in-service: the platform org can only be suspended (writes) never
   deleted, future-dated envelopes are rejected, deactivation is ordered by envelope time, all consumers are idempotent. Those
   five stay accepted until the broker ACLs are verified.
+
+## 13. Fork "behind source" — `SelectionList.revision` (contract 4.2.0)
+
+### 13.1 The gap
+
+The approved fork-provenance frames (`design/frames/selection-lists-shared/`,
+flow `fork-provenance`, `BehindSourceIndicator`) compare "the source's revision
+when we forked" with "the source's revision now". 4.1.0 froze the first half —
+`forked_from.revision` — but a `SelectionList` response carried no current
+revision, so only the "comparison unavailable" state was reachable. The frames
+record this as `contractGaps[SelectionList.revision]` / the flow's
+`contractDependency`.
+
+### 13.2 What 4.2.0 freezes
+
+| Artifact | Change |
+|---|---|
+| `openapi.yaml` (+ Helm copy) | **4.1.0 → 4.2.0.** `SelectionList.revision`: read-only `integer`, `minimum: 1`, **optional**; description of `SelectionListForkProvenance.revision` now points at it; changelog + a "Is a fork behind its source?" paragraph |
+| `@fuzeone/selection-list-client` 2.1.1 → **2.2.0** | `SelectionList.revision?: number`; `compareForkToSource(fork, source)` → `ForkSourceComparison` (`'behind' \| 'up-to-date' \| 'unknown'`) |
+| `fuzefront-selection-list-client` 2.1.0 → **2.2.0** | `SelectionList.revision: int \| None` (absent / non-positive / non-integer → `None`); `compare_fork_to_source` + `ForkSourceComparison` |
+| Events | **none** — `listRevision` already rides every revisioned `selection-lists.*` event, and `list.forked.source.listRevision` already records the copy-time revision |
+| Pagination wording (doc only, no wire change) | `listSelectionLists` + `Page`: a page may be shorter than `limit` — even empty — while `hasMore` is `true` (the per-row readability filter runs after SQL cuts the page). Both 2.2.0 clients' `getEffectiveList` / `get_effective_list` follow the same query's cursor through empty non-terminal pages, bounded to 10 (`EffectiveLookupIncompleteError`, never "no list"); mirrors `@fuzeone/selection-lists-ui` (#1702) |
+
+### 13.3 Decisions
+
+- **R1 — one field, the existing counter.** `revision` *is* `selection_lists.revision`
+  (migration `20260810_000006`: `BIGINT NOT NULL DEFAULT 1`, `ck_sl_revision_positive`,
+  monotonic trigger), the value `bumpListRevision` (`src/events/outbox.ts`) assigns to each
+  revisioned event. HTTP and Kafka therefore speak one number: a response's `revision`
+  equals the `listRevision` of the latest revisioned event committed for that list.
+- **R2 — no new fork-time field.** The brief asked whether provenance needs a
+  `forked_from_revision`-like capture. It already has one: `forked_from.revision` (4.1.0),
+  stored as `selection_lists.forked_from_revision` (migration `20261005_000011`) and written by
+  `src/services/fork.service.ts` from the source row read `FOR SHARE` in the copying
+  transaction — so it is the revision of exactly the content that was copied, and
+  `list.forked.source.listRevision` carries the same value. Adding a second field would be
+  a synonym.
+- **R3 — optional, absent = unknown** (as `editable` at 4.1.0). The running service does
+  not emit it; the contract suites validate real responses against the spec with Ajv
+  (`tests/selection-list-service/contract/response-shape.test.ts`), so declaring it
+  `required` would make the frozen spec false for the live service. A client reading no
+  `revision` reports the comparison as unavailable and **never** derives one from
+  `updated_at` (the list row's own timestamp: item and translation changes do not move it,
+  and housekeeping writes that publish no event do). A later MINOR adds it to `required` once §13.4 ships.
+- **R4 — not flag-gated.** The counter predates shared lists (it has been on every event
+  since migration 6) and nothing server-side branches on it, so the service emits it in
+  **both** states of `fuzefront.selection-lists.shared-lists`. With the flag OFF every
+  `forked_from` is `null`, so no comparison is reachable anyway; gating the field would only
+  block tightening it to `required`. The UI that consumes it is behind the flag already.
+- **R5 — semantics.** "Behind" means *changed since*, not "these items differ": any
+  revisioned event counts (list fields, status, visibility, items incl. reorder, list/item
+  translations, seeding, autofill). Access grants do not bump it. Two housekeeping writers
+  change rows **without** an event or a bump: the user-deleted authorship anonymisation
+  (`src/events/user-deleted.handler.ts`) and the org-deleted **soft** cascade, which sets
+  `status = 'archived'` on the org's lists without a `list.archived` event
+  (`src/events/org-deleted.handler.ts`, soft branch). Neither affects the fork comparison (a
+  common list lives in the platform org, which can only be suspended, never deleted; a
+  foreign `created_by` already renders as `system:platform`), so the spec states the
+  exception rather than widening the counter. The org-deleted cascade's missing event is a
+  pre-existing event-parity gap for **every** `list.archived` consumer → `backend-engineer`
+  (emit `list.archived` per list through the outbox, or record why not).
+- **R6 — not a concurrency token.** No request accepts `revision`; using it for
+  `If-Match`-style optimistic concurrency would be a separate, deliberate contract change.
+
+### 13.4 Service work list (implementation PR, after this contract merges)
+
+`backend-engineer`:
+
+1. `src/routes/listShape.ts` — add `revision: number | string` to `ListRow`, `sl.revision`
+   to `LIST_COLUMNS`, and `revision: Number(row.revision)` to `formatList`,
+   **unconditionally** (not inside the `ctx.shared` branch). Every `SelectionList` response
+   already goes through `LIST_COLUMNS` + `formatList` (`src/routes/lists.ts` list / create /
+   get / PATCH / DELETE-archive / archive; `src/routes/fork.ts` 201 and 200), so this one
+   file covers all of them. `BIGINT` arrives as a string from `pg`; `Number()` is exact
+   below 2^53.
+2. Mutation responses re-read the row **after** the transaction commits, so a response's
+   `revision` is at least the mutation's last event's `listRevision` (a PATCH that changes
+   fields *and* visibility bumps twice and must report the second). Keep it that way — do
+   not return a revision captured before the emitters run.
+3. **No migration** (`database-engineer`: nothing to do) — the column, its check and its
+   monotonic trigger exist; `forked_from_revision` exists.
+4. **Fork-time capture: already correct** — keep `forked_from_revision = src.revision` read
+   `FOR SHARE`; the fork's own `revision` is the final value `emitForkEvents` stores.
+5. Unit tests: `formatList` emits `revision` in both flag states; a row with
+   `revision = '7'` renders `7`.
+
+`test-engineer` (`tests/selection-list-service/contract`):
+
+6. Every `SelectionList` response carries an integer `revision >= 1` (flag ON and OFF —
+   extend `shared-lists-flag-off.test.ts`).
+7. **Event parity:** after each mutation (create; PATCH fields; PATCH fields + visibility;
+   archive; item create / update / reorder / archive / purge; list and item translation
+   upsert / delete; autofill), `GET` the list and assert `revision` equals the highest
+   `listRevision` among that list's outbox rows (`outbox-events.test.ts` helpers), and that
+   an access grant leaves it unchanged.
+8. **Fork:** `forked_from.revision` equals the source's `revision` read just before the fork;
+   after one change to the source, the source's `revision` is greater (the "behind" case);
+   with no change, equal ("up-to-date").
+9. Response-shape (Ajv) already accepts the field; no harness change needed.
+
+**Done when** items 1–9 are green in CI; then `contract-designer` cuts the MINOR that
+moves `revision` into `SelectionList.required` (with `visibility`, `forked_from` and
+`SelectionListItem.origin_item_id`; `editable` stays optional while the flag-OFF path omits
+it), and `product-designer` retires the frames' `contractGaps` / `contractDependency` entry
+in a frames-only PR (this contract PR may not touch `design/frames/**`), after which
+`frontend-engineer` wires `BehindSourceIndicator` to `compareForkToSource`.
+
+### 13.5 Implementation notes (service PR for 4.2.0)
+
+- **No migration, as §13.4 item 3 predicted.** The existing `selection_lists.revision` column (BIGINT NOT NULL DEFAULT 1,
+  check `>= 1`, monotonic trigger) is bumped by `bumpListRevision` under the per-organization outbox advisory lock in the
+  same transaction as the change, so concurrent writers neither skip nor duplicate a value; every existing row already
+  holds its true counter (backfill = nothing to do). `data-contract.json` is unchanged (no new stored field).
+- **Semantics chosen: exactly R1/R5** (response `revision` == the list's stored counter == latest committed
+  `listRevision`; access grants and the two event-less housekeeping writers do not move it).
+- **Org-deleted soft cascade (R5, last sentence) is deliberately NOT changed here.** The frozen 4.2.0 text lists "an
+  organization-deletion cascade" among the writes that do *not* change `revision` and publish no list event. Emitting
+  `list.archived` per list (and so bumping `revision`) would contradict that sentence and therefore needs a contract
+  amendment first (plus a decision on the event `actor` for a system cascade and on batching for orgs with many lists);
+  it stays an open pre-existing event-parity gap for `contract-designer` + `backend-engineer`.

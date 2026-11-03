@@ -19,7 +19,7 @@
     }
   },
   "image": {
-    "repository": "ghcr.io/izzywdev/fuze-a2a",
+    "repository": "ghcr.io/izzywdev/fuzefront-a2a",
     "$comment": "CORRECTED 2026-09-03 (gate_a2a.py v1.12.0, FuzeSDLC). This field used to be deliberately left at `ghcr.io/izzywdev/fuzeagent-a2a` on the theory that it was the FuzeSDLC-canonical default and gate_a2a.py's I1 check compared every repo's declared image against IT, so 'fixing' it here would have diverged from the fleet default rather than tracked it. That is no longer true: gate_a2a.py's own SHARED_IMAGE constant has SINCE been corrected fleet-wide to `ghcr.io/izzywdev/fuze-a2a` (see the script's own comment above SHARED_IMAGE — the old constant contradicted the frozen contract's `values-interface.schema.json` default and was punishing conformant repos), and this repo's local policy file is read via a SHALLOW dict merge over the gate's DEFAULT_POLICY (load_policy() `merged.update(data)`), so leaving this key at the old stale string was silently RE-INTRODUCING the exact bug the gate fix was meant to remove, and produced a false I1 finding against FuzeFront's own correctly-declared `fuze-a2a` image in values.yaml/values-prod.yaml. Now tracks the gate's corrected constant; verified: `python3 scripts/gate_a2a.py <this-repo> --all` reports zero I1 findings after this change."
   },
   "creds": {

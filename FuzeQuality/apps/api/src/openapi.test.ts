@@ -274,10 +274,14 @@ describe('contract discovery', () => {
       expect(document.components.parameters.ExecutionEvidenceRequirement).toMatchObject({
         name: 'evidenceRequirement',
         in: 'query',
-        schema: { type: 'string', enum: ['evidence-url-invalid', 'github-run-provenance-missing', 'policy-gate-outcome-missing', 'post-production-video-missing', 'performance-threshold-missing', 'terminal-timing-missing'] },
+        schema: { type: 'string', enum: ['evidence-url-invalid', 'provider-collection-failure', 'github-run-provenance-missing', 'attempt-provenance-unverified', 'policy-gate-outcome-missing', 'post-production-video-missing', 'performance-threshold-missing', 'terminal-timing-missing'] },
       })
       expect(document.components.parameters.ExecutionEvidenceRequirement.description)
+        .toContain('Provider collection failure')
+      expect(document.components.parameters.ExecutionEvidenceRequirement.description)
         .toContain('GitHub run provenance')
+      expect(document.components.parameters.ExecutionEvidenceRequirement.description)
+        .toContain('exact retry attempt')
       expect(document.paths['/api/v1/internal/repository-flow-candidates'].post.description)
         .toContain('exact tenant-scoped repository revision')
       expect(document.paths['/api/v1/internal/repository-flow-candidates'].post.description)
@@ -367,7 +371,7 @@ describe('contract discovery', () => {
         ].schema
       ).toMatchObject({ type: 'object', required: ['items', 'page'] })
       expect(schemas.ExecutionOutcomeTrend.required).toEqual(
-        ['date', 'total', 'passed', 'failed', 'cancelled', 'running', 'passRate', 'durationSampleCount', 'averageDurationMs', 'maximumDurationMs', 'retryAttemptCount', 'successfulRetryCount', 'recoveredRunCount', 'evidenceCompleteCount', 'evidencePartialCount', 'evidenceUnavailableCount', 'evidenceNotCollectedCount', 'invalidEvidenceUrlCount', 'githubRunProvenanceMissingCount', 'postProductionVideoMissingCount', 'terminalTimingMissingCount', 'gateEvaluationCount', 'gatePassedCount', 'gateFailedCount', 'gateCancelledCount', 'gateRunningCount', 'gateUnevaluatedExecutionCount', 'thresholdEvaluationCount', 'thresholdPassedCount', 'thresholdFailedCount', 'performanceExecutionWithoutThresholdCount']
+        ['date', 'total', 'passed', 'failed', 'cancelled', 'running', 'passRate', 'durationSampleCount', 'averageDurationMs', 'maximumDurationMs', 'retryAttemptCount', 'successfulRetryCount', 'recoveredRunCount', 'evidenceCompleteCount', 'evidencePartialCount', 'evidenceUnavailableCount', 'evidenceNotCollectedCount', 'evidenceCollectionFailureCount', 'invalidEvidenceUrlCount', 'githubRunProvenanceMissingCount', 'attemptProvenanceUnverifiedCount', 'postProductionVideoMissingCount', 'terminalTimingMissingCount', 'gateEvaluationCount', 'gatePassedCount', 'gateFailedCount', 'gateCancelledCount', 'gateRunningCount', 'gateUnevaluatedExecutionCount', 'thresholdEvaluationCount', 'thresholdPassedCount', 'thresholdFailedCount', 'performanceExecutionWithoutThresholdCount']
       )
       expect(schemas.ExecutionOutcomeTrend.properties.passRate).toMatchObject({
         type: 'number', format: 'double', minimum: 0, maximum: 1,
@@ -378,7 +382,7 @@ describe('contract discovery', () => {
       expect(schemas.ExecutionOutcomeTrend.properties.maximumDurationMs).toMatchObject({
         type: 'integer', minimum: 0,
       })
-      for (const property of ['evidenceCompleteCount', 'evidencePartialCount', 'evidenceUnavailableCount', 'evidenceNotCollectedCount', 'invalidEvidenceUrlCount', 'githubRunProvenanceMissingCount', 'postProductionVideoMissingCount', 'terminalTimingMissingCount']) {
+      for (const property of ['evidenceCompleteCount', 'evidencePartialCount', 'evidenceUnavailableCount', 'evidenceNotCollectedCount', 'evidenceCollectionFailureCount', 'invalidEvidenceUrlCount', 'githubRunProvenanceMissingCount', 'attemptProvenanceUnverifiedCount', 'postProductionVideoMissingCount', 'terminalTimingMissingCount']) {
         expect(schemas.ExecutionOutcomeTrend.properties[property]).toMatchObject({ type: 'integer', minimum: 0 })
       }
       for (const property of ['gateEvaluationCount', 'gatePassedCount', 'gateFailedCount', 'gateCancelledCount', 'gateRunningCount', 'gateUnevaluatedExecutionCount']) {
@@ -449,6 +453,7 @@ describe('contract discovery', () => {
         'source',
         'status',
         'revision',
+        'targetId',
         'model',
         'promptVersion',
         'schemaVersion',
@@ -546,7 +551,7 @@ describe('contract discovery', () => {
         document.paths['/api/v1/repositories/{repositoryId}/policy-gate-evaluations'].get.parameters.map(
           (parameter: { name: string }) => parameter.name
         )
-      ).toEqual(['kind', 'remediationAction', 'severity', 'reviewStatus', 'revision', 'subject', 'policyArtifactId', 'gateArtifactId', 'minConfidence', 'maxConfidence', 'limit', 'cursor'])
+      ).toEqual(['kind', 'remediationAction', 'severity', 'reviewStatus', 'revision', 'subject', 'sourcePath', 'policyArtifactId', 'gateArtifactId', 'minConfidence', 'maxConfidence', 'limit', 'cursor'])
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/policy-gate-evaluations'].get.responses['200'].content[
           'application/json'
@@ -564,7 +569,7 @@ describe('contract discovery', () => {
       expect(
         document.paths['/api/v1/internal/repositories/{repositoryId}/policy-gate-evaluations'].get.parameters
           .map((parameter: { name: string }) => parameter.name)
-      ).toEqual(['kind', 'remediationAction', 'severity', 'reviewStatus', 'revision', 'subject', 'policyArtifactId', 'gateArtifactId', 'minConfidence', 'maxConfidence', 'limit', 'cursor'])
+      ).toEqual(['kind', 'remediationAction', 'severity', 'reviewStatus', 'revision', 'subject', 'sourcePath', 'policyArtifactId', 'gateArtifactId', 'minConfidence', 'maxConfidence', 'limit', 'cursor'])
       expect(
         document.paths['/api/v1/internal/repositories/{repositoryId}/policy-gate-evaluations'].get.responses['200'].content[
           'application/json'
@@ -589,6 +594,16 @@ describe('contract discovery', () => {
       expect(schemas.RepositoryProcessingStatus.properties.lastScanFailure.$ref).toBe(
         '#/components/schemas/RepositoryScanFailure'
       )
+      expect(schemas.RepositoryProcessingStatus.properties.lastAnalysis.properties.errorCode.enum).toEqual([
+        'INTELLIGENCE_UNAVAILABLE',
+        'INTELLIGENCE_TIMEOUT',
+        'INTELLIGENCE_INVALID_RESPONSE',
+      ])
+      expect(
+        document.paths['/api/v1/internal/repositories/{repositoryId}/analysis-status'].post.requestBody.content[
+          'application/json'
+        ].schema.properties.errorCode.enum
+      ).toEqual(['INTELLIGENCE_UNAVAILABLE', 'INTELLIGENCE_TIMEOUT', 'INTELLIGENCE_INVALID_RESPONSE'])
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/analysis-retries'].post.responses['409'].content[
           'application/json'

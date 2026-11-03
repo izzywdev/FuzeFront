@@ -9,5 +9,6 @@ and quota displays.
 - `label?`
 - `valueLabel?`
 - `tone?`
+- `role?` — ARIA role of the track. `progressbar` (default) for task progress; `meter` for a scalar gauge within a known range (quota used / limit).
 
 See `components/index.d.ts` for the full prop contract.

@@ -160,6 +160,13 @@ contract/
   shared-lists-resolve.test.ts        platform ids resolve from every org, effective_item_id redirect, private/archived fork no redirect, ETag varies
   shared-lists-events.test.ts         outbox: list.forked / visibility.changed / created snapshots; one transaction (xmin); nothing on refusals
   shared-lists-flag-off.test.ts       flag OFF: 4.0.0 behaviour with 4.1.0 shapes (needs the second, flag-OFF instance — see below)
+  shared-lists-org-renderings.test.ts publishing / forking through either rendering (TypeID / bare UUID) of one org id
+  shared-lists-platform-suspension.test.ts  platform-org SUSPENSION (writes 403 / reads served / resume; ordering; flag-independent) and
+                                      FUTURE-DATED org events rejected (needs the two suspension instances — see below)
+  shared-lists-access-groups.test.ts  grant GROUPS: a user's mirror rows under both renderings are one grant (GET once, DELETE revokes all,
+                                      PUT converges, last-owner guard, paged roster); the org id's renderings are one group
+  shared-lists-duplicate-winner.test.ts  PERMIT-AWARE duplicate winner (same key under two renderings): listing, ?key=, fork lookup, resolve
+  shared-lists-dark-create-renderings.test.ts  create / rename onto a key held under another rendering is 409 even with the flag OFF
 security/
   shared-read-authz.test.ts           shared read per tenant role (developer -> 404), cross-org 404, nobody mutates via shared read, id is not a capability
   shared-lists-privileged-ops.test.ts publish_platform (platform org only), promotion, owner-only visibility, purge of common lists
@@ -187,6 +194,18 @@ instances on the same database**, both started like the CI job does (`NODE_ENV=t
   setting - unset / an org with no projection row / an org projected `is_active=false` - passed as
   `SHARED_LISTS_PLATFORM_DISABLED_URLS="unset=<url>,unconfirmed=<url>,deactivated=<url>"`
   (`.github/workflows/ci.yml` starts them on 3013-3015; the flag-OFF instance is 3012).
+* `contract/shared-lists-platform-suspension.test.ts` DEACTIVATES and REACTIVATES a platform org, so it cannot use the shared one
+  (suspending it would fail every parallel suite's writes). It has its own platform org (`SUSPENDABLE_PLATFORM_ORG_ID`,
+  helpers/sl9-constants.ts) and two more instances on the same database that differ only in the shared-lists flag:
+  `SHARED_LISTS_SUSPENSION_URLS="on=<url>,off=<url>"` (CI: 3016 flags ON, 3017 shared-lists OFF; the id literal in ci.yml is
+  pinned to the constant by `contract/harness-ids.test.ts`). The suite confirms the org in the projection and delivers the
+  identity.org.* events the way `contract/seeding.test.ts` does - the compiled handlers (`dist/events/*.handler.js`, via
+  `helpers/org-events.ts`) against the same Postgres - and observes every effect over HTTP on those instances (the suspension
+  is read fresh per request). It does not use, and cannot disturb, the other instances.
+* Duplicate-key and grant-group states cannot be created through the API any more (that is the point of the rules they test), so
+  `helpers/renderings.ts` plants them as legacy rows with plain SQL; all assertions are over HTTP. The stand-in's
+  `POST /__fixture/deny-catalog-action` withdraws one catalog action from one subject (a caller who may `resolve` but holds no
+  shared read), which is how the resolve redirect is shown to be decided among the forks the caller can READ.
 * `TEST_PLATFORM_ORG_ID` (default `org_01jpmf4z1yf88rpb9z9sd6pz00`) must equal the service's
   `SELECTION_LIST_PLATFORM_ORG_ID`. The suites tell the stand-in Security API which org is the platform org
   through `POST /__fixture/platform-org`; `publish_platform` is effective only in that tenant.

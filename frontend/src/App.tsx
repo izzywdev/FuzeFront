@@ -4,6 +4,7 @@ import { Button } from '@fuzefront/design-system'
 import {
   useCurrentUser,
   useAppContext,
+  useOrganizations,
   MenuItem,
   resetWorkspaceSessionIfUserChanged,
 } from './lib/shared'
@@ -58,6 +59,7 @@ import ConfigCatalogPage from './pages/ConfigCatalogPage'
 import ConfigKeyDefinitionPage from './pages/ConfigKeyDefinitionPage'
 import ConfigAuditHistoryPage from './pages/ConfigAuditHistoryPage'
 import ConnectorsPage from './pages/ConnectorsPage'
+import ConnectorDetailPage from './pages/ConnectorDetailPage'
 import { PortalShell, PortalLoginFlow, isMultiTenantPortalsEnabled } from '@fuzefront/portal-branding-ui'
 import FuzePickerMentionsPage from './pages/FuzePickerMentionsPage'
 import {
@@ -65,6 +67,8 @@ import {
   TranslationWorkbenchFlow,
   SelectionListAccessFlow,
   SelectionListPickerHarness,
+  SharedListsFeatureProvider,
+  SHARED_LISTS_FLAG_KEY,
 } from '@fuzeone/selection-lists-ui'
 import { useSelectionListsAuth } from './lib/selectionListsAuth'
 
@@ -300,10 +304,53 @@ function App() {
             below AuthWrapper so the provisional session has already been
             adopted and the roster reflects real accounts. */}
         <AccountsProvider>
-          <AppContent />
+          <SharedListsHost>
+            <AppContent />
+          </SharedListsHost>
         </AccountsProvider>
       </FeatureFlagProvider>
     </AuthWrapper>
+  )
+}
+
+/**
+ * Mounts `SharedListsFeatureProvider` (SL9 shared lists, frames manifest
+ * `selection-lists-shared` -> `hostMounting`) for every selection-list surface:
+ * the `/settings/selection-lists*` routes and the public
+ * `/embed/selection-list-picker` harness.
+ *
+ * Release flag `fuzefront.selection-lists.shared-lists` (default OFF). Read
+ * through the shell's `useFlagState` with an explicit OFF fallback, so it is OFF
+ * (and `ready` is false, which defers every request-issuing consumer) while
+ * `/api/flags` is loading, and OFF with `ready` true on any fetch failure, with no session token
+ * (the public embed), and when the key is absent. `/api/flags` evaluates the
+ * flag WITHOUT an org context, so it is global, not per organization; no org
+ * context is invented here. The provider treats anything but boolean `true` as
+ * OFF and, while OFF, renders no shared-lists element and sends no
+ * `include_shared` / `visibility` param, so the shell behaves as before.
+ *
+ * `isPlatformOrg` is only a UI hint for the "Every organization" option; the
+ * service still enforces `publish_platform` through Permit. The provider renders
+ * no DOM of its own.
+ */
+function SharedListsHost({ children }: { children: ReactNode }) {
+  // `ready` is false until `/api/flags` settles. The package defers every
+  // request-issuing consumer (the public embedded picker mounts before the flag
+  // does) until then, so no consumer runs the 4.0.0 path first and the shared
+  // path again when the flag flips ON. A flag that cannot be read (no session
+  // token on the public embed, 5xx, network) settles to OFF with ready=true.
+  const { enabled: sharedLists, ready } = useFlagState(SHARED_LISTS_FLAG_KEY, false)
+  const { activeOrganization } = useOrganizations()
+  return (
+    <SharedListsFeatureProvider
+      sharedLists={sharedLists}
+      ready={ready}
+      isPlatformOrg={activeOrganization?.type === 'platform'}
+      organizationId={activeOrganization?.id}
+      organizationName={activeOrganization?.name}
+    >
+      {children}
+    </SharedListsFeatureProvider>
   )
 }
 
@@ -414,6 +461,7 @@ function AppContent() {
             <Route path="/account/security" element={<AccountSecurityPage />} />
             <Route path="/account/security/connections" element={<AccountConnectionsPage />} />
             <Route path="/connectors" element={<ConnectorsPage />} />
+            <Route path="/connectors/:connectorId" element={<ConnectorDetailPage />} />
             <Route path="/billing" element={<BillingPage />} />
             <Route path="/billing/invoices" element={<BillingPage />} />
             <Route path="/billing/payments" element={<BillingPage />} />

@@ -12,8 +12,15 @@
  *   value — pre-selected item ID (for archived/missing resolution); in multi
  *           mode one or more ids, repeated (`value=a&value=b`) or comma-separated
  *   max   — maximum selections (multi mode)
+ *
+ * Shared-lists harness switches (SL9; only meaningful while the shared-lists
+ * flag is ON — with it OFF they are ignored and the picker is the 4.0.0 one):
+ *   showSource=1 — pass the opt-in `showSource` prop (provenance caption)
+ *   migrate=1    — pass `onEffectiveValue`; every call is recorded on
+ *                  `[data-migration="host-opt-in"]` as `data-effective-calls`
+ *                  (JSON `[[stored, effective], …]`)
  */
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import type { SelectionListItem, ApiError } from './types'
 import {
@@ -23,6 +30,16 @@ import {
   unwrapItems,
   unwrapCursor,
 } from './api'
+import {
+  EffectiveListInspector,
+  EffectiveListSource,
+  EffectivePickerState,
+  storedStatesFor,
+  useEffectivePickerData,
+  type StoredValueState,
+} from './shared-lists/picker'
+import { effectiveStyles as st } from './shared-lists/picker/styles'
+import { useSharedLists } from './shared-lists/core/SharedListsFeatureProvider'
 
 // ── Design-system tokens only ─────────────────────────────────────────────────
 const s = {
@@ -177,6 +194,27 @@ interface SelectionListPickerBaseProps {
    * accepted and used as-is.
    */
   listKey: string
+  /**
+   * Shared lists (SL9, flag ON only): render the opt-in caption under the
+   * control saying which list the key resolved to (the org's own version, or
+   * the common list). Off by default — end-user forms show no caption. Ignored
+   * while the shared-lists flag is OFF.
+   */
+  showSource?: boolean
+  /**
+   * Shared lists (SL9, flag ON only): called once per stored item id the
+   * service redirected to the organization's fork item, after a SUCCESSFUL
+   * resolve — `(storedId, effectiveId)`. The picker never rewrites the value it
+   * holds; a host that wants to migrate stored values may write `effectiveId`
+   * on its own next save. Never called while the flag is OFF, or when the
+   * resolve fails.
+   */
+  onEffectiveValue?: (stored: string, effective: string) => void
+  /**
+   * Shared lists (SL9, flag ON only): diagnostics for the demo / e2e harness —
+   * render which list the key resolved to. Not for end-user forms.
+   */
+  showInspector?: boolean
 }
 
 export interface SingleSelectionListPickerProps extends SelectionListPickerBaseProps {
@@ -209,15 +247,6 @@ export interface MultiSelectionListPickerProps extends SelectionListPickerBasePr
 export type SelectionListPickerProps = SingleSelectionListPickerProps | MultiSelectionListPickerProps
 
 type LoadState = 'loading' | 'error' | 'not-found' | 'loaded'
-
-/** A stored value that is not (or no longer) offerable: archived (has a label) or purged/unknown. */
-interface StoredValueState {
-  kind: 'archived' | 'missing'
-  id: string
-  label?: string
-  locale?: string
-  status?: string
-}
 
 /** Contract list ids carry the `front_sl_` prefix; anything else is a list KEY. */
 const LIST_ID_PREFIX = 'front_sl_'
@@ -289,18 +318,58 @@ function valueFor(
 
 export function SelectionListPicker(props: SelectionListPickerProps) {
   const { listKey, mode, initialValue, max } = props
-  const [items, setItems] = useState<SelectionListItem[]>([])
-  const [loadState, setLoadState] = useState<LoadState>('loading')
+
+  // Keyed on the id CONTENT, so a host re-creating the same array each render
+  // does not re-seed / re-resolve.
+  const seedKey = JSON.stringify(seedIdsOf(mode, initialValue))
+  const seedIdList = useMemo(() => JSON.parse(seedKey) as string[], [seedKey])
+
+  // Shared lists (SL9): with the flag ON the key means the EFFECTIVE list and
+  // the stored ids resolve across a fork. Flag OFF → inert (no request), and
+  // everything below is exactly the 4.0.0 data path.
+  const effective = useEffectivePickerData({
+    listKey,
+    storedIds: seedIdList,
+    onEffectiveValue: props.onEffectiveValue,
+  })
+  const shared = effective.enabled
+  // The host's flag has not settled: which data path to run (4.0.0 / shared) is
+  // not known yet, so neither runs — the picker shows its loading state and
+  // issues no request until the flag settles (then exactly one set).
+  const { ready: flagReady } = useSharedLists()
+
+  const [legacyItems, setItems] = useState<SelectionListItem[]>([])
+  const [legacyLoadState, setLoadState] = useState<LoadState>('loading')
+  const items = shared ? effective.items : legacyItems
+  const loadState: LoadState = shared ? effective.loadState : legacyLoadState
 
   // Combobox state
   const [open, setOpen] = useState(false)
   const [searchText, setSearchText] = useState('')
 
   // Selection state: every selected id, including stored (archived / purged) ones
-  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  // (Shared lists: the host's value is held from the first render — it never
+  // waits on, or depends on, the resolve.)
+  const [selectedIds, setSelectedIds] = useState<string[]>(() =>
+    shared ? seedIdList : [],
+  )
 
   // Stored values that resolved as archived / missing (frame 14)
-  const [storedValues, setStoredValues] = useState<StoredValueState[]>([])
+  const [legacyStoredValues, setStoredValues] = useState<StoredValueState[]>([])
+  // Shared lists: derived from the one resolve, never stored — so a late resolve
+  // can not undo a pick, and a replaced id simply stops being a stored value.
+  const activeItemIds = useMemo(
+    () => new Set(items.filter(it => it.status === 'active').map(it => it.id)),
+    [items],
+  )
+  const sharedStoredValues = useMemo(
+    () =>
+      shared
+        ? storedStatesFor(selectedIds, effective.stored.outcomes, activeItemIds)
+        : [],
+    [shared, selectedIds, effective.stored.outcomes, activeItemIds],
+  )
+  const storedValues = shared ? sharedStoredValues : legacyStoredValues
 
   // True once the user has changed the value: a late /resolve of the initial
   // value must not overwrite what the user (and, via onChange, the host) chose.
@@ -365,19 +434,33 @@ export function SelectionListPicker(props: SelectionListPickerProps) {
   }, [])
 
   useEffect(() => {
-    loadItems()
-  }, [loadItems])
+    if (flagReady && !shared) loadItems()
+  }, [loadItems, shared, flagReady])
 
   // A new initialValue re-seeds the picker (uncontrolled: it is a seed, not a binding).
-  // Keyed on the id content so a host re-creating the same array each render does not re-seed.
-  const seedKey = JSON.stringify(seedIdsOf(mode, initialValue))
+  // Only a change of the seed CONTENT re-seeds. The flag arriving late (the host's
+  // flag evaluation is async) switches the data path but must never undo a pick,
+  // removal or "Clear all" the user already made — no onChange accompanies a reset.
+  const seededKeyRef = useRef<string | null>(null)
   useEffect(() => {
-    touchedRef.current = false
+    const seedChanged = seededKeyRef.current !== seedKey
+    seededKeyRef.current = seedKey
+    if (seedChanged) touchedRef.current = false
+    else if (touchedRef.current) return
     const seedIds = JSON.parse(seedKey) as string[]
-    if (seedIds.length > 0) {
+    if (shared) {
+      // Shared lists: hold the host's ids at once; the resolve is a hook of its own.
+      setSelectedIds(prev =>
+        prev.length === seedIds.length && prev.every((id, i) => id === seedIds[i])
+          ? prev
+          : seedIds,
+      )
+      return
+    }
+    if (flagReady && seedIds.length > 0) {
       resolveInitialValue(seedIds)
     }
-  }, [seedKey, resolveInitialValue])
+  }, [seedKey, resolveInitialValue, shared, flagReady])
 
   // ── Close menu on outside click ───────────────────────────────────────────
   useEffect(() => {
@@ -407,13 +490,28 @@ export function SelectionListPicker(props: SelectionListPickerProps) {
     it.code.toLowerCase().includes(searchText.toLowerCase())
   )
 
-  // What the host form holds: ids in sort_order (comma-separated in the slot)
-  const persistedIds = valueFor(selectedIds, storedValues, items)
+  // What the host form holds: ids in sort_order (comma-separated in the slot).
+  // Shared lists: until the options AND the resolve have both settled, nothing
+  // can be judged "no longer offerable" — the host's ids are kept as they are.
+  const sharedSettled =
+    loadState === 'loaded' &&
+    (effective.stored.status === 'idle' || effective.stored.status === 'resolved')
+  const persistedIds =
+    shared && !sharedSettled
+      ? selectedIds
+      : valueFor(selectedIds, storedValues, items)
   const persistedValue = persistedIds.join(',')
 
   const storedById = new Map(storedValues.map(v => [v.id, v]))
   const archivedValues = persistedIds.map(id => storedById.get(id)).filter((v): v is StoredValueState => v?.kind === 'archived')
   const missingValues = persistedIds.map(id => storedById.get(id)).filter((v): v is StoredValueState => v?.kind === 'missing')
+
+  // Shared lists: options a stored value was redirected to render as selected.
+  const effectiveSelected = new Set(
+    storedValues.flatMap(v => (v.effectiveId ? [v.effectiveId] : [])),
+  )
+  const isSelected = (id: string) =>
+    selectedIds.includes(id) || effectiveSelected.has(id)
 
   const noMatches = searchText.trim() && filteredItems.length === 0
   const maxReached = mode === 'multi' && max !== undefined && max > 0 && persistedIds.length >= max
@@ -452,9 +550,15 @@ export function SelectionListPicker(props: SelectionListPickerProps) {
       return
     }
 
-    // Multi: toggle
-    if (selectedIds.includes(item.id)) {
-      const next = selectedIds.filter(id => id !== item.id)
+    // Multi: toggle. An option can be selected directly (its own id) AND through a
+    // stored id the service redirected to it (shared lists); one deselection
+    // removes EVERY id that represents the option, so it cannot stay checked.
+    if (isSelected(item.id)) {
+      const next = selectedIds.filter(
+        id =>
+          id !== item.id &&
+          !storedValues.some(v => v.id === id && v.effectiveId === item.id),
+      )
       setSelectedIds(next)
       emit(next, storedValues)
       return
@@ -502,6 +606,44 @@ export function SelectionListPicker(props: SelectionListPickerProps) {
   )
 
   const loadFrame = mode === 'multi' ? '13-picker-multi' : '12-picker-single'
+
+  // ── Shared lists: the in-place states (frames 09, 10, 15) ─────────────────
+  // Loading (lookup → options), load failed, no effective list, resolving a
+  // stored value, resolve failed. The host's value is kept in every one of them.
+  if (shared) {
+    const sharedState =
+      loadState === 'error'
+        ? 'error'
+        : loadState === 'not-found'
+          ? 'not-found'
+          : loadState === 'loading'
+            ? 'loading'
+            : effective.stored.status === 'resolving'
+              ? 'resolving'
+              : effective.stored.status === 'error'
+                ? 'resolve-error'
+                : null
+    if (sharedState) {
+      return (
+        <EffectivePickerState
+          state={sharedState}
+          listKey={listKey}
+          incomplete={effective.incomplete}
+          onRetry={
+            sharedState === 'resolve-error' ? effective.stored.retry : effective.retryLoad
+          }
+          persisted={persistedEl}
+          rootProps={{
+            'data-frame': loadFrame,
+            'data-mode': mode,
+            'data-picker': listKey,
+            'data-panel': 'picker',
+            style: s.pickerWrap,
+          }}
+        />
+      )
+    }
+  }
 
   // ── Loading state ─────────────────────────────────────────────────────────
   if (loadState === 'loading') {
@@ -583,7 +725,24 @@ export function SelectionListPicker(props: SelectionListPickerProps) {
 
   // The option menu: ACTIVE items only; an archived stored value is never offered.
   const menuEl = open && !isEmpty && (
-    <div data-combo-menu style={s.comboMenu} role="listbox">
+    <div
+      data-combo-menu
+      // Shared lists: the menu sits inline under the control at every width
+      // (frame 15 follows 4.0.0 frame 4d), so an overflow-hidden host cannot clip it.
+      data-menu-placement={shared ? 'inline' : undefined}
+      style={shared ? { ...s.comboMenu, ...st.comboMenu } : s.comboMenu}
+      role="listbox"
+      onKeyDown={
+        shared
+          ? e => {
+              if (e.key === 'Escape') {
+                setOpen(false)
+                setSearchText('')
+              }
+            }
+          : undefined
+      }
+    >
       <input
         data-combo-search
         ref={searchRef}
@@ -591,7 +750,7 @@ export function SelectionListPicker(props: SelectionListPickerProps) {
         value={searchText}
         onChange={e => setSearchText(e.target.value)}
         placeholder="Search..."
-        style={s.comboSearch}
+        style={shared ? { ...s.comboSearch, ...st.comboSearch } : s.comboSearch}
         aria-label="Search options"
       />
       <div style={s.optionList}>
@@ -604,7 +763,7 @@ export function SelectionListPicker(props: SelectionListPickerProps) {
           </div>
         ) : (
           filteredItems.map(item => {
-            const selected = selectedIds.includes(item.id)
+            const selected = isSelected(item.id)
             const refused = maxReached && !selected && missingValues.length === 0
             return (
               <div
@@ -613,14 +772,28 @@ export function SelectionListPicker(props: SelectionListPickerProps) {
                 role="option"
                 aria-selected={selected}
                 onClick={() => handleSelectItem(item)}
+                // Shared lists: keyboard-operable options (Enter / Space pick, Escape closes).
+                tabIndex={shared ? 0 : undefined}
+                onKeyDown={
+                  shared
+                    ? e => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          handleSelectItem(item)
+                        }
+                      }
+                    : undefined
+                }
                 style={{
                   ...s.optionItem,
+                  ...(shared ? st.option : {}),
                   background: selected ? 'var(--accent-soft)' : undefined,
                   cursor: refused ? 'not-allowed' : 'pointer',
                   opacity: refused ? 0.5 : 1,
                 }}
               >
                 {item.label}
+                {shared && selected && <span aria-hidden="true">✓</span>}
               </div>
             )
           })
@@ -644,11 +817,28 @@ export function SelectionListPicker(props: SelectionListPickerProps) {
   )
 
   // The single-mode control's content
-  const singleLabel = singleStored?.kind === 'archived' ? (
+  // Shared lists: a stored value that renders as an ordinary current value —
+  // redirected to the org's fork item (the FORK's label), or an active item of
+  // another list (its own label). No badge, notice or dirty marker.
+  const singlePlain =
+    singleStored?.kind === 'redirected' || singleStored?.kind === 'foreign'
+      ? singleStored
+      : undefined
+  const singleDegraded = singleStored && !singlePlain ? singleStored : undefined
+
+  const singleLabel = singlePlain ? (
+    <span
+      data-selected-label
+      data-redirected={singlePlain.effectiveId ? 'true' : undefined}
+    >
+      {singlePlain.label}
+    </span>
+  ) : singleStored?.kind === 'archived' ? (
     <span
       data-selected-label
       data-archived="true"
       data-status="archived"
+      data-redirected={singleStored.effectiveId ? 'true' : undefined}
       style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}
     >
       {singleStored.label ?? 'Archived value'}
@@ -677,13 +867,20 @@ export function SelectionListPicker(props: SelectionListPickerProps) {
       disabled={isEmpty}
       style={{
         ...s.comboControl,
+        ...(shared ? st.comboControl : {}),
         cursor: isEmpty ? 'not-allowed' : 'pointer',
         opacity: isEmpty ? 0.5 : 1,
-        color: singleStored ? 'var(--text-tertiary)' : s.comboControl.color,
+        color: singleDegraded ? 'var(--text-tertiary)' : s.comboControl.color,
       }}
       aria-expanded={open}
       aria-haspopup="listbox"
-      aria-label={singleStored ? undefined : isEmpty ? 'No options available' : 'Open selection list'}
+      aria-label={
+        singleStored || (shared && !isEmpty)
+          ? undefined
+          : isEmpty
+            ? 'No options available'
+            : 'Open selection list'
+      }
     >
       {mode === 'single' ? (
         singleLabel
@@ -694,12 +891,27 @@ export function SelectionListPicker(props: SelectionListPickerProps) {
     </button>
   )
 
+  // Shared lists: which list the key resolved to (from the one lookup) and the
+  // overall state; both are absent while the flag is OFF.
+  const sharedAttrs = shared
+    ? {
+        'data-state': storedValues.some(v => v.effectiveId) ? 'redirected' : 'ready',
+        ...(effective.source
+          ? {
+              'data-effective-source':
+                effective.source.kind === 'common' ? 'platform' : 'own',
+            }
+          : {}),
+      }
+    : {}
+
   return (
     <div
       data-frame={frameId}
       data-mode={mode}
       data-picker={listKey}
       data-panel="picker"
+      {...sharedAttrs}
       style={s.pickerWrap}
       ref={menuRef}
     >
@@ -741,19 +953,22 @@ export function SelectionListPicker(props: SelectionListPickerProps) {
                     </span>
                   )
                 }
-                const label = stored?.kind === 'archived'
-                  ? stored.label ?? 'Archived value'
-                  : activeItems.find(it => it.id === id)?.label ?? id
+                // Shared lists: a redirected / foreign value is an ordinary chip with its resolved label.
+                const archived = stored?.kind === 'archived' ? stored : undefined
+                const label = archived
+                  ? archived.label ?? 'Archived value'
+                  : stored?.label ?? activeItems.find(it => it.id === id)?.label ?? id
                 return (
                   <span
                     key={id}
                     data-chip={id}
-                    data-archived={stored ? 'true' : undefined}
-                    data-status={stored ? 'archived' : undefined}
-                    style={stored ? { ...s.chip, color: 'var(--text-tertiary)', borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' } : s.chip}
+                    data-archived={archived ? 'true' : undefined}
+                    data-status={archived ? 'archived' : undefined}
+                    data-redirected={stored?.effectiveId ? 'true' : undefined}
+                    style={archived ? { ...s.chip, color: 'var(--text-tertiary)', borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' } : s.chip}
                   >
                     {label}
-                    {stored && <span style={s.statusBadge}>Archived</span>}
+                    {archived && <span style={s.statusBadge}>Archived</span>}
                     <button
                       onClick={() => handleRemoveChip(id)}
                       style={s.chipRemoveBtn}
@@ -800,12 +1015,17 @@ export function SelectionListPicker(props: SelectionListPickerProps) {
       )}
 
       {/* Combo control — in single mode it carries the stored (archived / purged) value, if any */}
-      {singleStored ? (
-        <div data-state={singleStored.kind === 'archived' ? 'archived-selected' : 'missing'}>
+      {singleDegraded ? (
+        <div data-state={singleDegraded.kind === 'archived' ? 'archived-selected' : 'missing'}>
           {comboControl}
         </div>
       ) : (
         comboControl
+      )}
+
+      {/* Shared lists: the opt-in provenance caption — it comes with the options, never before them. */}
+      {shared && props.showSource && effective.list && (
+        <EffectiveListSource source={effective.source} list={effective.list} />
       )}
 
       {/* Purged / unknown stored value: frame 14 notice + how to resolve it */}
@@ -855,6 +1075,11 @@ export function SelectionListPicker(props: SelectionListPickerProps) {
         )
       })}
 
+      {/* Shared lists, harness only: which list the key resolved to. */}
+      {shared && props.showInspector && effective.list && (
+        <EffectiveListInspector list={effective.list} />
+      )}
+
       {/* Persisted value (visible 1px element for Playwright) */}
       {persistedEl}
     </div>
@@ -876,6 +1101,20 @@ export function SelectionListPickerHarness() {
     .filter(Boolean)
   const maxStr = searchParams.get('max')
   const max = maxStr ? parseInt(maxStr, 10) : undefined
+  // Shared-lists switches (ignored by the picker while the flag is OFF).
+  const showSource = searchParams.get('showSource') === '1'
+  const migrate = searchParams.get('migrate') === '1'
+  const [effectiveCalls, setEffectiveCalls] = useState<Array<[string, string]>>([])
+  const onEffectiveValue = useCallback(
+    (stored: string, effectiveId: string) =>
+      setEffectiveCalls(calls => [...calls, [stored, effectiveId]]),
+    [],
+  )
+  const shared = {
+    showSource,
+    showInspector: true,
+    onEffectiveValue: migrate ? onEffectiveValue : undefined,
+  }
 
   return (
     <div
@@ -888,14 +1127,25 @@ export function SelectionListPickerHarness() {
 
       {listKey ? (
         mode === 'multi' ? (
-          <SelectionListPicker listKey={listKey} mode="multi" initialValue={values.length ? values : undefined} max={max} />
+          <SelectionListPicker listKey={listKey} mode="multi" initialValue={values.length ? values : undefined} max={max} {...shared} />
         ) : (
-          <SelectionListPicker listKey={listKey} mode="single" initialValue={values[0]} />
+          <SelectionListPicker listKey={listKey} mode="single" initialValue={values[0]} {...shared} />
         )
       ) : (
         <div style={{ color: 'var(--danger)' }}>
           Missing <code>?list=</code> query parameter.
         </div>
+      )}
+
+      {/* Shared lists: the host's opt-in migration hook, as the harness records it. */}
+      {migrate && (
+        <p
+          data-migration="host-opt-in"
+          data-effective-calls={JSON.stringify(effectiveCalls)}
+          style={st.inspector}
+        >
+          onEffectiveValue calls: {effectiveCalls.length}
+        </p>
       )}
     </div>
   )

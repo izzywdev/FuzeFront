@@ -145,8 +145,7 @@
               },
               "organizationId": {
                 "type": ["string", "null"],
-                "format": "uuid",
-                "description": "Owning org for org-scoped apps; omit for platform-global."
+                "description": "Owning org as a TypeID (`org_…`) or bare UUID reference; omit (or send null) for platform-global apps."
               }
             }
           }

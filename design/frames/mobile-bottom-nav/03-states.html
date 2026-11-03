@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>States &amp; edges — Mobile bottom navigation</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  body { padding: var(--space-6) var(--space-4) 96px; }
+  .wrap { max-width: 1120px; margin: 0 auto; }
+  .crumb { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--text-tertiary); margin-bottom: var(--space-4); text-align: center; }
+  .crumb a { color: var(--cyan-400); text-decoration: none; }
+  .lead { color: var(--text-secondary); font-size: var(--text-sm); max-width: 70ch; margin: 0 auto var(--space-8);
+    text-align: center; line-height: 1.55; }
+  .stages { display: flex; flex-wrap: wrap; gap: var(--space-8) var(--space-6); justify-content: center; align-items: flex-start; }
+  .stage { display: flex; flex-direction: column; gap: var(--space-3); align-items: center; }
+  /* short phones for the states grid so several fit on one review page */
+  .stages .phone { height: 520px; }
+  .guide { max-width: 72ch; margin: var(--space-10) auto 0; background: var(--bg-secondary);
+    border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: var(--space-6); }
+  .guide h3 { margin: 0 0 var(--space-3); font-size: var(--text-md); font-family: var(--font-display); }
+  .guide ul { margin: 0; padding-left: 1.2em; color: var(--text-secondary); font-size: var(--text-sm); line-height: 1.7; }
+  .guide code { font-family: var(--font-mono); color: var(--text-primary); }
+  /* touch-target measurement overlay */
+  .tt-measure { position: relative; }
+  .tt-measure::after { content: "44px"; position: absolute; right: 2px; top: 50%; transform: translateY(-50%);
+    font-family: var(--font-mono); font-size: 9px; color: var(--success-color); }
+  .tt-ring { outline: 1px dashed var(--success-color); outline-offset: -1px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="crumb"><a href="index.html">← All frames</a> · Frame 03 · states &amp; edges · 375px</div>
+  <p class="lead">The bottom nav is shell chrome, so its states are about <b>never blocking navigation</b>. The bar
+    renders its static destinations instantly; only the app-registry-derived long tail (in the drawer) has data
+    states. Navigation stays fail-open — Home / Orgs / More work even when the registry call fails. Plus the
+    safe-area, touch-target, reduced-motion and long-label edges the shell must honour.</p>
+
+  <div class="stages">
+
+    <!-- LOADING: bar renders immediately; drawer apps section skeletons -->
+    <div class="stage">
+      <p class="state-label">Loading · bar instant, drawer apps skeleton</p>
+      <div class="phone" data-frame="03-states" data-state="loading" data-route="/dashboard" data-viewport="375">
+        <header class="m-topbar">
+          <button class="hamburger" data-action="toggle-drawer" aria-label="Open menu">☰</button>
+          <span class="wordmark"><span class="fuse">Fuze</span>Front</span><span class="spacer"></span>
+          <span class="avatar" aria-hidden="true">IZ</span>
+        </header>
+        <aside class="drawer" data-panel="drawer" data-state="loading" data-open="true" style="position:absolute" aria-label="Menu" aria-busy="true">
+          <div class="drawer__head"><span class="wordmark"><span class="fuse">Fuze</span>Front</span><button class="drawer__close" aria-label="Close">✕</button></div>
+          <div class="drawer__section">
+            <div class="drawer__section-label">Apps</div>
+            <div class="drawer-item" aria-hidden="true"><span class="sk" style="width:20px;height:20px"></span><span class="sk" style="height:10px;width:55%"></span></div>
+            <div class="drawer-item" aria-hidden="true"><span class="sk" style="width:20px;height:20px"></span><span class="sk" style="height:10px;width:40%"></span></div>
+            <div class="drawer-item" aria-hidden="true"><span class="sk" style="width:20px;height:20px"></span><span class="sk" style="height:10px;width:48%"></span></div>
+          </div>
+          <div class="drawer__section">
+            <div class="drawer__section-label">Portal</div>
+            <a class="drawer-item" data-route="/applications" href="#"><span class="ico">▦</span> Applications</a>
+            <a class="drawer-item" data-route="/organizations" href="#"><span class="ico">🏢</span> Organizations</a>
+          </div>
+        </aside>
+        <nav class="bottom-nav" data-component="bottom-nav" data-panel="bottom-nav" data-state="loaded" aria-label="Primary">
+          <a class="bn-item" data-nav-item="home" aria-current="page" href="#"><span class="bn-ico">🏠</span><span class="bn-label">Home</span></a>
+          <a class="bn-item" data-nav-item="apps" href="#"><span class="bn-ico">▦</span><span class="bn-label">Apps</span></a>
+          <a class="bn-item" data-nav-item="orgs" href="#"><span class="bn-ico">🏢</span><span class="bn-label">Orgs</span></a>
+          <button class="bn-item" data-nav-item="more" data-action="toggle-drawer"><span class="bn-ico">☰</span><span class="bn-label">More</span></button>
+        </nav>
+      </div>
+    </div>
+
+    <!-- EMPTY: no registered apps; portal nav still present -->
+    <div class="stage">
+      <p class="state-label">Empty · no registered apps</p>
+      <div class="phone" data-frame="03-states" data-state="empty" data-route="/applications" data-viewport="375">
+        <header class="m-topbar">
+          <button class="hamburger" data-action="toggle-drawer" aria-label="Open menu">☰</button>
+          <span class="wordmark"><span class="fuse">Fuze</span>Front</span><span class="spacer"></span>
+          <span class="avatar" aria-hidden="true">IZ</span>
+        </header>
+        <main class="m-content">
+          <div class="notice" data-empty>
+            <div class="ico" aria-hidden="true">▦</div>
+            <h3>No apps yet</h3>
+            <p>Nothing's been activated for this workspace. The bottom nav still works — browse the catalogue to
+              add one.</p>
+            <button class="btn btn-primary" data-action="browse-apps">Browse apps</button>
+          </div>
+        </main>
+        <nav class="bottom-nav" data-component="bottom-nav" data-panel="bottom-nav" data-state="loaded" aria-label="Primary">
+          <a class="bn-item" data-nav-item="home" href="#"><span class="bn-ico">🏠</span><span class="bn-label">Home</span></a>
+          <a class="bn-item" data-nav-item="apps" aria-current="page" href="#"><span class="bn-ico">▦</span><span class="bn-label">Apps</span></a>
+          <a class="bn-item" data-nav-item="orgs" href="#"><span class="bn-ico">🏢</span><span class="bn-label">Orgs</span></a>
+          <button class="bn-item" data-nav-item="more" data-action="toggle-drawer"><span class="bn-ico">☰</span><span class="bn-label">More</span></button>
+        </nav>
+      </div>
+    </div>
+
+    <!-- ERROR: app registry failed; nav fail-open, scoped error in drawer -->
+    <div class="stage">
+      <p class="state-label">Error · registry failed, nav fail-open</p>
+      <div class="phone" data-frame="03-states" data-state="error" data-route="/applications" data-viewport="375">
+        <header class="m-topbar">
+          <button class="hamburger" data-action="toggle-drawer" aria-label="Open menu">☰</button>
+          <span class="wordmark"><span class="fuse">Fuze</span>Front</span><span class="spacer"></span>
+          <span class="avatar" aria-hidden="true">IZ</span>
+        </header>
+        <aside class="drawer" data-panel="drawer" data-state="error" data-open="true" style="position:absolute" aria-label="Menu">
+          <div class="drawer__head"><span class="wordmark"><span class="fuse">Fuze</span>Front</span><button class="drawer__close" aria-label="Close">✕</button></div>
+          <div class="drawer__section">
+            <div class="drawer__section-label">Apps</div>
+            <div class="notice err" data-error style="margin:var(--space-2) var(--space-4)">
+              <div class="ico" aria-hidden="true">⚠</div>
+              <h3>Couldn't load apps</h3>
+              <p>Your app list is temporarily unavailable. Portal navigation below still works.</p>
+              <button class="btn btn-ghost" data-action="retry">Try again</button>
+            </div>
+          </div>
+          <div class="drawer__section">
+            <div class="drawer__section-label">Portal</div>
+            <a class="drawer-item" data-route="/organizations" href="#"><span class="ico">🏢</span> Organizations</a>
+            <a class="drawer-item" data-route="/billing" href="#"><span class="ico">💳</span> Billing</a>
+          </div>
+        </aside>
+        <nav class="bottom-nav" data-component="bottom-nav" data-panel="bottom-nav" data-state="loaded" aria-label="Primary">
+          <a class="bn-item" data-nav-item="home" href="#"><span class="bn-ico">🏠</span><span class="bn-label">Home</span></a>
+          <a class="bn-item" data-nav-item="apps" aria-current="page" href="#"><span class="bn-ico">▦</span><span class="bn-label">Apps</span></a>
+          <a class="bn-item" data-nav-item="orgs" href="#"><span class="bn-ico">🏢</span><span class="bn-label">Orgs</span></a>
+          <button class="bn-item" data-nav-item="more" data-action="toggle-drawer" data-pressed="true"><span class="bn-ico">☰</span><span class="bn-label">More</span></button>
+        </nav>
+      </div>
+    </div>
+
+    <!-- SAFE-AREA / NOTCH: home-indicator inset visualised -->
+    <div class="stage">
+      <p class="state-label">Safe-area · notch + home indicator</p>
+      <div class="phone phone--notch" data-frame="03-states" data-state="safe-area" data-route="/dashboard" data-viewport="375" style="--safe-area-bottom:24px;--safe-area-top:26px">
+        <header class="m-topbar">
+          <button class="hamburger" data-action="toggle-drawer" aria-label="Open menu">☰</button>
+          <span class="wordmark"><span class="fuse">Fuze</span>Front</span><span class="spacer"></span>
+          <span class="avatar" aria-hidden="true">IZ</span>
+        </header>
+        <main class="m-content">
+          <h1 class="m-h1">Dashboard</h1>
+          <p class="m-sub">The top bar pads below the notch (<code class="mono">--safe-area-top</code>); the bar
+            pads above the home indicator (<code class="mono">--safe-area-bottom</code>). Shown forced to 26/24px.</p>
+          <div class="m-card"><div class="m-card__seam"></div><h3>Content clears both insets</h3><p>Nothing hidden under the notch or the bar.</p></div>
+        </main>
+        <nav class="bottom-nav" data-component="bottom-nav" data-panel="bottom-nav" data-state="loaded" data-safe-area="true" aria-label="Primary">
+          <a class="bn-item" data-nav-item="home" aria-current="page" href="#"><span class="bn-ico">🏠</span><span class="bn-label">Home</span></a>
+          <a class="bn-item" data-nav-item="apps" href="#"><span class="bn-ico">▦</span><span class="bn-label">Apps</span></a>
+          <a class="bn-item" data-nav-item="orgs" href="#"><span class="bn-ico">🏢</span><span class="bn-label">Orgs</span></a>
+          <button class="bn-item" data-nav-item="more" data-action="toggle-drawer"><span class="bn-ico">☰</span><span class="bn-label">More</span></button>
+        </nav>
+      </div>
+    </div>
+
+    <!-- EDGE: long label truncation + touch-target demo -->
+    <div class="stage">
+      <p class="state-label">Edge · long label truncates, ≥44px targets</p>
+      <div class="phone" data-frame="03-states" data-state="edge-truncate" data-route="/organizations" data-viewport="375">
+        <header class="m-topbar">
+          <button class="hamburger" data-action="toggle-drawer" aria-label="Open menu">☰</button>
+          <span class="wordmark"><span class="fuse">Fuze</span>Front</span><span class="spacer"></span>
+          <span class="avatar" aria-hidden="true">IZ</span>
+        </header>
+        <main class="m-content">
+          <h1 class="m-h1">Organizations</h1>
+          <p class="m-sub">A localized / long label never wraps or pushes a sibling — it ellipsizes. Each tab
+            keeps a ≥<code class="mono">--touch-target</code> (44px) hit area (dashed = measured).</p>
+        </main>
+        <nav class="bottom-nav" data-component="bottom-nav" data-panel="bottom-nav" data-state="loaded" aria-label="Primary">
+          <a class="bn-item tt-ring" data-nav-item="home" href="#"><span class="bn-ico">🏠</span><span class="bn-label">Startseite</span></a>
+          <a class="bn-item tt-ring" data-nav-item="apps" href="#"><span class="bn-ico">▦</span><span class="bn-label">Anwendungen</span></a>
+          <a class="bn-item tt-ring" data-nav-item="orgs" aria-current="page" href="#"><span class="bn-ico">🏢</span><span class="bn-label">Organisationen</span></a>
+          <button class="bn-item tt-ring" data-nav-item="more" data-action="toggle-drawer"><span class="bn-ico">☰</span><span class="bn-label">Mehr</span></button>
+        </nav>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="guide">
+    <h3>What QA writes RED specs against</h3>
+    <ul>
+      <li><b>Loading never blanks the bar.</b> <code>[data-component='bottom-nav'][data-state='loaded']</code> is
+        present from first paint; only <code>[data-panel='drawer'][data-state='loading']</code> shows skeletons
+        (<code>aria-busy</code>). The bar is not gated on the registry fetch.</li>
+      <li><b>Empty keeps navigation.</b> <code>[data-empty]</code> lives in the content, the bar still renders all
+        four tabs; the empty state offers <code>[data-action='browse-apps']</code>, not a dead end.</li>
+      <li><b>Error is fail-open and scoped.</b> <code>[data-error]</code> is confined to the drawer's Apps section
+        with <code>[data-action='retry']</code>; Home / Orgs / More and the Portal section stay usable.</li>
+      <li><b>Safe-area.</b> <code>[data-safe-area='true']</code> — the bar's height is
+        <code>calc(--bottom-nav-height + --safe-area-bottom)</code> and content <code>padding-bottom</code> clears
+        it; the top bar pads <code>--safe-area-top</code>.</li>
+      <li><b>Touch targets.</b> every <code>.bn-item</code> is ≥<code>--touch-target</code> (44px, WCAG 2.5.5).</li>
+      <li><b>Reduced motion.</b> drawer/scrim transitions collapse to instant under
+        <code>prefers-reduced-motion</code>.</li>
+      <li><b>Long labels truncate</b> (<code>text-overflow: ellipsis</code>) — never wrap or overflow the slot.</li>
+    </ul>
+  </div>
+
+  <p class="caption">Frame <b>03 / 03</b> · States &amp; edges · 375px · tokens only</p>
+</div>
+</body>
+</html>

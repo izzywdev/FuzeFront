@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/izzywdev/FuzeFront/docs/help/manifest.schema.json",
+  "title": "FuzeFront Help Center manifest",
+  "description": "Index of record for the in-app help system. gate-help-conformance enforces bidirectional coverage between the articles listed here and the published .md files on disk.",
+  "type": "object",
+  "required": ["title", "description", "sections"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "title": { "type": "string", "minLength": 1 },
+    "description": { "type": "string", "minLength": 1 },
+    "version": { "type": "string", "description": "SemVer of the help content set." },
+    "devPortal": { "type": "string", "description": "URL of the Developer Portal the help system cross-links to." },
+    "sections": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "audience", "articles"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+          "title": { "type": "string", "minLength": 1 },
+          "audience": { "type": "string", "enum": ["user", "developer"] },
+          "description": { "type": "string" },
+          "articles": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Repo-root-relative paths to the section's articles, in nav order.",
+            "items": { "type": "string", "pattern": "^docs/help/.+\\.md$" }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,24 @@
+<!-- @dsCard group="Core" height=352 static -->
+<style>@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");</style>
+<style>
+  body { margin: 0; padding: var(--space-6); background: var(--bg-primary); font-family: var(--font-sans); }
+  .tag { display: inline-block; margin-bottom: var(--space-3); font-family: var(--font-mono); font-size: 0.7rem; font-weight: 500; letter-spacing: 0; color: var(--accent-color); background: var(--accent-soft); padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
+  pre { margin: 0; padding: var(--space-4); background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-lg); overflow: auto; }
+  code { font-family: var(--font-mono); font-size: 0.8125rem; line-height: 1.5; color: var(--text-secondary); white-space: pre; }
+  .n { color: var(--text-primary); }
+</style>
+<span class="tag">GradientText · usage</span>
+<pre><code>&lt;h1&gt;
+  About &lt;GradientText&gt;FuzeOne&lt;/GradientText&gt;
+&lt;/h1&gt;
+
+&lt;div className="text-7xl font-heading font-extrabold"&gt;
+  &lt;GradientText as="div"&gt;404&lt;/GradientText&gt;
+&lt;/div&gt;
+
+&lt;h1&gt;
+  The Software Factory
+  &lt;GradientText as="div" gradient="var(--primary-gradient)" className="mt-2"&gt;
+    for your SaaS
+  &lt;/GradientText&gt;
+&lt;/h1&gt;</code></pre>

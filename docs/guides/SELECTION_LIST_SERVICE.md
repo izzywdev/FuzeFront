@@ -6,10 +6,10 @@ How a consuming application stores, renders, and manages reference data
 `@fuzeone/selection-list-client`.
 
 The service contract lives at
-`services/selection-list-service/openapi.yaml` (**v4.1.0**). This guide is a
+`services/selection-list-service/openapi.yaml` (**v4.2.0**). This guide is a
 companion, not a replacement — the spec is the source of truth for any
-discrepancy. Matching clients: `@fuzeone/selection-list-client` **2.1.1** and
-`fuzefront-selection-list-client` (Python) **2.1.0**.
+discrepancy. Matching clients: `@fuzeone/selection-list-client` **2.2.0** and
+`fuzefront-selection-list-client` (Python) **2.2.0**.
 
 > **Status of contract 4.1.0 (shared lists, common lists, forks) — implemented,
 > shipped dark.** The service implements all of it
@@ -21,9 +21,13 @@ discrepancy. Matching clients: `@fuzeone/selection-list-client` **2.1.1** and
 > answers exactly as 4.0.0 in behaviour; see
 > [Shared lists, common lists and forks](#shared-lists-common-lists-and-forks-410)
 > for the full behaviour and for **what is dark, what needs flags, and what is not
-> built** (the UI stages are not merged; `SelectionList` carries no `revision`, so a
-> fork cannot tell whether it is behind its source). Design record:
+> built** (the UI stages are not merged). Design record:
 > [`docs/planning/selection-lists-shared-and-fork.md`](../planning/selection-lists-shared-and-fork.md).
+>
+> **Contract 4.2.0 (`SelectionList.revision`) is a frozen contract ahead of its
+> implementation**: until the service wave lands, responses omit `revision` and a
+> client reads that as *unknown*, so a fork cannot yet tell whether it is behind
+> its source ([Is a fork behind its source?](#is-a-fork-behind-its-source-420)).
 >
 > Kafka events and app seeding are covered in
 > [`SELECTION_LIST_EVENTS.md`](SELECTION_LIST_EVENTS.md); how seeding is enabled
@@ -183,10 +187,10 @@ cd selection-list-client
 npm install
 npm run build
 npm pack
-# → fuzeone-selection-list-client-2.1.1.tgz
+# → fuzeone-selection-list-client-2.2.0.tgz
 
 # In your consuming package
-npm install /path/to/fuzefront/selection-list-client/fuzeone-selection-list-client-2.1.1.tgz
+npm install /path/to/fuzefront/selection-list-client/fuzeone-selection-list-client-2.2.0.tgz
 ```
 
 **Python client** is in `packages/selection-list-client-py/` and follows the
@@ -546,7 +550,8 @@ effective row for its key). A list the caller may not read is absent, never a `4
 - `client.paginate(...)` / `paginate(...)` already behave correctly (they stop only when `hasMore` is
   false or `nextCursor` is null). A hand-rolled loop must do the same;
 - a one-row probe such as `getLists({ key, limit: 1 })` can therefore return an **empty** page while the
-  list you want is on the next one; follow the cursor (see the caveat on `getEffectiveList` below);
+  list you want is on the next one; follow the cursor (`getEffectiveList` does since clients 2.2.0 —
+  see the note on it below);
 - `page.total` is omitted whenever authorization is enforced (it would count lists the caller cannot
   read), which is always the case in production.
 
@@ -774,9 +779,9 @@ rule below: [`selection-lists-shared-and-fork.md`](../planning/selection-lists-s
 | Service: visibility, shared read, `include_shared`, key shadowing, `editable`, fork, `fork_required`, resolve of common lists and the fork redirect, `list.forked` / `visibility.changed`, seed-list `visibility`, platform-org guard | **Implemented and merged, dark.** Everything user-visible is behind `fuzefront.selection-lists.shared-lists` (default OFF, fails closed) *and* the master flag. | `src/routes/{lists,fork,resolve,items}.ts`, `src/middleware/listAccess.ts`, `src/lib/sharedLists.ts`, `src/services/{sharedReads,fork.service}.ts`, `src/seed/apply.ts`, `src/events/{emitters,platformGuard}.ts` (all under `services/selection-list-service/`) |
 | Production chart | The workload is **enabled** (`selectionListService.enabled: true`) with `platformOrgId` pinned to the root platform org; the flags decide visibility. The live Unleash state of the three flags cannot be read from the repo (the owner-directed `all-flags` set of `prod-unleash-ops` lists the master and seed flags, not `shared-lists`, so the master flag may already be ON while shared lists are not). | `deploy/helm/fuzefront/values-prod.yaml`, CI job `gate-platform-org-pin` |
 | What a deployment needs before common lists work | Master flag ON **and** shared-lists flag ON for the caller; `SELECTION_LIST_PLATFORM_ORG_ID` set to a valid `org_…` TypeID **and** confirmed by the org projection (an active, `is_active`, `platform`-typed row — otherwise every platform feature is disabled); the Permit schema with `SelectionListCatalog:read_shared` / `publish_platform` synced; broker ACLs on the `identity.*` topics (FuzeInfra#1394, a hard prerequisite of enabling the service in production — its state is not verifiable from this repo). The service does not authenticate event producers in-process; that is an **accepted residual risk** while the ACLs are unverified. | `src/lib/sharedLists.ts` (`resolvePlatformOrgId`), `backend/src/permit/schema.ts`, `docs/runbooks/selection-lists-rollout.md` P6 / section 10 |
-| Clients | `getEffectiveList`, `forkList`, `include_shared` / `visibility` params, `isForkRequired`, `effective_item_id` — complete in `@fuzeone/selection-list-client` 2.1.1 and Python 2.1.0. | `selection-list-client/src/client.ts`, `packages/selection-list-client-py/src/fuzefront_selection_list_client/client.py` |
+| Clients | `getEffectiveList`, `forkList`, `include_shared` / `visibility` params, `isForkRequired`, `effective_item_id` — complete since `@fuzeone/selection-list-client` 2.1.1 and Python 2.1.0; 2.2.0 (both) adds `revision` / `compareForkToSource` and makes `getEffectiveList` follow the cursor. | `selection-list-client/src/client.ts`, `packages/selection-list-client-py/src/fuzefront_selection_list_client/client.py` |
 | UI | **Not built.** The five shared-lists flows are design-approved (`design/frames/selection-lists-shared/`), but `packages/selection-lists-ui/src/shared-lists/` does not exist on master; the picker still looks lists up with the exact-match `?key=` filter and has no fork flow. The implementation and RED-spec PRs were open when this was written — check their merge state. | `design/frames/selection-lists-shared/manifest.json`, `packages/selection-lists-ui/src` |
-| Fork provenance "behind source" comparison | **Not possible over HTTP.** `forked_from.revision` records the source revision at copy time, but `SelectionList` has no `revision` field to compare it with, so a UI can only show "comparison unavailable". Adding `SelectionList.revision` is a contract MINOR that is proposed but not merged. | `services/selection-list-service/openapi.yaml` (`SelectionList`, `SelectionListForkProvenance`) |
+| Fork provenance "behind source" comparison | **Contract only (4.2.0).** `forked_from.revision` records the source revision at copy time; contract 4.2.0 adds `SelectionList.revision` to compare it with (clients 2.2.0, `compareForkToSource`), but the service does not emit it yet, so a client reads *unknown* and a UI can only show "comparison unavailable" — see [Is a fork behind its source?](#is-a-fork-behind-its-source-420). Service work list: design record §13.4. | `services/selection-list-service/openapi.yaml` (`SelectionList`, `SelectionListForkProvenance`) |
 | Rollout data jobs (set `org` on already-seeded lists; retro-fork per-org copies of the platform pack; platform pack v2) | **Not built.** The shipped platform pack declares no `visibility`. | `services/selection-list-service/seed-packs/platform/platform-defaults.v1.json` |
 
 With the shared-lists flag OFF the service answers as 4.0.0 in behaviour, and still emits the 4.1.0
@@ -844,7 +849,7 @@ A change of visibility emits `selection-lists.visibility.changed`.
 
 ```ts
 // The picker's key lookup: own org's readable list (e.g. its fork) first, else the common list.
-const list = await client.getEffectiveList('priority')   // GET ?key=priority&include_shared=true&limit=1
+const list = await client.getEffectiveList('priority')   // GET ?key=priority&include_shared=true&limit=1 (+ cursor, see below)
 if (list && list.editable === false) {
   // read-only for this caller; for list.visibility === 'platform' offer "fork to edit"
 }
@@ -854,12 +859,18 @@ if (list && list.editable === false) {
 for await (const l of client.paginate((p) => client.getLists({ ...p, include_shared: true }))) { /* … */ }
 ```
 
-> **Caveat — `getEffectiveList` requests `limit: 1`.** Because the readability filter runs after
-> pagination (see [Pagination](#a-page-can-be-shorter-than-limit--even-empty--and-still-not-be-the-last)),
-> that single-row page can come back **empty with `hasMore: true`** when the first row in database
-> order is one the caller cannot read — for example a newer `private` fork made by a colleague — while
-> the common list is on the next page; the helper then returns `null`. Until the helper follows the
-> cursor, look the key up yourself and take the first item over all pages:
+> **`getEffectiveList` may take more than one call (clients 2.2.0).** It requests `limit: 1`, and
+> because the readability filter runs after pagination (see
+> [Pagination](#a-page-can-be-shorter-than-limit--even-empty--and-still-not-be-the-last)) that
+> single-row page can come back **empty with `hasMore: true`** when the first row in database order is
+> one the caller cannot read — for example a newer `private` fork made by a colleague — while the
+> effective list is on a later page of the same query. The client follows that cursor until it finds
+> a row for the key or reaches the last page (then `null`), at most `MAX_EFFECTIVE_LOOKUP_PAGES` (10)
+> pages. Exhausting the bound throws `EffectiveLookupIncompleteError` (Python:
+> `EffectiveLookupIncompleteError`) — an *unknown* answer, never "no list"; a failed page throws the
+> API error with no fallback; an aborted `signal` stops the walk (`AbortError`). 2.1.x read only the
+> first page and could wrongly return `null`; on 2.1.x look the key up yourself and take the first
+> item over all pages:
 > `for await (const l of client.paginate((p) => client.getLists({ ...p, key, include_shared: true }))) { return l }`
 > (at most one row per key is ever effective).
 
@@ -1003,6 +1014,35 @@ which a logged-in user can choose when creating an org.
   (`fork_required | fork_exists | fork_not_applicable | visibility_locked`) does not list it and says
   `reason` is only present on a `CONFLICT`. Treat an unknown `reason` as a plain `FORBIDDEN`, as the spec
   advises for unknown values.
+
+#### Is a fork behind its source? (4.2.0)
+
+Every list carries a read-only **`revision`** — the same per-list counter the Kafka events carry
+as `listRevision`: `1` when the list is created, `+1` for every change event the service commits
+about the list or anything inside it (list fields, status, visibility, items, item order,
+translations — whether by a caller, seeding or autofill), never decreasing. Access-grant changes
+do not move it. A fork's `forked_from.revision` is the source's revision **at copy time** and is
+never updated, so one read of the source answers "has the common list changed since we forked?":
+
+```ts
+import { compareForkToSource } from '@fuzeone/selection-list-client'
+
+const source = await client.getList(fork.forked_from!.list_id) // 404 → source gone; status 'archived' → source archived
+switch (compareForkToSource(fork, source)) {
+  case 'behind':     /* source.revision > fork.forked_from.revision — informational, no merge/sync exists */ break
+  case 'up-to-date': /* equal */ break
+  case 'unknown':    /* no revision on the source response yet — show "comparison unavailable" */ break
+}
+```
+
+Python: `compare_fork_to_source(fork, source)` → `ForkSourceComparison.BEHIND` / `UP_TO_DATE` /
+`UNKNOWN`.
+
+- **`revision` is optional at 4.2.0** (the contract freezes before the service emits it).
+  **Absent means unknown** — never infer a revision, or "behind", from `updated_at`.
+- "Behind" means *changed since*, not that any particular item differs: a translation edit or an
+  item reorder on the source counts.
+- It is not a concurrency token: no request accepts it.
 
 ---
 

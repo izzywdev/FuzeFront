@@ -1,0 +1,80 @@
+{
+  "name": "FuzeFront agent",
+  "description": "FuzeFront agent. Give it a goal in its domain and it will accomplish it using its own tooling and credentials; callers need no tools of their own. Consults the fuzefront-expert for repo context.",
+  "provider": {
+    "organization": "FuzeOne",
+    "url": "https://github.com/izzywdev"
+  },
+  "version": "1.4.0",
+  "documentationUrl": "https://github.com/izzywdev/FuzeFront",
+  "supportedInterfaces": [
+    {
+      "url": "http://a2a-fuzefront.fuzefront.svc.cluster.local:8080/rpc",
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0",
+      "tenant": "FuzeFront"
+    }
+  ],
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false,
+    "extendedAgentCard": true
+  },
+  "securitySchemes": {
+    "fuze-oidc": {
+      "openIdConnectSecurityScheme": {
+        "description": "FuzeKeys OIDC. The validated subject is the calling repo identity.",
+        "openIdConnectUrl": "https://auth.prod.fuzefront.com/.well-known/openid-configuration"
+      }
+    },
+    "fuze-mtls": {
+      "mtlsSecurityScheme": {
+        "description": "In-cluster mutual TLS, defence in depth alongside the bearer token."
+      }
+    }
+  },
+  "securityRequirements": [
+    {
+      "fuze-oidc": []
+    }
+  ],
+  "defaultInputModes": [
+    "text/plain",
+    "application/json"
+  ],
+  "defaultOutputModes": [
+    "text/plain",
+    "application/json"
+  ],
+  "skills": [
+    {
+      "id": "app-shell-platform",
+      "name": "FuzeFront app-shell-platform",
+      "description": "Serves FuzeFront's shared application layer \u2014 the runtime Module-Federation host shell that consumer products mount into, plus shared authentication, app registration/discovery, health/heartbeat, and the cross-app shell surface (navigation, app launcher, theming). A caller asks it to accomplish an app-platform outcome \u2014 e.g. register or resolve a product's remote micro-frontend, expose or query a shared shell capability, or check a mounted app's health \u2014 and it returns the result. It holds its own tooling and credentials and returns outcomes, never how they were produced.",
+      "tags": [
+        "app-registry",
+        "app-shell",
+        "app-shell-platform",
+        "frontend-platform",
+        "host-shell",
+        "module-federation",
+        "product"
+      ],
+      "examples": [
+        "Register a product's remote micro-frontend so the host shell can load it at runtime.",
+        "Resolve the currently discoverable apps and their health status from the app registry.",
+        "Expose a shared shell capability (navigation entry, app-launcher tile) for a consumer product.",
+        "Report whether a given mounted micro-frontend is healthy according to its heartbeat."
+      ]
+    }
+  ],
+  "signatures": [
+    {
+      "protected": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZ1emUtYTJhLTIwMjYtMDcifQ",
+      "signature": "PLACEHOLDER-jws-signature-emitted-by-the-card-generator",
+      "header": {
+        "kid": "fuze-a2a-2026-07"
+      }
+    }
+  ]
+}

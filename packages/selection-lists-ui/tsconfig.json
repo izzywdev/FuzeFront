@@ -16,6 +16,7 @@
     "paths": {
       "@fuzefront/design-system": ["../../design-system/index.d.ts", "../../design-system"],
       "@fuzefront/design-system/*": ["../../design-system/*"],
+      "@fuzeone/selection-list-client": ["../../selection-list-client/src/index.ts"],
       "vitest": ["./node_modules/vitest"],
       "vitest/*": ["./node_modules/vitest/*"],
       "@vitest/expect": ["./node_modules/@vitest/expect"],

@@ -106,7 +106,7 @@ the rest safe** — only it answers *kind*, and only it needs nothing external.
 | **P1** | `lid`/`idMap` graph-create middleware; billing-service reference implementation + contract shapes (spec 1.2.0 → 1.3.0) | **done** |
 | **P1b** | `fuzefront-identity` Python package (`packages/identity-py/`) — stdlib-only, pure-ASGI middleware, cross-language parity tested | **done** |
 | **P2** | `ref_index` Kafka projection + `assertRef` at L1 | ticket |
-| **P3** | Roll out across remaining services; backfill the ~41 bare-uuid mint sites behind `fuzefront.identity.prefixed-ids` | ticket |
+| **P3** | Roll out across remaining services; backfill the bare-uuid mint sites behind `fuzefront.identity.prefixed-ids` (FFRNT-185) | **done** — all genuine mints use `toUuid(mintId())`, `--source` enforcing, flag ON 100 % in prod, portal backfill (migration 024) shipped. Open: the `legacyUuidTypes` dual-accept windows are still declared in code (see `identity-rollout-ffrnt-185.md`) and the flag is pending retirement |
 
 ### Enforcement, weakest last
 
@@ -114,14 +114,15 @@ the rest safe** — only it answers *kind*, and only it needs nothing external.
    `req.body` does not compile against a repository taking one. Asserted by
    `@ts-expect-error` fixtures, so the guarantee is itself tested.
 2. **Runtime boundary** — the middleware 422s a client-supplied `id`.
-3. **CI** — `gate-identifier`: contracts + registry parity **enforcing**; source
-   backstop report-only until the P3 backlog clears.
+3. **CI** — `gate-identifier`: contracts, registry parity, namespace, adoption
+   **and** the `--source` backstop are all **enforcing** (the P3 backlog cleared).
 
 ## Known state
 
-- **`gate-identifier --source` reports ~41 findings.** All genuine entity-id mint
-  sites (`appId`, `organizationId`, `invitationId`, `factorId`, `sessionId`).
-  This is the P3 backlog, and why that check ships report-only.
+- **`gate-identifier --source` reports 0 findings** and is enforcing. The former
+  ~41-site backlog was 28 genuine entity mints (now `toUuid(mintId())`) plus 16
+  infrastructure rows (allowlisted with reasons) — see
+  `identity-rollout-ffrnt-185.md`.
 - **Pre-existing test failure, untouched:**
   `services/billing-service/tests/handlers/invoice-synced.test.ts` fails with
   `ctx.emitter.subscriptionChanged is not a function`. Verified to fail

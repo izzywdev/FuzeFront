@@ -4,7 +4,18 @@
     "noEmit": false,
     "declaration": true,
     "emitDeclarationOnly": true,
-    "outDir": "dist"
+    "outDir": "dist",
+    "rootDir": "src",
+    // `paths` replaces (does not merge with) the base config's. The shared-lists
+    // view model imports TYPES from @fuzeone/selection-list-client; the build
+    // resolves them from the client's built dist/index.d.ts (npm run build
+    // builds it first), never from its source: pulling source from outside
+    // `rootDir` into the program would re-root dist/ and nest the declarations.
+    "paths": {
+      "@fuzefront/design-system": ["../../design-system/index.d.ts", "../../design-system"],
+      "@fuzefront/design-system/*": ["../../design-system/*"],
+      "@fuzeone/selection-list-client": ["../../selection-list-client/dist/index.d.ts"]
+    }
   },
   "include": ["src"],
   "exclude": ["src/**/*.test.*", "src/**/*.spec.*", "src/test"]

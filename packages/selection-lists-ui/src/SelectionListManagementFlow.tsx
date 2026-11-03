@@ -7,6 +7,7 @@
  */
 import React, { useState, useEffect, useCallback, useRef, useId } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { ForkListFlow, ForkResultNotice, useMutationRefusal } from './shared-lists/fork'
 import type {
   SelectionList,
   SelectionListItem,
@@ -26,8 +27,17 @@ import {
   getQuota,
   unwrapItems,
   unwrapCursor,
-  probeReorderPermission,
 } from './api'
+import { useSharedLists } from './shared-lists/core'
+import {
+  SharedListDetail,
+  SharedListIndexPanel,
+} from './shared-lists/browse'
+import { PanelSkeleton } from './shared-lists/browse/PanelState'
+import {
+  ForkProvenanceBoundary,
+  useForkProvenanceContext,
+} from './shared-lists/provenance'
 
 // ── Regex for the key validation: ^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$ ─────────
 const KEY_REGEX = /^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$/
@@ -117,6 +127,15 @@ function SkeletonRow() {
 }
 
 // ── Quota Panel (frame 06) ────────────────────────────────────────────────────
+/** Guards the quota envelope at the boundary: `quotas` must be an array. */
+function isQuotaStatus(value: unknown): value is QuotaStatus {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    Array.isArray((value as { quotas?: unknown }).quotas)
+  )
+}
+
 function QuotaPanel({
   quota,
   quotaLoading,
@@ -141,7 +160,7 @@ function QuotaPanel({
       {quota && !quotaLoading && !quotaError && (
         <>
           {/* Near-limit banner */}
-          {quota.scopes.some(sc => {
+          {quota.quotas.some(sc => {
             if (sc.current === null) return false
             return sc.current / sc.limit >= 0.8 && sc.current < sc.limit
           }) && (
@@ -150,13 +169,13 @@ function QuotaPanel({
             </div>
           )}
           {/* At-limit banner */}
-          {quota.scopes.some(sc => sc.current !== null && sc.current >= sc.limit) && (
+          {quota.quotas.some(sc => sc.current !== null && sc.current >= sc.limit) && (
             <div data-banner="quota-at" data-quota-state="at-limit" style={s.errorBox}>
               Quota limit reached
             </div>
           )}
           {/* Scope meters */}
-          {quota.scopes.map(sc => (
+          {quota.quotas.map(sc => (
             <div key={sc.scope} data-quota-scope={sc.scope} style={{ marginBottom: 'var(--space-2)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--text-xs)', marginBottom: 'var(--space-1)' }}>
                 <span>{sc.scope}</span>
@@ -334,11 +353,13 @@ function ValueModal({
   const [label, setLabel] = useState(item?.label ?? '')
   const [submitting, setSubmitting] = useState(false)
   const [apiError, setApiError] = useState<ApiError | null>(null)
+  const { refusal, capture, clear } = useMutationRefusal()
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
     setSubmitting(true)
     setApiError(null)
+    clear()
     try {
       let saved: SelectionListItem
       if (mode === 'add') {
@@ -348,6 +369,9 @@ function ValueModal({
       }
       onSaved(saved)
     } catch (err) {
+      // SL9: a refusal on a common list (fork_required / 404) belongs to the fork flow.
+      const refused = capture(err)
+      if (refused && refused.kind !== 'forbidden') return
       const e = err as ApiError & { status?: number }
       setApiError(e)
       if (e.code === 'FORBIDDEN') {
@@ -394,7 +418,19 @@ function ValueModal({
             Quota exceeded for {apiError.scope}: {apiError.current}/{apiError.limit}
           </div>
         )}
-        {apiError?.code === 'FORBIDDEN' && (
+        {refusal && (
+          <ForkListFlow
+            refusal={refusal}
+            listId={listId}
+            onBack={onClose}
+            fallback={
+              apiError?.code === 'FORBIDDEN' ? (
+                <div data-error="FORBIDDEN" style={s.errorBox}>You do not have permission to modify values.</div>
+              ) : null
+            }
+          />
+        )}
+        {!refusal && apiError?.code === 'FORBIDDEN' && (
           <div data-error="FORBIDDEN" style={s.errorBox}>You do not have permission to modify values.</div>
         )}
         <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
@@ -528,6 +564,30 @@ function PurgeModal({
   )
 }
 
+// ── A fork's value table (frame 07): column cells shared by the header and the rows ──
+const tableCell = {
+  value: { flex: 1, display: 'flex', alignItems: 'center', gap: 'var(--space-2)', minInlineSize: 0 },
+  copied: { flex: '0 0 28%', minInlineSize: 0 },
+  actions: { flex: '0 0 22%', display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-1)', flexWrap: 'wrap' },
+} as const satisfies Record<string, React.CSSProperties>
+const tableHeaderRow: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 'var(--space-3)',
+  padding: 'var(--space-2) var(--space-3)',
+  color: 'var(--text-secondary)',
+  fontSize: 'var(--text-xs)',
+  fontWeight: 'var(--weight-semibold)',
+}
+const visuallyHidden: React.CSSProperties = {
+  position: 'absolute',
+  width: 1,
+  height: 1,
+  overflow: 'hidden',
+  clip: 'rect(0,0,0,0)',
+  whiteSpace: 'nowrap',
+}
+
 // ── Sortable Item List with keyboard reorder (frame 05) ────────────────────────
 function SortableItemList({
   items,
@@ -539,22 +599,29 @@ function SortableItemList({
   onPurge,
   onReordered,
   onReloadRequested,
+  onReorderForbidden,
 }: {
   items: SelectionListItem[]
   listId: string
   canReorder: boolean
   forbidden: boolean
+  /** The reorder PUT answered 403: the caller cannot reorder (no `update_value`). */
+  onReorderForbidden: () => void
   onItemClick: (item: SelectionListItem) => void
   onArchive: (item: SelectionListItem) => void
   onPurge: (item: SelectionListItem) => void
   onReordered: (newOrder: SelectionListItem[]) => void
   onReloadRequested: () => void
 }) {
+  // Fork provenance (SL9, flag ON and the list is a fork): `null` otherwise, and
+  // a row then carries nothing extra.
+  const provenance = useForkProvenanceContext()
   const [orderedItems, setOrderedItems] = useState(items)
   const [dragIdx, setDragIdx] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
   const [reorderError, setReorderError] = useState<string | null>(null)
   const [reorderErrorCode, setReorderErrorCode] = useState<string | null>(null)
+  const { refusal: reorderRefusal, capture: captureReorder, clear: clearReorder } = useMutationRefusal()
   const a11yRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -584,6 +651,7 @@ function SortableItemList({
         setSaving(true)
         setReorderError(null)
         setReorderErrorCode(null)
+        clearReorder()
         try {
           // Contract SelectionListItemReorder: item_ids is the full set of
           // NON-ARCHIVED items only — archived ids make the request invalid.
@@ -592,10 +660,21 @@ function SortableItemList({
           onReordered(newOrder)
         } catch (err) {
           const e = err as ApiError
-          setReorderError(e.message ?? 'Reorder failed')
-          setReorderErrorCode(e.code ?? 'reorder-failed')
+          // SL9: the failed order is restored either way; a fork_required refusal is the fork flow's.
+          if (captureReorder(err)?.kind === 'fork_required') {
+            setOrderedItems(items)
+            return
+          }
           // Restore original order on error
           setOrderedItems(items)
+          // A role without update_value learns it from the answer: fail closed — the
+          // handles go and the notice says why (no pre-flight probe exists).
+          if (e.code === 'FORBIDDEN' || (e as unknown as { status?: number }).status === 403) {
+            onReorderForbidden()
+            return
+          }
+          setReorderError(e.message ?? 'Reorder failed')
+          setReorderErrorCode(e.code ?? 'reorder-failed')
           // The list changed under the user (not a full permutation): show the
           // server's current order (frame 05) without unmounting this panel, so
           // the error message stays visible.
@@ -658,6 +737,9 @@ function SortableItemList({
           Saving order…
         </div>
       )}
+      {reorderRefusal?.kind === 'fork_required' && (
+        <ForkListFlow refusal={reorderRefusal} listId={listId} />
+      )}
       {reorderError && reorderErrorCode !== 'VALIDATION_ERROR' && (
         <div data-error="reorder-failed" style={s.errorBox}>{reorderError}</div>
       )}
@@ -667,21 +749,9 @@ function SortableItemList({
       {forbidden && (
         <div data-error="FORBIDDEN" style={s.errorBox}>You do not have permission to reorder items.</div>
       )}
-      {orderedItems.map((item, idx) => (
-        <div
-          key={item.id}
-          data-item={item.id}
-          data-archived={item.status === 'archived' ? 'true' : undefined}
-          data-dragging={dragIdx === idx ? 'true' : undefined}
-          data-drop-target={dragIdx !== null && dragIdx !== idx ? 'true' : undefined}
-          style={{
-            ...s.row,
-            opacity: item.status === 'archived' ? 0.6 : 1,
-            outline: dragIdx === idx ? '2px solid var(--accent)' : undefined,
-          }}
-        >
-          {/* Drag handle — only rendered when reorder is permitted */}
-          {canReorder && (
+      {(() => {
+        const rows = orderedItems.map((item, idx) => {
+          const handle = canReorder ? (
             <div
               data-drag-handle
               tabIndex={0}
@@ -697,58 +767,122 @@ function SortableItemList({
             >
               ⠿
             </div>
-          )}
-          {/* Item info */}
-          <div
-            style={{ flex: 1, cursor: 'pointer' }}
-            onClick={() => onItemClick(item)}
-            role="button"
-            tabIndex={0}
-            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') onItemClick(item) }}
-          >
-            <span style={{ fontWeight: 'var(--weight-semibold)', fontSize: 'var(--text-sm)' }}>{item.code}</span>
-            <span style={{ marginLeft: 'var(--space-2)', color: 'var(--text-secondary)', fontSize: 'var(--text-sm)' }}>{item.label}</span>
-            {item.is_machine && (
-              <span style={{ ...s.badge, marginLeft: 'var(--space-2)' }}>M</span>
-            )}
-            {item.status === 'archived' && (
-              <span style={{ ...s.badge, marginLeft: 'var(--space-2)', background: 'var(--bg-muted)', color: 'var(--text-secondary)' }}>
-                Archived
-              </span>
-            )}
-          </div>
-          {/* Actions */}
-          {item.status !== 'archived' && (
-            <button
-              data-action="archive-value"
-              style={s.btnGhost}
-              onClick={() => onArchive(item)}
+          ) : null
+          const info = (
+            <div
+              style={{ flex: 1, cursor: 'pointer' }}
+              onClick={() => onItemClick(item)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') onItemClick(item) }}
             >
-              Archive
-            </button>
-          )}
-          <button
-            data-action="purge-value"
-            style={{ ...s.btnGhost, color: 'var(--error)' }}
-            onClick={() => onPurge(item)}
-          >
-            Purge
-          </button>
-        </div>
-      ))}
+              <span style={{ fontWeight: 'var(--weight-semibold)', fontSize: 'var(--text-sm)' }}>{item.code}</span>
+              <span style={{ marginLeft: 'var(--space-2)', color: 'var(--text-secondary)', fontSize: 'var(--text-sm)' }}>{item.label}</span>
+              {item.is_machine && (
+                <span style={{ ...s.badge, marginLeft: 'var(--space-2)' }}>M</span>
+              )}
+              {item.status === 'archived' && (
+                <span style={{ ...s.badge, marginLeft: 'var(--space-2)', background: 'var(--bg-muted)', color: 'var(--text-secondary)' }}>
+                  Archived
+                </span>
+              )}
+            </div>
+          )
+          const actions = (
+            <>
+              {item.status !== 'archived' && (
+                <button
+                  data-action="archive-value"
+                  style={s.btnGhost}
+                  onClick={() => onArchive(item)}
+                >
+                  Archive
+                </button>
+              )}
+              <button
+                data-action="purge-value"
+                style={{ ...s.btnGhost, color: 'var(--error)' }}
+                onClick={() => onPurge(item)}
+              >
+                Purge
+              </button>
+            </>
+          )
+          return (
+            <div
+              key={item.id}
+              data-item={item.id}
+              data-archived={item.status === 'archived' ? 'true' : undefined}
+              {...provenance?.originAttributes(item)}
+              data-dragging={dragIdx === idx ? 'true' : undefined}
+              data-drop-target={dragIdx !== null && dragIdx !== idx ? 'true' : undefined}
+              role={provenance ? 'row' : undefined}
+              style={{
+                ...s.row,
+                opacity: item.status === 'archived' ? 0.6 : 1,
+                outline: dragIdx === idx ? '2px solid var(--accent)' : undefined,
+              }}
+            >
+              {provenance ? (
+                <>
+                  <div role="cell" style={tableCell.value}>
+                    {handle}
+                    {info}
+                  </div>
+                  <div role="cell" style={tableCell.copied}>
+                    {provenance.copiedFrom(item)}
+                  </div>
+                  <div role="cell" style={tableCell.actions}>
+                    {actions}
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* Drag handle — only rendered when reorder is permitted */}
+                  {handle}
+                  {/* Item info */}
+                  {info}
+                  {/* Actions */}
+                  {actions}
+                </>
+              )}
+            </div>
+          )
+        })
+        if (!provenance) return rows
+        // Frame 07 draws a fork's value editor as a table with a "Copied from" column: ARIA
+        // table semantics over the same rows, so drag/keyboard reorder and the row buttons are
+        // untouched. Only a fork with provenance gets it; every other list keeps the 4.0.0 DOM.
+        return (
+          <div role="table" aria-label="Values">
+            <div role="row" style={tableHeaderRow}>
+              <div role="columnheader" style={tableCell.value}>Value</div>
+              <div role="columnheader" style={tableCell.copied}>Copied from</div>
+              <div role="columnheader" style={tableCell.actions}>
+                <span style={visuallyHidden}>Actions</span>
+              </div>
+            </div>
+            {rows}
+          </div>
+        )
+      })()}
     </div>
   )
 }
 
 // ── SelectionListDetail (frames 03, 04, 05) ────────────────────────────────────
-function SelectionListDetail({
+// `headerExtra` is the shared-lists marker row (visibility / fork / your access),
+// passed only while the release flag is ON and the list is editable.
+function LegacyListDetail({
   listId,
   onNavigateToTranslations,
   onNavigateToAccess,
+  headerExtra,
 }: {
   listId: string
   onNavigateToTranslations: () => void
   onNavigateToAccess: () => void
+  headerExtra?: React.ReactNode
 }) {
   const [list, setList] = useState<SelectionList | null>(null)
   const [items, setItems] = useState<SelectionListItem[]>([])
@@ -773,8 +907,11 @@ function SelectionListDetail({
       setList(listData)
       const its = unwrapItems(itemsResp).sort((a, b) => a.sort_order - b.sort_order)
       setItems(its)
-      // Probe reorder permission
-      const allowed = await probeReorderPermission(listId)
+      // Reorder permission: the list's own `editable` hint (contract 4.1.0: `false` = read only
+      // through visibility). Absent = unknown, never inferred `false`; the reorder itself then
+      // decides (a 403 removes the affordance). No `HEAD …/items/reorder` probe: it is not a
+      // contract operation and 404s on every editable list.
+      const allowed = listData.editable !== false
       setCanReorder(allowed)
       if (!allowed) setForbidden(true)
     } catch (err) {
@@ -839,8 +976,10 @@ function SelectionListDetail({
         <h2 style={{ fontSize: 'var(--text-xl)' }}>{list?.name ?? listId}</h2>
         {list?.is_machine && <span data-machine="true" style={s.badge}>M</span>}
         {list?.status === 'archived' && <span data-status="archived" style={{ ...s.badge, background: 'var(--bg-muted)' }}>Archived</span>}
+        {headerExtra}
       </div>
 
+      <ForkProvenanceBoundary listId={listId} onChangeVisibility={onNavigateToAccess} onArchived={loadData}>
       {/* Tab strip */}
       <div data-tabs="list-detail" style={{ display: 'flex', gap: 'var(--space-2)', borderBottom: '2px solid var(--border-color)', marginBottom: 'var(--space-4)' }}>
         <button data-tab="translations" style={{ ...s.btnGhost, borderBottom: '2px solid var(--accent)', borderRadius: 0 }} onClick={onNavigateToTranslations}>
@@ -880,6 +1019,10 @@ function SelectionListDetail({
             listId={listId}
             canReorder={canReorder}
             forbidden={forbidden}
+            onReorderForbidden={() => {
+              setCanReorder(false)
+              setForbidden(true)
+            }}
             onItemClick={item => setValueModal({ mode: 'edit', item })}
             onArchive={async (item) => {
               try {
@@ -896,6 +1039,7 @@ function SelectionListDetail({
           />
         )}
       </div>
+      </ForkProvenanceBoundary>
 
       {/* Value modal */}
       {valueModal && (
@@ -940,7 +1084,7 @@ function SelectionListDetail({
 }
 
 // ── SelectionListIndex (frame 01) ─────────────────────────────────────────────
-function SelectionListIndex({
+function LegacySelectionListIndex({
   onSelectList,
   onNewList,
 }: {
@@ -981,6 +1125,9 @@ function SelectionListIndex({
     setQuotaError(false)
     try {
       const q = await getQuota()
+      // The quota read is advisory. An envelope we cannot read (wrong shape,
+      // null body) is an unavailable read - fail open - never a render crash.
+      if (!isQuotaStatus(q)) throw new Error('Unreadable quota response')
       setQuota(q)
     } catch {
       setQuotaError(true)
@@ -994,7 +1141,7 @@ function SelectionListIndex({
     loadQuota()
   }, [loadLists, loadQuota])
 
-  const atLimit = quota?.scopes.some(sc => sc.current !== null && sc.current >= sc.limit) ?? false
+  const atLimit = quota?.quotas.some(sc => sc.current !== null && sc.current >= sc.limit) ?? false
   // Fail-open: if quotaError, never disable the CTA
   const ctaDisabled = !quotaError && atLimit
 
@@ -1115,15 +1262,157 @@ function SelectionListIndex({
   )
 }
 
+// ── Shared-lists variants (flag `fuzefront.selection-lists.shared-lists` ON) ───
+// The approved 4.0.0 index / detail above are untouched; the orchestrator mounts
+// these instead ONLY while the release flag is ON (behaviour lives in
+// `./shared-lists/browse`).
+const INDEX_PATH = '/settings/selection-lists'
+const listPath = (list: { id: string }) => `${INDEX_PATH}/${list.id}`
+
+function SharedSelectionListIndex({
+  onSelectList,
+  onNewList,
+}: {
+  onSelectList: (list: { id: string }) => void
+  onNewList: () => void
+}) {
+  const [quota, setQuota] = useState<QuotaStatus | null>(null)
+  const [quotaLoading, setQuotaLoading] = useState(true)
+  const [quotaError, setQuotaError] = useState(false)
+
+  useEffect(() => {
+    let live = true
+    getQuota().then(
+      q => {
+        if (!live) return
+        // Advisory read: an envelope we cannot read is an unavailable read (fail
+        // open), never a render crash.
+        if (!isQuotaStatus(q)) {
+          setQuotaError(true)
+          setQuotaLoading(false)
+          return
+        }
+        setQuota(q)
+        setQuotaLoading(false)
+      },
+      () => {
+        if (!live) return
+        setQuotaError(true)
+        setQuotaLoading(false)
+      }
+    )
+    return () => {
+      live = false
+    }
+  }, [])
+
+  const atLimit = quota?.quotas.some(sc => sc.current !== null && sc.current >= sc.limit) ?? false
+  // Fail-open: if the quota read failed, never disable the CTA
+  const ctaDisabled = !quotaError && atLimit
+
+  return (
+    <div data-frame="01-list-index" style={s.frame}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)' }}>
+        <h2 style={{ fontSize: 'var(--text-xl)' }}>Selection Lists</h2>
+        <button
+          data-action="new-list"
+          disabled={ctaDisabled}
+          data-quota-state={ctaDisabled ? 'at-limit' : undefined}
+          data-tooltip={ctaDisabled ? 'quota' : undefined}
+          style={{ ...s.btn, opacity: ctaDisabled ? 0.6 : 1 }}
+          onClick={onNewList}
+        >
+          New list
+        </button>
+      </div>
+      <SharedListIndexPanel
+        hrefForList={listPath}
+        onOpenList={onSelectList}
+        onNewList={onNewList}
+        newListDisabled={ctaDisabled}
+      />
+      <QuotaPanel
+        quota={quota}
+        quotaLoading={quotaLoading}
+        quotaError={quotaError}
+        newListDisabled={ctaDisabled}
+      />
+    </div>
+  )
+}
+
+function SelectionListIndex(props: {
+  onSelectList: (list: { id: string }) => void
+  onNewList: () => void
+}) {
+  const { enabled } = useSharedLists()
+  return enabled ? <SharedSelectionListIndex {...props} /> : <LegacySelectionListIndex {...props} />
+}
+
+function SelectionListDetail(props: {
+  listId: string
+  onNavigateToTranslations: () => void
+  onNavigateToAccess: () => void
+}) {
+  const { enabled } = useSharedLists()
+  const navigate = useNavigate()
+  // Bumped to re-read the list after a stale fork answer or a restore.
+  const [revision, setRevision] = useState(0)
+  const reload = useCallback(() => setRevision(n => n + 1), [])
+  if (!enabled) return <LegacyListDetail {...props} />
+  return (
+    <SharedListDetail
+      key={revision}
+      listId={props.listId}
+      renderEditor={({ header, list }) => (
+        <LegacyListDetail
+          {...props}
+          headerExtra={
+            <>
+              {/* Arrival at a fork: "Forked." / "existing version" / "Restore your version". */}
+              <ForkResultNotice list={list} onRestored={reload} />
+              {header}
+            </>
+          }
+        />
+      )}
+      // A common list's read-only detail: the fork flow's "Fork to edit…". The slot is only
+      // invoked once the effective-list lookup said THIS list is the effective one, so the
+      // flow is handed that answer instead of asking again.
+      renderReadOnlyArrival={list => <ForkResultNotice list={list} onRestored={reload} />}
+      forkAction={list => (
+        <ForkListFlow
+          list={list}
+          effective={{ status: 'ready', list, source: { kind: 'common' } }}
+          onStale={reload}
+        />
+      )}
+      hrefForList={listPath}
+      onOpenList={list => navigate(listPath(list))}
+      onOpenTranslations={props.onNavigateToTranslations}
+      onBackToIndex={() => navigate(INDEX_PATH)}
+      indexHref={INDEX_PATH}
+    />
+  )
+}
+
 // ── SelectionListManagementFlow (orchestrator) ────────────────────────────────
 export function SelectionListManagementFlow() {
   const { listId } = useParams<{ listId?: string }>()
   const navigate = useNavigate()
   const [showNewList, setShowNewList] = useState(false)
+  const { ready } = useSharedLists()
+
+  // The host's shared-lists flag has not settled: neither the 4.0.0 nor the shared
+  // screens may mount (each would issue its own requests). Settles to one of them.
+  if (!ready) return <PanelSkeleton label="Loading" />
 
   if (listId) {
     return (
       <SelectionListDetail
+        // Keyed by list: the host reuses this element across :listId changes (e.g. after a
+        // fork), and its open modals / pending targets hold items of the PREVIOUS list.
+        key={listId}
         listId={listId}
         onNavigateToTranslations={() => navigate(`/settings/selection-lists/${listId}/translations`)}
         onNavigateToAccess={() => navigate(`/settings/selection-lists/${listId}/access`)}

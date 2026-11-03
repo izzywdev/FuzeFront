@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FuzeFront Selection List Service API
-  version: 4.1.0
+  version: 4.2.0
   summary: Org-scoped, translatable selection lists (reference data) for the Fuze family.
   description: >-
     **FROZEN CONTRACT — FFRNT-187 (S1).** This file is the single source of truth
@@ -179,6 +179,17 @@ info:
     returns the fork's label/status for them, naming the fork item in
     `effective_item_id` so a consumer can migrate the stored value lazily.
 
+    **Is a fork behind its source? (4.2.0)** Every list carries a read-only
+    `revision` — the same per-list counter the event contract publishes as
+    `listRevision`, bumped once per change event committed about the list
+    or anything inside it. A fork's `forked_from.revision` is the source's revision at
+    the moment of copying and never changes; read the source (one
+    `getSelectionList` of `forked_from.list_id`) and compare: greater means
+    the source changed since the fork was made, equal means it has not.
+    This is informational only — there is no merge or sync operation. When
+    either side's revision is absent the answer is *unknown*; never infer it
+    from `updated_at`.
+
 
     **Registry note (S3 amendment):** prefixes `front_sl` and `front_sli` are
     registered in `packages/identity/src/registry.ts` (keys `selectionList` and
@@ -316,6 +327,42 @@ info:
 
 
     ### Changelog
+
+    * **4.2.0** — `SelectionList.revision` (the fork "behind source"
+      comparison; `docs/planning/selection-lists-shared-and-fork.md` §13).
+      (1) `SelectionList` gains read-only `revision` (integer, `>= 1`):
+      the list's current revision, the same counter as the event
+      contract's `listRevision` — `1` at creation, increased once per
+      change event committed about the list or anything inside it, never
+      decreasing, not changed by access grants. It equals the `listRevision` of the
+      latest event the service committed for the list. Compared with a
+      fork's `forked_from.revision` (the source's revision at copy time,
+      unchanged since 4.1.0) it tells a client whether a fork is behind
+      its source. (2) `revision` is **optional** (not in `required`) at
+      4.2.0, for the same reason the 4.1.0 fields were: the contract
+      freezes ahead of the implementation and the running service does not
+      emit it yet. **Absent means unknown** — a client shows "comparison
+      unavailable" and never infers a revision from `updated_at`. The
+      implementation makes the service always emit it (independently of
+      the `fuzefront.selection-lists.shared-lists` flag: the counter
+      predates that feature) and a later MINOR adds it to `required`.
+      No new fork-time field is needed: `SelectionListForkProvenance`
+      already captures the source revision at copy time (`revision`).
+      MINOR: one optional read-only response property; no request, path,
+      parameter, status, enum or authorization changes. Clients:
+      `@fuzeone/selection-list-client` 2.2.0,
+      `fuzefront-selection-list-client` (Python) 2.2.0 (each adds a
+      `revision` field and a fork-vs-source comparison helper). Events:
+      unchanged (`listRevision` already exists on every revisioned event).
+      (3) Documentation only, no wire change: `listSelectionLists` and
+      `Page` now state that a page may be shorter than `limit` — even
+      empty — while `hasMore` is `true`, because the per-row readability
+      filter runs after the page is cut. Callers must follow `nextCursor`.
+      The 2.2.0 clients' `getEffectiveList` / `get_effective_list` now
+      follow the same query's cursor until a row for the key is found or
+      the last page, bounded to 10 pages (`EffectiveLookupIncompleteError`
+      when exhausted — never "no list"); 2.1.x read only the first page
+      and could report no effective list when one existed.
 
     * **4.1.0** — shared lists, common (`platform`) lists and copy-on-write
       forks (`docs/planning/selection-lists-shared-and-fork.md`; owner
@@ -486,6 +533,23 @@ paths:
         `include_shared=true` the page holds at most one row: the
         **effective** list for that key (see *Visibility, shared lists and
         forks*). Pagination is unchanged.
+
+
+        **Pages may be short — even empty — while `hasMore` is `true`.** The
+        service pages over the organization's rows first and applies the
+        per-row readability filter to each page afterwards, so rows the
+        caller cannot read are dropped *from* a page rather than replaced:
+        a page can hold fewer than `limit` items, or none, and still carry a
+        `nextCursor`. The walk stays gap- and duplicate-free. Callers must
+        follow `nextCursor` until `hasMore` is `false` and must never read an
+        empty page as "no more rows". This matters for the key lookup too:
+        with `key`, `include_shared=true` and `limit=1`, a newer list with
+        that key that the caller cannot read (e.g. another member's
+        `private` draft) yields an empty first page, and the effective list
+        is on a later page of the **same** query. Both clients'
+        `getEffectiveList` / `get_effective_list` (2.2.0) follow the cursor
+        for this, bounded to 10 pages, and report an exhausted walk as an
+        error rather than as "no list".
       tags: [lists]
       x-permit-resource: SelectionListCatalog
       x-permit-action: list
@@ -1986,8 +2050,12 @@ components:
           type: integer
           description: >-
             The source list's revision (the event contract's `listRevision`)
-            at the moment of copying. A consumer comparing it with the
-            source's current revision can tell the fork is behind.
+            at the moment of copying — the revision of exactly the content
+            that was copied. Never updated. Compare it with the source's
+            current `SelectionList.revision` (4.2.0, read with one
+            `getSelectionList` of `list_id`): greater there means the fork is
+            behind its source, equal means up to date; a source response
+            without `revision` means the comparison is unknown.
           minimum: 1
           examples: [3]
         forked_at:
@@ -2059,7 +2127,10 @@ components:
       type: object
       description: >-
         Cursor pagination envelope, identical across every Fuze service
-        (`governance/pagination-standard.md` §1).
+        (`governance/pagination-standard.md` §1). A page may hold fewer
+        items than `limit` — even none — while `hasMore` is `true` (rows the
+        caller may not read are filtered out of a page after it is cut);
+        follow `nextCursor` until `hasMore` is `false`.
       required: [nextCursor, hasMore]
       additionalProperties: false
       properties:
@@ -2197,6 +2268,40 @@ components:
             absence. The implementation PR makes it always present; a later
             MINOR adds it to `required`.
           examples: [false]
+        revision:
+          type: integer
+          readOnly: true
+          minimum: 1
+          description: >-
+            **Read-only (4.2.0), optional until the implementation ships.**
+            The list's current revision: the same per-list counter the event
+            contract carries as `listRevision` on every `selection-lists.*`
+            event about this list. It is `1` when the list is created and the
+            service increases it by one for every change event it commits
+            about the list **or anything inside it** — list fields, `status`,
+            `visibility`, items (create, update, reorder, archive, purge) and
+            list or item translations, whether made by a caller, by seeding
+            or by autofill. It never decreases and a value is never reused
+            for the same list. Access-grant changes do not change it, and
+            neither does housekeeping that publishes no list event
+            (anonymising a deleted user's authorship; an organization-deletion
+            cascade). It equals the `listRevision` of the latest revisioned
+            event the service has committed for this list (a mutation's
+            response carries a revision at least as new as the mutation's own
+            last event). A greater value means
+            "changed since", not that any particular field or item differs.
+            **Fork comparison:** a fork's `forked_from.revision` is the
+            source's revision at copy time; the source's current `revision`
+            greater than it means the source changed after the fork was made
+            (informational — no merge or sync operation exists), equal means
+            unchanged. It is not an optimistic-concurrency token: no request
+            accepts it. **Absent means unknown** — a service that does not yet
+            emit it omits it; a client then reports the comparison as
+            unavailable and never infers a revision from `updated_at` or from
+            absence. The implementation makes it always present (regardless
+            of the `fuzefront.selection-lists.shared-lists` flag); a later
+            MINOR adds it to `required`.
+          examples: [7]
         created_by:
           $ref: '#/components/schemas/AuthorPrincipal'
         created_at:

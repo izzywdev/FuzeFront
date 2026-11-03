@@ -69,7 +69,9 @@ await runConsumer(
     const analyzer = new LiteLlmFlowAnalyzer(
       process.env.LITELLM_URL ?? 'http://litellm.fuzeinfra.svc.cluster.local:4000/v1',
       process.env.FUZEQUALITY_LLM_MODEL ?? 'quality-analysis',
-      process.env.LITELLM_MASTER_KEY
+      process.env.LITELLM_MASTER_KEY,
+      fetch,
+      Number(process.env.FUZEQUALITY_REQUIREMENT_ANALYSIS_TIMEOUT_MS ?? 120_000),
     )
     const results = []
     for (const requirement of sync.requirements) {
@@ -103,7 +105,7 @@ await runConsumer(
       if (command) {
         await apiRequest('/api/v1/internal/intelligence/failure', {
           method: 'POST',
-          body: JSON.stringify({ sourceType: 'jira', sourceKey: command.scopeId, code: failureCode(error) }),
+          body: JSON.stringify({ tenantId: command.tenantId, sourceType: 'jira', sourceKey: command.scopeId, code: failureCode(error) }),
         }).catch(() => undefined)
       }
       throw error

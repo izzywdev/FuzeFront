@@ -684,10 +684,7 @@ export interface components {
             status: components["schemas"]["AppStatus"];
             mode: components["schemas"]["AppMode"];
             builtin: boolean;
-            /**
-             * Format: uuid
-             * @description Owning org, or null for platform-global apps.
-             */
+            /** @description Owning org as a wire-typed reference — a TypeID (`org_…`, the value `fuzefront.identity.prefixed-ids` returns in prod) or a bare UUID (legacy/unprefixed). NOT `format: uuid`: a prefixed TypeID is not a syntactic UUID and would fail that constraint. `null` is reserved for a genuinely platform-global app with no owning org. A reference/read, never an identity or a capability (authority is Permit + org role). */
             organizationId?: string | null;
             manifest: components["schemas"]["AppManifest"];
             /** @description Latest heartbeat-derived health, or null if unknown. */
@@ -717,10 +714,7 @@ export interface components {
         };
         RegisterAppRequest: {
             manifest: components["schemas"]["AppManifest"];
-            /**
-             * Format: uuid
-             * @description Owning org for org-scoped apps; omit for platform-global.
-             */
+            /** @description Owning org for org-scoped apps as a wire-typed reference — a TypeID (`org_…`, the value `fuzefront.identity.prefixed-ids` returns in prod) or a bare UUID (legacy/unprefixed). NOT `format: uuid`: a prefixed TypeID is not a syntactic UUID and would fail that constraint. Omit (or send `null`) for a platform-global app. A reference to an org that already exists, never an identity minted here. */
             organizationId?: string | null;
         };
         /** @description A resource the product owns, declared with a BARE key. */

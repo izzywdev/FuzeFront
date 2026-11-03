@@ -1,0 +1,154 @@
+{
+  "$comment": [
+    "help-system policy — the machine-readable half of governance/help-system-policy.md,",
+    "read by scripts/check-help-conformance.mjs (gate-help-conformance). The prose policy is",
+    "the law a human reads; this file is the subset a gate can enforce without judgement.",
+    "",
+    "WHY A POLICY FILE AND NOT CONSTANTS IN THE SCRIPT.",
+    "Same idiom as governance/frames-first-policy.json and governance/*-policy.json: the",
+    "strength of each check lives in a reviewed file, so tightening the help gate (flipping a",
+    "freshness ramp, adding a forbidden term) is a visible, owned diff rather than a code change",
+    "buried in the gate. The ramp pattern mirrors gate-ds-conformance / gate-frames-first.",
+    "",
+    "WHAT THIS GATE EXISTS TO STOP (it has already happened once).",
+    "frontend/src/pages/HelpPage.tsx shipped to production calling the product 'FrontFuse',",
+    "hard-coding http://localhost:3001 as the API host, telling developers to",
+    "'npm install @frontfuse/sdk' (a package that does not exist — the scope is @fuzefront),",
+    "giving Netlify/Vercel/AWS deploy steps for a platform that deploys via Kubernetes/Helm/Argo,",
+    "and pointing support at support@frontfuse.dev / discord.gg/frontfuse / github.com/your-org.",
+    "Every one of those was a typeable, greppable, deterministic defect. This gate greps for",
+    "them so that class of rot cannot ship again."
+  ],
+
+  "contentRoots": ["docs/help"],
+
+  "codeSurfaces": [
+    "frontend/src/pages/HelpPage.tsx"
+  ],
+
+  "manifest": {
+    "$comment": [
+      "docs/help/manifest.json is the index of record. Coverage is bidirectional: every article",
+      "the manifest lists must exist on disk, and every published article on disk must be listed.",
+      "An orphan article (on disk, unlisted) is invisible to the help UI and the dev portal; a",
+      "dangling entry (listed, missing) is a dead nav item. Both are hard failures."
+    ],
+    "path": "docs/help/manifest.json",
+    "requireBidirectional": true
+  },
+
+  "frontmatter": {
+    "$comment": [
+      "Every published help article (docs/help/**/ *.md, excluding README.md and _*) carries YAML",
+      "frontmatter. These fields are load-bearing: the help UI renders from them, the gate checks",
+      "them, and `owner`/`lastReviewed` are what make a stale article findable instead of rotting."
+    ],
+    "required": ["title", "description", "audience", "order", "owner", "lastReviewed", "status"],
+    "audienceValues": ["user", "developer"],
+    "statusValues": ["published", "draft"],
+    "ownerPattern": "^@[A-Za-z0-9-]+$",
+    "datePattern": "^\\d{4}-\\d{2}-\\d{2}$"
+  },
+
+  "forbiddenTerms": {
+    "$comment": [
+      "Case-insensitive substrings that must never appear in a help content surface. Each has a",
+      "reason so a reviewer sees WHY, and an optional `allowIn` list of path globs where the term",
+      "is legitimate (e.g. a changelog noting the old name). The deterministic defect list — add to",
+      "it whenever a wrong-but-greppable fact is found in help content."
+    ],
+    "entries": [
+      { "term": "FrontFuse", "reason": "Old product name. The product is 'FuzeFront'." },
+      { "term": "frontfuse.dev", "reason": "Dead placeholder domain. Use fuzefront.com / developers.fuzefront.com." },
+      { "term": "@frontfuse/", "reason": "Wrong npm scope. Published packages are @fuzefront/* (and @fuzeone/* for some clients)." },
+      { "term": "@frontfuse/sdk", "reason": "This package has never existed. There is no @fuzefront/sdk either — see developer-guide/overview.md for the real packages." },
+      { "term": "localhost:3001", "reason": "Localhost is not a user-facing API host. FuzeFront uses a same-origin API base (CLAUDE.md). Show '/api/...', never an absolute localhost URL, in published help." },
+      { "term": "admin@frontfuse.dev", "reason": "Fake seed credential presented as a real login. Auth is Authentik SSO, not an email/password seed." },
+      { "term": "admin123", "reason": "Fake seed password. Never put credentials, real or fake, in published help." },
+      { "term": "your-org/frontfuse", "reason": "Placeholder GitHub path. The repo is izzywdev/FuzeFront." },
+      { "term": "discord.gg/frontfuse", "reason": "Dead invite. Link only to channels that exist (see support.md)." },
+      { "term": "docs.frontfuse.dev", "reason": "Dead docs domain. Canonical docs are in-app help + developers.fuzefront.com." }
+    ]
+  },
+
+  "forbiddenUrlPatterns": {
+    "$comment": [
+      "Regexes matched against every http(s):// URL found in a content surface. These catch",
+      "placeholder and localhost hosts that must not appear in PUBLISHED help, even if the exact",
+      "string is not on the forbiddenTerms list."
+    ],
+    "entries": [
+      { "pattern": "https?://localhost(:\\d+)?", "reason": "Localhost host in published help — use a same-origin relative path or a real host." },
+      { "pattern": "https?://127\\.0\\.0\\.1(:\\d+)?", "reason": "Loopback host in published help." },
+      { "pattern": "https?://([a-z0-9-]+\\.)*example\\.(com|org|net)", "reason": "example.* placeholder host." },
+      { "pattern": "https?://your-[a-z0-9-]+", "reason": "'your-...' placeholder host." }
+    ]
+  },
+
+  "placeholderMarkers": {
+    "$comment": [
+      "Markers that mean 'unfinished'. Allowed in status: draft articles; a hard failure in a",
+      "status: published article. 'No placeholders in published help' is the single rule that",
+      "separates a help center from a scaffold."
+    ],
+    "entries": ["TODO", "TBD", "FIXME", "COMING SOON", "LOREM IPSUM", "XXX", "PLACEHOLDER", "WRITEME"],
+    "allowedInStatus": ["draft"]
+  },
+
+  "freshness": {
+    "$comment": [
+      "An article whose `lastReviewed` is older than `days` is stale. RAMP: mode=warn reports it",
+      "without failing (where the repo starts — no article should be failed for age the day the",
+      "gate lands); flip to mode=fail once the backlog of stale articles is zero and an owner",
+      "accepts that every future PR touching a stale article must re-review it. Mirrors the",
+      "gate-ds-conformance / gate-frames-first ramp. Owner decides the flip."
+    ],
+    "days": 180,
+    "mode": "warn",
+    "owner": "izzywdev"
+  },
+
+  "media": {
+    "$comment": [
+      "Visual media (screenshots, screencasts) live under assetDir, referenced from an article's",
+      "frontmatter `media:` list as { src, alt, type }. The gate enforces: the asset exists on",
+      "disk, every image/video has non-empty alt/caption text (accessibility), the extension is",
+      "allowed, and no committed asset is a placeholder (0-byte, or name matching a placeholder",
+      "marker). Producing the actual recordings is tracked in Jira, not faked in-repo — so this",
+      "section is enforced-but-mostly-empty until real assets land, which is deliberate.",
+      "",
+      "maxImageKB keeps the repo from accreting multi-MB uncompressed PNGs; the media standard in",
+      "the policy doc says how to capture and compress. Video is NOT committed to git — it is",
+      "hosted (see policy doc 'Media standard'); the gate allows a video media entry whose src is",
+      "an https URL to an approved host and whose type is 'video'."
+    ],
+    "assetDir": "docs/help/_assets",
+    "allowedImageExtensions": [".png", ".webp", ".svg", ".jpg", ".jpeg", ".gif"],
+    "requireAlt": true,
+    "maxImageKB": 500,
+    "forbidPlaceholderAssets": true,
+    "videoAllowedHosts": ["developers.fuzefront.com", "www.youtube.com", "youtu.be", "vimeo.com"]
+  },
+
+  "links": {
+    "$comment": [
+      "Relative markdown links between help files must resolve to a file that exists. External",
+      "https links are NOT fetched by the gate (CI must not depend on the network and must not be",
+      "a request amplifier) — external-link rot is caught by the scheduled doc-validity job, not",
+      "this per-PR gate. forbiddenUrlPatterns above still statically rejects placeholder hosts."
+    ],
+    "checkInternalRelative": true
+  },
+
+  "exemptPaths": {
+    "$comment": [
+      "Globs excluded from content checks entirely (not from manifest coverage). README.md files",
+      "and the _assets tree are infrastructure, not articles."
+    ],
+    "paths": [
+      "docs/help/README.md",
+      "docs/help/**/README.md",
+      "docs/help/_assets/**"
+    ]
+  }
+}

@@ -321,7 +321,11 @@
         "contractStatus": "real — binds to the frozen services/config-service/openapi.yaml",
         "approved": true,
         "approvedBy": "izzywdev",
-        "approvedAt": "2026-10-18T14:35:31.657Z"
+        "approvedAt": "2026-10-18T14:35:31.657Z",
+        "responsive": {
+          "exempt": true,
+          "exemptReason": "Configuration settings editor at /config (key/value editing with provenance, lock state and save-conflict merge) is an operator config console — a dense editor surface with no end-user mobile flow."
+        }
       },
       {
         "id": "key-catalog",
@@ -336,7 +340,11 @@
         "contractStatus": "real — binds to the frozen services/config-service/openapi.yaml",
         "approved": true,
         "approvedBy": "izzywdev",
-        "approvedAt": "2026-10-18T14:35:20.512Z"
+        "approvedAt": "2026-10-18T14:35:20.512Z",
+        "responsive": {
+          "exempt": true,
+          "exemptReason": "Config key catalog + key-definition authoring at /admin/config is an administrator console (wide catalog table + definition editor); no mobile surface is designed."
+        }
       },
       {
         "id": "secret-audit",
@@ -350,7 +358,11 @@
         "contractStatus": "partly anticipated — secret reveal and history/revert are FF-EPIC-18-S1/S2/S3 and are commissioned by these frames; the masked/isSet secret field itself is already in the frozen contract",
         "approved": true,
         "approvedBy": "izzywdev",
-        "approvedAt": "2026-10-18T14:34:18.157Z"
+        "approvedAt": "2026-10-18T14:34:18.157Z",
+        "responsive": {
+          "exempt": true,
+          "exemptReason": "Secret input + audit history at /admin/config/keys/:key/history is a gated admin/audit console used at a workstation; no end-user mobile flow."
+        }
       }
     ],
     "components": [
@@ -439,5 +451,5 @@
       "CodeField — monospace JSON / duration input"
     ]
   },
-  "stamp": "8a9d7194c7a8bf6ac9e3c4bd48847d4d569d0c46c95dd43d7f7a76f3f7dda7f7"
+  "stamp": "edf4491cace9a73abf7d6214463da1c93b6ca7f8a10617be70210d8115a04f9a"
 }

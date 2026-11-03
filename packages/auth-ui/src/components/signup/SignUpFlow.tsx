@@ -17,6 +17,7 @@ import { SocialButton } from '../SocialButton'
 import { AuthCard } from '../verify-reset/AuthCard'
 import { DEFAULT_SIGNUP_LABELS, type SignUpLabels } from './labels'
 import { buildPolicyRules, meetsPolicy } from './policy'
+import { AUTH_BUTTON_STYLE, AUTH_INPUT_STYLE } from '../controlStyles'
 
 /**
  * Fallback capability descriptor so the form is never gated on the methods round
@@ -245,14 +246,12 @@ export function SignUpFlow({
     )
   }
 
-  const rootState =
-    pending ? 'submit-inflight'
-    : error?.kind === 'conflict' ? 'signup-conflict'
-    : error?.kind === 'policy' ? 'signup-pw-weak-submit'
-    : error?.kind === 'unavailable' ? 'signup-service-unavailable'
-    : error?.kind === 'generic' ? 'form-error'
-    : pristine ? 'signup-initial'
-    : 'editing'
+  // The flow root only reports the form's own phase. Every transient/error state
+  // (submit-inflight, signup-conflict, signup-pw-weak-submit, form-error,
+  // rate-limited, signup-service-unavailable) is carried by exactly ONE element —
+  // the submit button or the alert/card — so `[data-state='<state>']` addresses a
+  // single node, as each 06-states card does in the approved frame.
+  const rootState = pristine ? 'signup-initial' : 'editing'
 
   // ── provider unavailable: fail closed with a browser-flow fallback + retry ──
   const unavailable = error?.kind === 'unavailable'
@@ -261,7 +260,7 @@ export function SignUpFlow({
     <div data-frame="01-signup" data-flow="signup" data-state={rootState} className="fzf-su">
       {variant === 'compact' && (
         <>
-          <h2 className="fzf-auth-panel__heading">{labels.heading}</h2>
+          <h1 className="fzf-auth-panel__heading fzf-su-title">{labels.heading}</h1>
           <p className="fzf-auth-panel__subtitle">{labels.subtitle}</p>
         </>
       )}
@@ -319,6 +318,8 @@ export function SignUpFlow({
                 disabled={pending}
                 invalid={error?.kind === 'policy'}
                 aria-describedby="fzf-signup-pw-meter"
+                aria-required="true"
+                style={AUTH_INPUT_STYLE}
                 showPasswordLabel={labels.showPassword}
                 hidePasswordLabel={labels.hidePassword}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
@@ -381,6 +382,7 @@ export function SignUpFlow({
               variant="primary"
               fullWidth
               data-action="submit"
+              style={AUTH_BUTTON_STYLE}
               data-state={pending ? 'submit-inflight' : undefined}
               disabled={!canSubmit}
               aria-busy={pending || undefined}

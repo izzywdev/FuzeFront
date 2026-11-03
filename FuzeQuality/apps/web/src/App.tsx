@@ -89,6 +89,7 @@ import { ExecutionInspector } from './components/executionInspector'
 import { FlowInventoryFilters, type FlowAnalysisRisk, type FlowRevisionScope } from './components/flowInventoryFilters'
 import { FlowInspector, flowArtifactTargetIds, unavailableFlowArtifactTargetIds } from './components/flowInspector'
 import { RepositoryAnalysisStatus } from './components/repositoryAnalysisStatus'
+import { RequirementFreshnessStatus } from './components/requirementFreshnessStatus'
 import { MAX_HISTORICAL_FLOW_EVIDENCE_REVISIONS, historicalFlowEvidenceSelection } from './flowEvidence'
 import { governanceEvidenceSelection } from './governanceEvidence'
 import { applyRepositoryProcessingStatus, repositoryNeedsProcessingPoll, repositoryProcessingTransitionCompleted } from './repositoryProcessing'
@@ -212,8 +213,10 @@ function mergeExecutionOutcomeTrends(groups: ExecutionOutcomeTrend[][]): Executi
       evidencePartialCount: 0,
       evidenceUnavailableCount: 0,
       evidenceNotCollectedCount: 0,
+      evidenceCollectionFailureCount: 0,
       invalidEvidenceUrlCount: 0,
       githubRunProvenanceMissingCount: 0,
+      attemptProvenanceUnverifiedCount: 0,
       postProductionVideoMissingCount: 0,
       terminalTimingMissingCount: 0,
       gateEvaluationCount: 0,
@@ -251,8 +254,10 @@ function mergeExecutionOutcomeTrends(groups: ExecutionOutcomeTrend[][]): Executi
     current.evidencePartialCount = (current.evidencePartialCount ?? 0) + (item.evidencePartialCount ?? 0)
     current.evidenceUnavailableCount = (current.evidenceUnavailableCount ?? 0) + (item.evidenceUnavailableCount ?? 0)
     current.evidenceNotCollectedCount = (current.evidenceNotCollectedCount ?? 0) + (item.evidenceNotCollectedCount ?? 0)
+    current.evidenceCollectionFailureCount = (current.evidenceCollectionFailureCount ?? 0) + (item.evidenceCollectionFailureCount ?? 0)
     current.invalidEvidenceUrlCount = (current.invalidEvidenceUrlCount ?? 0) + (item.invalidEvidenceUrlCount ?? 0)
     current.githubRunProvenanceMissingCount = (current.githubRunProvenanceMissingCount ?? 0) + (item.githubRunProvenanceMissingCount ?? 0)
+    current.attemptProvenanceUnverifiedCount = (current.attemptProvenanceUnverifiedCount ?? 0) + (item.attemptProvenanceUnverifiedCount ?? 0)
     current.postProductionVideoMissingCount = (current.postProductionVideoMissingCount ?? 0) + (item.postProductionVideoMissingCount ?? 0)
     current.terminalTimingMissingCount = (current.terminalTimingMissingCount ?? 0) + (item.terminalTimingMissingCount ?? 0)
     current.gateEvaluationCount = (current.gateEvaluationCount ?? 0) + (item.gateEvaluationCount ?? 0)
@@ -1827,15 +1832,27 @@ function ApiCatalogPage({ data }: { data: Portfolio }) {
 }
 
 function Requirements({ data }: { data: Portfolio }) {
-  const [freshness, setFreshness] = useState<
-    'unknown' | 'fresh' | 'stale' | 'failed'
-  >('unknown')
+  const [freshness, setFreshness] = useState<import('@fuzequality/contracts').SyncCursor>({
+    sourceType: 'jira',
+    sourceKey: 'default',
+    freshnessStatus: 'unknown',
+  })
+  const [retrying, setRetrying] = useState(false)
   useEffect(() => {
     api
       .requirementFreshness()
-      .then(value => setFreshness(value.freshnessStatus))
-      .catch(() => setFreshness('failed'))
+      .then(setFreshness)
+      .catch(() => setFreshness({ sourceType: 'jira', sourceKey: 'default', freshnessStatus: 'failed' }))
   }, [])
+  const retry = async () => {
+    setRetrying(true)
+    try {
+      const result = await api.syncRequirements()
+      setFreshness(result.sync)
+    } finally {
+      setRetrying(false)
+    }
+  }
   return (
     <>
       <PageHeading
@@ -1843,9 +1860,7 @@ function Requirements({ data }: { data: Portfolio }) {
         title="Requirements & inferred flows"
         detail="Jira stays authoritative. AI proposals remain visibly separate until reviewed."
         action={
-          <div className={`header-badge freshness-${freshness}`}>
-            <Database /> Jira {freshness}
-          </div>
+          <RequirementFreshnessStatus sync={freshness} onRetry={() => void retry()} retrying={retrying} />
         }
       />
       <div className="requirements-grid">
@@ -3535,6 +3550,7 @@ type FlowInventorySelection = {
   source: RepositoryFlowCandidate['source'] | ''
   status: RepositoryFlowCandidate['status'] | ''
   revisionScope: FlowRevisionScope
+  targetId: string
   model: string
   promptVersion: string
   schemaVersion: string
@@ -3550,6 +3566,7 @@ type PolicyGateInventorySelection = {
   reviewStatus: PolicyGateEvaluation['reviewStatus'] | ''
   revisionScope: FlowRevisionScope
   subject: string
+  sourcePath: string
   policyArtifactId: string
   gateArtifactId: string
   minimumConfidencePercent: string
@@ -3737,6 +3754,7 @@ export function policyGateEvaluationMatchesInventory(
     )
   )
     return false
+  if (selection.sourcePath && !evaluation.scope.sourcePaths.includes(selection.sourcePath)) return false
   if (selection.policyArtifactId && !evaluation.policyArtifactIds.includes(selection.policyArtifactId)) return false
   if (selection.gateArtifactId && !evaluation.gateArtifactIds.includes(selection.gateArtifactId)) return false
   if (selection.minimumConfidencePercent !== '' && evaluation.confidence < Number(selection.minimumConfidencePercent) / 100) return false
@@ -3778,6 +3796,11 @@ export function flowCandidateMatchesInventory(
     return false
   if (selection.source && flow.source !== selection.source) return false
   if (selection.status && flow.status !== selection.status) return false
+  if (selection.targetId && !(
+    flow.evidence.includes(selection.targetId) ||
+    flow.steps.some(step => step.targetIds.includes(selection.targetId)) ||
+    flow.wireframe.nodes.some(node => node.targetIds.includes(selection.targetId))
+  )) return false
   if (selection.model && flow.analysis?.model !== selection.model) return false
   if (
     selection.promptVersion &&
@@ -3839,6 +3862,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [flowSource, setFlowSource] = useState<RepositoryFlowCandidate['source'] | ''>('')
   const [flowStatus, setFlowStatus] = useState<RepositoryFlowCandidate['status'] | ''>('')
   const [flowRevisionScope, setFlowRevisionScope] = useState<FlowRevisionScope>('all')
+  const [flowTargetId, setFlowTargetId] = useState('')
   const [flowModel, setFlowModel] = useState('')
   const [flowPromptVersion, setFlowPromptVersion] = useState('')
   const [flowSchemaVersion, setFlowSchemaVersion] = useState('')
@@ -3927,7 +3951,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [executionEvidenceCheckedAfter, setExecutionEvidenceCheckedAfter] = useState('')
   const [executionEvidenceCheckedBefore, setExecutionEvidenceCheckedBefore] = useState('')
   const [executionEvidenceRequirement, setExecutionEvidenceRequirement] = useState<
-    'evidence-url-invalid' | 'github-run-provenance-missing' | 'policy-gate-outcome-missing' | 'post-production-video-missing' | 'performance-threshold-missing' | 'terminal-timing-missing' | ''
+    'evidence-url-invalid' | 'provider-collection-failure' | 'github-run-provenance-missing' | 'attempt-provenance-unverified' | 'policy-gate-outcome-missing' | 'post-production-video-missing' | 'performance-threshold-missing' | 'terminal-timing-missing' | ''
   >('')
   const [executionThresholdOutcome, setExecutionThresholdOutcome] = useState<
     'passed' | 'failed' | ''
@@ -3979,6 +4003,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [policyGateRevisionScope, setPolicyGateRevisionScope] =
     useState<FlowRevisionScope>('current')
   const [policyGateSubject, setPolicyGateSubject] = useState('')
+  const [policyGateSourcePath, setPolicyGateSourcePath] = useState('')
   const [policyGatePolicyArtifactId, setPolicyGatePolicyArtifactId] = useState('')
   const [policyGateGateArtifactId, setPolicyGateGateArtifactId] = useState('')
   const [policyGateMinimumConfidencePercent, setPolicyGateMinimumConfidencePercent] = useState('')
@@ -3995,6 +4020,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     reviewStatus: policyGateReviewStatus,
     revisionScope: policyGateRevisionScope,
     subject: policyGateSubject.trim(),
+    sourcePath: policyGateSourcePath.trim(),
     policyArtifactId: policyGatePolicyArtifactId.trim(),
     gateArtifactId: policyGateGateArtifactId.trim(),
     minimumConfidencePercent: policyGateMinimumConfidencePercent,
@@ -4032,6 +4058,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     source: flowSource,
     status: flowStatus,
     revisionScope: flowRevisionScope,
+    targetId: flowTargetId.trim(),
     model: flowModel.trim(),
     promptVersion: flowPromptVersion.trim(),
     schemaVersion: flowSchemaVersion.trim(),
@@ -4050,6 +4077,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     flowSource,
     flowStatus,
     flowRevisionScope,
+    flowTargetId.trim(),
     flowModel.trim(),
     flowPromptVersion.trim(),
     flowSchemaVersion.trim(),
@@ -4427,6 +4455,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                         ? repository.lastScanRevision ?? ''
                         : '',
                     subject: policyGateSubject.trim(),
+                    sourcePath: policyGateSourcePath.trim(),
                     policyArtifactId: policyGatePolicyArtifactId.trim(),
                     gateArtifactId: policyGateGateArtifactId.trim(),
                     minConfidence: policyGateMinimumConfidencePercent === '' ? '' : String(Number(policyGateMinimumConfidencePercent) / 100),
@@ -4492,6 +4521,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     policyGateReviewStatus,
     policyGateSeverity,
     policyGateSubject,
+    policyGateSourcePath,
     policyGatePolicyArtifactId,
     policyGateGateArtifactId,
     policyGateMinimumConfidencePercent,
@@ -4604,6 +4634,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                       flowRevisionScope === 'current'
                         ? repository.lastScanRevision ?? ''
                         : '',
+                    targetId: flowTargetId.trim(),
                     model: flowModel.trim(),
                     promptVersion: flowPromptVersion.trim(),
                     schemaVersion: flowSchemaVersion.trim(),
@@ -4643,6 +4674,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     flowRevisionScope,
     flowSource,
     flowStatus,
+    flowTargetId,
     flowModel,
     flowPromptVersion,
     flowSchemaVersion,
@@ -5083,6 +5115,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             source: flowSource,
             status: flowStatus,
             revision: flowRevisionScope === 'current' ? repository?.lastScanRevision ?? '' : '',
+            targetId: flowTargetId.trim(),
             model: flowModel.trim(),
             promptVersion: flowPromptVersion.trim(),
             schemaVersion: flowSchemaVersion.trim(),
@@ -5142,6 +5175,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             reviewStatus: policyGateReviewStatus,
             revision: policyGateRevisionScope === 'current' ? repository?.lastScanRevision ?? '' : '',
             subject: policyGateSubject.trim(),
+            sourcePath: policyGateSourcePath.trim(),
             policyArtifactId: policyGatePolicyArtifactId.trim(),
             gateArtifactId: policyGateGateArtifactId.trim(),
             minConfidence: policyGateMinimumConfidencePercent === '' ? '' : String(Number(policyGateMinimumConfidencePercent) / 100),
@@ -5238,6 +5272,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       policyGateReviewStatus,
       policyGateRevisionScope,
       policyGateSubject,
+      policyGateSourcePath,
       policyGatePolicyArtifactId,
       policyGateGateArtifactId,
       policyGateMinimumConfidencePercent,
@@ -5418,6 +5453,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             source={flowSource}
             status={flowStatus}
             revisionScope={flowRevisionScope}
+            targetId={flowTargetId}
             model={flowModel}
             promptVersion={flowPromptVersion}
             schemaVersion={flowSchemaVersion}
@@ -5429,6 +5465,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             onSourceChange={setFlowSource}
             onStatusChange={setFlowStatus}
             onRevisionScopeChange={setFlowRevisionScope}
+            onTargetIdChange={setFlowTargetId}
             onModelChange={setFlowModel}
             onPromptVersionChange={setFlowPromptVersion}
             onSchemaVersionChange={setFlowSchemaVersion}
@@ -5586,6 +5623,15 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 maxLength={200}
                 placeholder="authentication"
                 onChange={event => setPolicyGateSubject(event.target.value)}
+              />
+            </label>
+            <label>
+              Governance source path
+              <input
+                value={policyGateSourcePath}
+                maxLength={1000}
+                placeholder="governance/deployment.md"
+                onChange={event => setPolicyGateSourcePath(event.target.value)}
               />
             </label>
             <label>
@@ -6440,13 +6486,15 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 value={executionEvidenceRequirement}
                 onChange={event =>
                   setExecutionEvidenceRequirement(
-                    event.target.value as 'evidence-url-invalid' | 'github-run-provenance-missing' | 'policy-gate-outcome-missing' | 'post-production-video-missing' | 'performance-threshold-missing' | 'terminal-timing-missing' | ''
+                    event.target.value as 'evidence-url-invalid' | 'provider-collection-failure' | 'github-run-provenance-missing' | 'attempt-provenance-unverified' | 'policy-gate-outcome-missing' | 'post-production-video-missing' | 'performance-threshold-missing' | 'terminal-timing-missing' | ''
                   )
                 }
               >
                 <option value="">All requirements</option>
                 <option value="evidence-url-invalid">Invalid or non-HTTPS artifact URL</option>
+                <option value="provider-collection-failure">Provider evidence collection failed</option>
                 <option value="github-run-provenance-missing">Missing GitHub run provenance</option>
+                <option value="attempt-provenance-unverified">Unverified retry-attempt artifacts</option>
                 <option value="policy-gate-outcome-missing">Missing policy–gate outcome</option>
                 <option value="post-production-video-missing">Missing post-production video</option>
                 <option value="performance-threshold-missing">Missing performance thresholds</option>
@@ -6707,10 +6755,10 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                   {day.retryAttemptCount} retries · {day.successfulRetryCount} passed retries · {day.recoveredRunCount} recovered after failure
                 </span>
                 <span>
-                  Provider evidence: {day.evidenceCompleteCount ?? 0} complete · {day.evidencePartialCount ?? 0} partial · {day.evidenceUnavailableCount ?? 0} unavailable · {day.evidenceNotCollectedCount ?? 0} not collected
+                  Provider evidence: {day.evidenceCompleteCount ?? 0} complete · {day.evidencePartialCount ?? 0} partial · {day.evidenceUnavailableCount ?? 0} unavailable · {day.evidenceNotCollectedCount ?? 0} not collected · {day.evidenceCollectionFailureCount ?? 0} collection failures
                 </span>
                 <span>
-                  Evidence gaps: {day.invalidEvidenceUrlCount ?? 0} invalid URLs · {day.githubRunProvenanceMissingCount ?? 0} GitHub runs missing provenance · {day.postProductionVideoMissingCount ?? 0} post-production runs missing video · {day.terminalTimingMissingCount ?? 0} terminal runs missing timing
+                  Evidence gaps: {day.invalidEvidenceUrlCount ?? 0} invalid URLs · {day.githubRunProvenanceMissingCount ?? 0} GitHub runs missing provenance · {day.attemptProvenanceUnverifiedCount ?? 0} retry attempts with unverified provenance · {day.postProductionVideoMissingCount ?? 0} post-production runs missing video · {day.terminalTimingMissingCount ?? 0} terminal runs missing timing
                 </span>
                 <span>
                   Policy gates: {day.gatePassedCount ?? 0} passed · {day.gateFailedCount ?? 0} failed · {day.gateCancelledCount ?? 0} cancelled · {day.gateRunningCount ?? 0} running · {day.gateEvaluationCount ?? 0} evaluated · {day.gateUnevaluatedExecutionCount ?? 0} executions without an attributable gate outcome

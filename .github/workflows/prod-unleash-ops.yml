@@ -31,6 +31,7 @@ on:
             authz-enabled       — fuzefront.billing.authz-enabled (100%) — run AFTER prod-billing-s2s-provision succeeds
             root-membership     — fuzefront.identity.root-membership (100%): new signups take the root-membership path instead of a personal org (FF-EPIC-17-S1/S2; the S2 backfill is #1095, deployed)
             selection-lists-create — CREATE ONLY (never enables): fuzefront.selection-lists.service + seed-defaults + shared-lists, left OFF
+            devportal           — fuzefront.devportal.enabled (100%): gates developers.fuzefront.com sign-in; GA per owner decision 2026-10-18
             config-management   — fuzefront.config.management-console + .key-catalog + .secrets-audit (100%): Configuration Management Console UI (EPIC-19). Web-exposed; requires the catalog-registering build (#1571) deployed.
             account-security    — fuzefront.account-security.hub (100%): the Account Security hub UI (profile menu → Settings: password, MFA, devices/sessions, connected accounts). Web-exposed; consumes the existing security-service APIs.
             all-flags           — owner-directed bulk GA: 28 flags to 100% = 26 release flags (incl. the 3 config-management flags) + 2 ops-kill-switches (created as type=kill-switch; ON = healthy). Excludes per-org / env-driven / unverified flags (billing authz-enabled + plan-flag-sync, selection-lists.shared-lists, auth.experience, billing plan-tier permission flags).
@@ -47,6 +48,7 @@ on:
           - authz-enabled
           - root-membership
           - selection-lists-create
+          - devportal
           - billing-plan-flag-sync
           - config-management
           - account-security
@@ -297,6 +299,12 @@ jobs:
               "Release flag, default OFF. Gates the marketplace publication-request endpoints (submit/approve/reject/get) and the Publish to marketplace UI. Owner: backend-engineer. Removal: once the marketplace flow is rolled out and stable."
           }
 
+          # ── Developer Portal ──────────────────────────────────────────────────
+          apply_devportal() {
+            enable_ga "fuzefront.devportal.enabled" \
+              "Release flag. Gates developers.fuzefront.com sign-in (DevPortalFlow). GA per owner decision 2026-10-18 (izzy). Owner: feature-flags-engineer. Removal: once the devportal is GA and the OFF path is unused."
+          }
+
           # ── Billing authz-enabled (run AFTER prod-billing-s2s-provision) ──────
           apply_authz_enabled() {
             enable_ga "fuzefront.billing.authz-enabled" \
@@ -424,6 +432,7 @@ jobs:
             authz-enabled)       apply_authz_enabled ;;
             root-membership)     apply_root_membership ;;
             selection-lists-create) apply_selection_lists_create ;;
+            devportal)           apply_devportal ;;
             config-management)   apply_config_management ;;
             account-security)    apply_account_security ;;
             all-flags)           apply_all_flags ;;
@@ -502,6 +511,8 @@ jobs:
               check_flag "fuzefront.billing.authz-enabled" ;;
             root-membership)
               check_flag "fuzefront.identity.root-membership" ;;
+            devportal)
+              check_flag "fuzefront.devportal.enabled" ;;
             config-management)
               check_flag "fuzefront.config.management-console"
               check_flag "fuzefront.config.key-catalog"

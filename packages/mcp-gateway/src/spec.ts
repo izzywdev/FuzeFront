@@ -262,5 +262,36 @@ export function buildTools(
     }
   }
 
+  // An overrides key that names no operation is an override that silently does
+  // nothing: the tool it was written for keeps its method-derived
+  // classification, and the file reads as though a reviewed decision were in
+  // force. That is how selection-lists shipped `archiveList` / `archiveItem` /
+  // `revokeAccess` against operationIds `archiveSelectionList` / ... — a typo,
+  // or a rename in the spec, is indistinguishable from "no override needed"
+  // unless the mismatch is fatal. Stop the pod at boot instead.
+  const unknown = findUnknownOverrideKeys(overrides, seenNames);
+  if (unknown.length > 0) {
+    throw new Error(
+      `Overrides name ${unknown.length} tool(s) that do not exist in the spec: ${unknown
+        .map(k => `"${k}"`)
+        .join(', ')}. ` +
+        `Override keys must be the exact operationId (or the derived tool name when an ` +
+        `operation has none) — a key that matches nothing is silently ignored, which leaves ` +
+        `the tool on its method-derived classification while the file claims otherwise. ` +
+        `Known tools: ${[...seenNames].sort().join(', ')}.`
+    );
+  }
+
   return tools;
+}
+
+/**
+ * Override keys that do not correspond to any tool the spec produced. Exported
+ * so conformance tests and CI scripts can assert on it without booting a pod.
+ */
+export function findUnknownOverrideKeys(
+  overrides: Overrides,
+  toolNames: ReadonlySet<string>
+): string[] {
+  return Object.keys(overrides).filter(k => !toolNames.has(k));
 }

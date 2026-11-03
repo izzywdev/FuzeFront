@@ -3,7 +3,6 @@ import { mintId, toUuid } from '@izzywdev/fuzefront-identity'
 import { db } from '../config/database'
 import { authenticateToken, requireRole } from '../middleware/auth'
 import { App } from '../types/shared'
-import { isPrefixedIdsEnabled } from '../identity/flags'
 import { prefixDtoIds } from '../identity/serializer'
 import {
   ScopeLevel,
@@ -103,11 +102,9 @@ router.get('/health', authenticateToken, async (req: any, res) => {
       })
     )
 
-    const flagCtx = { orgId: req.user?.organizationId, userId: req.user?.id }
-    const prefixed = await isPrefixedIdsEnabled(flagCtx)
     res.json(
       healthChecks.map((item: any) =>
-        prefixDtoIds(item, prefixed, { id: 'app' })
+        prefixDtoIds(item, { id: 'app' })
       )
     )
   } catch (error) {
@@ -218,8 +215,6 @@ router.get('/', authenticateToken, async (req: any, res) => {
       })
     )
 
-    const flagCtx = { orgId: req.user?.organizationId, userId: req.user?.id }
-    const prefixed = await isPrefixedIdsEnabled(flagCtx)
 
     // If healthyOnly is requested, filter by health status
     if (healthyOnly === 'true') {
@@ -227,13 +222,13 @@ router.get('/', authenticateToken, async (req: any, res) => {
       res.json(
         healthyApps.map((app: any) => {
           const { isHealthy, ...appWithoutHealth } = app
-          return prefixDtoIds(appWithoutHealth, prefixed, { id: 'app' })
+          return prefixDtoIds(appWithoutHealth, { id: 'app' })
         })
       )
     } else {
       res.json(
         appsWithHealth.map((app: any) =>
-          prefixDtoIds(app, prefixed, { id: 'app' })
+          prefixDtoIds(app, { id: 'app' })
         )
       )
     }
@@ -509,9 +504,7 @@ router.post(
         scopeLevel,
       }
 
-      const flagCtx = { orgId: req.user?.organizationId, userId: req.user?.id }
-      const prefixed = await isPrefixedIdsEnabled(flagCtx)
-      res.status(201).json(prefixDtoIds(newApp as any, prefixed, { id: 'app' }))
+      res.status(201).json(prefixDtoIds(newApp as any, { id: 'app' }))
     } catch (error: any) {
       console.error('Error creating app:', error)
 
@@ -746,11 +739,7 @@ router.put(
         defaultInstallPersonal: row.default_install_personal,
         defaultInstallOrg: row.default_install_org,
       }
-      const prefixed = await isPrefixedIdsEnabled({
-        orgId: req.user?.organizationId,
-        userId: req.user?.id,
-      })
-      res.json(prefixDtoIds(dto, prefixed, { id: 'app' }))
+      res.json(prefixDtoIds(dto, { id: 'app' }))
     } catch (error) {
       console.error('Error updating app:', error)
       res.status(500).json({ error: 'Failed to update app' })
@@ -911,9 +900,7 @@ router.post('/register', async (req: any, res) => {
       sanitizeForLog(name)
     )
 
-    const flagCtx = {}
-    const prefixed = await isPrefixedIdsEnabled(flagCtx)
-    res.status(201).json(prefixDtoIds(newApp as any, prefixed, { id: 'app' }))
+    res.status(201).json(prefixDtoIds(newApp as any, { id: 'app' }))
   } catch (error: any) {
     console.error('Error in self-registration:', error)
 
@@ -947,10 +934,9 @@ router.post('/register', async (req: any, res) => {
             isMarketplaceApproved: false,
             installCount: 0,
           }
-          const catchPrefixed = await isPrefixedIdsEnabled({})
           return res
             .status(200)
-            .json(prefixDtoIds(app as any, catchPrefixed, { id: 'app' }))
+            .json(prefixDtoIds(app as any, { id: 'app' }))
         }
       } catch (fetchError) {
         console.error('Error fetching existing app:', fetchError)
