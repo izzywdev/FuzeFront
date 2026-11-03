@@ -56,6 +56,11 @@ function SidePanel({ isOpen = false, onClose }: SidePanelProps) {
   // BOTH the flag and `isEmployee` so a non-Employee never even sees the nav
   // entry (the route itself also fail-closes via StaffGuard either way).
   const employeeConsoleEnabled = useFlag('fuzefront.identity.employee-console', false)
+  // Root-org customer invitations (design/frames/org-invitations-v2 flow
+  // root-customer-invite, FFRNT-309), default OFF. The nav entry is a first-paint
+  // hint (platform admins/employees); /root/customers re-checks the caller's REAL
+  // root-org `owner` role and renders the in-place 403 otherwise.
+  const inviteV2Enabled = useFlag('fuzefront.identity.invite-v2', false)
   // Configuration Management Console (design/frames/config-management,
   // FF-EPIC-19-S3/S4), default OFF.
   const configConsoleEnabled = useFlag('fuzefront.config.management-console', false)
@@ -434,6 +439,14 @@ function SidePanel({ isOpen = false, onClose }: SidePanelProps) {
               window.location.pathname.startsWith('/staff')
             }
             onClick={() => handleNavigate('/staff')}
+          />
+        )}
+        {inviteV2Enabled && isEmployeeUser(user?.roles) && (
+          <DSMenuItem
+            icon="🛍️"
+            label={t('nav.rootCustomers', { defaultValue: 'Customers' })}
+            active={pathname.startsWith('/root/customers')}
+            onClick={() => handleNavigate('/root/customers')}
           />
         )}
         {selectionListsServiceEnabled && (

@@ -365,10 +365,12 @@ export interface LoginResponse {
 // the frozen contract `SignupRequest` (@fuzefront/security-client 1.0.0), never
 // hand-redefined: `{ email, password, name?, turnstileToken?, tenantName? }`.
 // A single optional `name` replaced `firstName`/`lastName`, which the contract now
-// rejects (additionalProperties:false).
+// rejects (additionalProperties:false). `bindToken` is the single-use invitation
+// carrier (InvitationEnrollResponse.bindToken) that auto-binds the invited
+// membership on signup (org-invitations v2).
 export type SignupCredentials = Pick<
   SignupRequest,
-  'email' | 'password' | 'name' | 'turnstileToken' | 'tenantName'
+  'email' | 'password' | 'name' | 'turnstileToken' | 'tenantName' | 'bindToken'
 >
 
 // Persist a freshly authenticated session so it survives the post-login page

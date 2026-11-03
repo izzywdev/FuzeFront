@@ -90,6 +90,8 @@ describe('WEB_EXPOSED_FLAGS catalog', () => {
     expect(keys).toContain('fuzefront.identity.personal-context');
     expect(keys).toContain('fuzefront.identity.member-directory');
     expect(keys).toContain('fuzefront.identity.employee-console');
+    // Org invitations v2 (FFRNT-309) is browser-gated by useFlag().
+    expect(keys).toContain('fuzefront.identity.invite-v2');
     // Selection Lists UI is browser-gated by useFlag(); without this entry the
     // flag reads permanently OFF in the browser no matter what Unleash says.
     expect(keys).toContain('fuzefront.selection-lists.service');

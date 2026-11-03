@@ -156,3 +156,58 @@ export type {
   EmployeeOrgNode,
   EmployeeDirectMember,
 } from './types'
+
+// ---- Org invitations v2 (FFRNT-309) ----------------------------------------
+// design/frames/org-invitations-v2/** — flows: invite (route `/settings/access`,
+// orchestrator OrgInviteFlow), accept-bind (route `/invitations/accept`,
+// InvitationAcceptFlow), root-customer-invite (route `/root/customers`,
+// RootCustomerInviteFlow). Gated by the Unleash flag `fuzefront.identity.invite-v2`
+// (default OFF) — the HOST reads the flag and passes `invitationsV2` /
+// mounts the flows; these components never read flags themselves.
+export { OrgInviteFlow } from './components/invitations/invite/OrgInviteFlow'
+export type { OrgInviteFlowProps } from './components/invitations/invite/OrgInviteFlow'
+export { OrgInviteButton } from './components/invitations/invite/OrgInviteButton'
+export { InviteModalV2 } from './components/invitations/invite/InviteModalV2'
+export type { InviteModalV2Props } from './components/invitations/invite/InviteModalV2'
+export { InviteForm } from './components/invitations/invite/InviteForm'
+export type { InviteFormProps } from './components/invitations/invite/InviteForm'
+export { InviteeKindToggle, InviteChannelToggle, MemberTypeToggle } from './components/invitations/invite/InviteToggles'
+export type { InviteeKind } from './components/invitations/invite/InviteToggles'
+export { EmailInviteField, PhoneE164Field, InviteeAccountPicker } from './components/invitations/invite/InviteFields'
+export type { AccountOption } from './components/invitations/invite/InviteFields'
+export { InviteRolePicker } from './components/invitations/invite/InviteRolePicker'
+export { InviteReviewSummary } from './components/invitations/invite/InviteReviewSummary'
+export { PendingInvitationsPanel } from './components/invitations/pending/PendingInvitationsPanel'
+export type { PendingInvitationsPanelProps } from './components/invitations/pending/PendingInvitationsPanel'
+export { PendingInvitationRow } from './components/invitations/pending/PendingInvitationRow'
+export { InviteStatusPill } from './components/invitations/pending/InviteStatusPill'
+export { ResendInviteButton } from './components/invitations/pending/ResendInviteButton'
+export { RevokeInviteDialog } from './components/invitations/pending/RevokeInviteDialog'
+export { InvitationAcceptFlow } from './components/invitations/accept/InvitationAcceptFlow'
+export type { InvitationAcceptFlowProps, SignupSlotContext } from './components/invitations/accept/InvitationAcceptFlow'
+export { InvitationAcceptCard } from './components/invitations/accept/InvitationAcceptCard'
+export type { InvitationAcceptCardProps } from './components/invitations/accept/InvitationAcceptCard'
+export { InvitationSignupPanel } from './components/invitations/accept/InvitationSignupPanel'
+export { InvitationBindSuccess } from './components/invitations/accept/InvitationBindSuccess'
+export { InvitationErrorState } from './components/invitations/shared/InvitationErrorState'
+export type { InvitationErrorStateProps } from './components/invitations/shared/InvitationErrorState'
+export { RootCustomerInviteFlow } from './components/invitations/root-customer/RootCustomerInviteFlow'
+export type { RootCustomerInviteFlowProps } from './components/invitations/root-customer/RootCustomerInviteFlow'
+export { RootCustomerInviteForm } from './components/invitations/root-customer/RootCustomerInviteForm'
+export { InvitationRoleTag, MemberTypeTag, ChannelChip } from './components/invitations/shared/InviteTags'
+export { createInvitationsClient, classifyInviteError, isEnroll } from './api/invitationsClient'
+export type {
+  InvitationsApiClient,
+  OrgInvitation,
+  OrgInvitationPage,
+  OrgInvitationCreate,
+  InviteeRef,
+  MemberType,
+  InvitationChannel,
+  InvitationRole,
+  InvitationStatus,
+  InvitationResolveResult,
+  InvitationAcceptResult,
+  InvitationEnrollResponse,
+  InviteFailure,
+} from './api/invitationsClient'

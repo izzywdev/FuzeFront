@@ -5,6 +5,7 @@ import type {
   AuthMethods,
   PendingAction,
   AuthPanelMode,
+  SocialProviderSlug,
 } from '../types'
 import { DEFAULT_AUTH_LABELS } from '../types'
 import { SocialButton } from './SocialButton'
@@ -57,6 +58,9 @@ export function AuthPanel({
   privacyHref,
   onSignInInstead,
   resetPasswordHref,
+  bindToken,
+  emailHint,
+  hideModeToggle = false,
 }: AuthPanelProps) {
   const labels = { ...DEFAULT_AUTH_LABELS, ...labelOverrides }
   const signupText = { ...DEFAULT_SIGNUP_LABELS, ...signupLabels }
@@ -97,7 +101,15 @@ export function AuthPanel({
   }, [])
 
   const passwordEnabled = authMethods.password !== false
-  const socialEnabled = social && Boolean(transport.startSocial) && authMethods.social.includes('google')
+  // `authMethods.social` is typed from the frozen contract (`google` only today);
+  // widen to string so a server that advertises `facebook` lights the button
+  // without a contract bump — and one that doesn't keeps it hidden.
+  const advertised: readonly string[] = authMethods.social
+  const providers: SocialProviderSlug[] =
+    social && transport.startSocial
+      ? (['google', 'facebook'] as const).filter((p) => advertised.includes(p))
+      : []
+  const socialEnabled = providers.length > 0
 
   const toggleMode = () => {
     setMode((m) => (m === 'signin' ? 'signup' : 'signin'))
@@ -116,6 +128,7 @@ export function AuthPanel({
           email,
           password,
           name: name.trim() || undefined,
+          ...(bindToken ? { bindToken } : {}),
         })
         onAuthenticated(session, { mode: 'signup', email })
         return
@@ -136,13 +149,13 @@ export function AuthPanel({
     }
   }
 
-  const handleGoogle = () => {
+  const handleSocial = (provider: SocialProviderSlug) => {
     if (!transport.startSocial) return
-    setPending('google')
+    setPending(provider)
     setError('')
     setMfaPending(false)
     transport
-      .startSocial('google')
+      .startSocial(provider)
       .catch((err: unknown) => {
         const message = err instanceof Error ? err.message : undefined
         setError(message || labels.socialStartError)
@@ -194,7 +207,13 @@ export function AuthPanel({
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
             autoComplete="email"
             required
+            aria-describedby={emailHint ? 'fzf-auth-email-hint' : undefined}
           />
+          {emailHint && (
+            <p id="fzf-auth-email-hint" className="fzf-auth-panel__email-hint">
+              {emailHint}
+            </p>
+          )}
 
           <Input
             id="fzf-auth-password"
@@ -240,24 +259,30 @@ export function AuthPanel({
             <span className="fzf-auth-panel__divider-label">{labels.orDivider}</span>
             <SeamDivider style={{ flex: 1 }} />
           </div>
-          <SocialButton
-            label={labels.googleCta}
-            pendingLabel={labels.googlePending}
-            pending={pending === 'google'}
-            disabled={loading}
-            onClick={handleGoogle}
-          />
+          {providers.map((provider) => (
+            <SocialButton
+              key={provider}
+              provider={provider}
+              label={provider === 'google' ? labels.googleCta : labels.facebookCta}
+              pendingLabel={provider === 'google' ? labels.googlePending : labels.facebookPending}
+              pending={pending === provider}
+              disabled={loading}
+              onClick={() => handleSocial(provider)}
+            />
+          ))}
         </div>
       )}
 
-      <div className="fzf-auth-panel__toggle">
-        <p className="fzf-auth-panel__toggle-prompt">
-          {mode === 'signin' ? labels.toggleToSignUpPrompt : labels.toggleToSignInPrompt}
-        </p>
-        <Button type="button" variant="secondary" fullWidth disabled={loading} onClick={toggleMode}>
-          {mode === 'signin' ? labels.toggleToSignUpCta : labels.toggleToSignInCta}
-        </Button>
-      </div>
+      {!hideModeToggle && (
+        <div className="fzf-auth-panel__toggle">
+          <p className="fzf-auth-panel__toggle-prompt">
+            {mode === 'signin' ? labels.toggleToSignUpPrompt : labels.toggleToSignInPrompt}
+          </p>
+          <Button type="button" variant="secondary" fullWidth disabled={loading} onClick={toggleMode}>
+            {mode === 'signin' ? labels.toggleToSignUpCta : labels.toggleToSignInCta}
+          </Button>
+        </div>
+      )}
     </div>
   )
 

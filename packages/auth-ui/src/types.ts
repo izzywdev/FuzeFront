@@ -30,12 +30,23 @@ export interface LoginRequest {
  * `SignupRequest` (never hand-redefined), restricted to the fields this UI
  * surfaces: `{ email, password, name?, turnstileToken? }`. `firstName`/`lastName`
  * are gone from the contract (1.0.0): a single optional `name` replaces them.
- * (`tenantName` / `bindToken` are not surfaced by this UI.)
+ * (`tenantName` is not surfaced by this UI.) `bindToken` is the single-use
+ * invitation carrier (`InvitationEnrollResponse.bindToken`): when present the
+ * server verifies the signup identity matches the invited identity and
+ * auto-binds the membership as part of signup (org-invitations v2, FFRNT-309).
  */
 export type SignupRequest = Pick<
   components['schemas']['SignupRequest'],
-  'email' | 'password' | 'name' | 'turnstileToken'
+  'email' | 'password' | 'name' | 'turnstileToken' | 'bindToken'
 >
+
+/**
+ * Social providers this panel can render a button for. The frozen contract's
+ * `SocialProvider` enum is `google` only; Facebook is shown ONLY when the
+ * server's `getAuthMethods().social` advertises it, so it stays hidden
+ * (fail-closed) until the backend ships the provider.
+ */
+export type SocialProviderSlug = 'google' | 'facebook'
 
 /** Result of `GET /v1/security/signup/email-available`. */
 export type SignupEmailAvailability = components['schemas']['SignupEmailAvailability']
@@ -52,7 +63,7 @@ export interface AuthTransport {
   signup(req: SignupRequest): Promise<AuthenticatedSession>
   getAuthMethods(): Promise<AuthMethods>
   /** Only called when present — the Google button is hidden entirely otherwise. */
-  startSocial?(provider: 'google'): Promise<void>
+  startSocial?(provider: SocialProviderSlug): Promise<void>
   /**
    * `GET /v1/security/signup/email-available?email=` — the debounced inline
    * availability hint on the new signup form. Optional: when absent the field
@@ -84,6 +95,8 @@ export interface AuthLabels {
   signUpPending: string
   googleCta: string
   googlePending: string
+  facebookCta: string
+  facebookPending: string
   orDivider: string
   toggleToSignUpPrompt: string
   toggleToSignUpCta: string
@@ -111,6 +124,8 @@ export const DEFAULT_AUTH_LABELS: AuthLabels = {
   signUpPending: 'Creating account…',
   googleCta: 'Sign in with Google',
   googlePending: 'Redirecting to Google…',
+  facebookCta: 'Sign in with Facebook',
+  facebookPending: 'Redirecting to Facebook…',
   orDivider: 'or',
   toggleToSignUpPrompt: "Don't have an account?",
   toggleToSignUpCta: 'Sign up',
@@ -132,7 +147,7 @@ export interface AuthenticatedMeta {
 }
 
 /** Which sign-in action is in flight — per-action so only the clicked control shows its own pending label. */
-export type PendingAction = 'credentials' | 'google' | null
+export type PendingAction = 'credentials' | SocialProviderSlug | null
 
 export interface AuthPanelProps {
   /** `full` (default) wraps in `CenteredCard` for a standalone page; `compact` renders just the form. */
@@ -160,6 +175,16 @@ export interface AuthPanelProps {
   onForgotPassword?: () => void
   /** Override any subset of the default copy. */
   labels?: Partial<AuthLabels>
+  /**
+   * Invitation bind token (from `POST /invitations/{token}/accept` → `202`).
+   * Forwarded on every legacy-form `transport.signup(...)` so the server
+   * auto-binds the invited membership; the panel never interprets it.
+   */
+  bindToken?: string
+  /** Helper text under the email field (e.g. "Use the address this invite was sent to — j***@acme.com"). */
+  emailHint?: string
+  /** Hide the sign-in/sign-up toggle (a dedicated sign-up surface, e.g. invitation accept). */
+  hideModeToggle?: boolean
   /**
    * `fuzefront.auth.experience` — render the NEW signup experience (`SignUpFlow`:
    * optional full name, inline email availability, policy checklist + strength

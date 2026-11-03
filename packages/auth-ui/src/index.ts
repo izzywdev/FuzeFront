@@ -14,6 +14,7 @@ export type {
   AuthMethods,
   LoginRequest,
   SignupRequest,
+  SocialProviderSlug,
   SignupEmailAvailability,
   PasswordPolicy,
   CaptchaMethod,

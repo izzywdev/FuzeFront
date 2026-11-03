@@ -128,6 +128,16 @@ export const FLAG_KEYS = {
    */
   IDENTITY_MEMBER_DIRECTORY: 'fuzefront.identity.member-directory',
   /**
+   * FFRNT-309 (epic FFRNT-304) — Org invitations v2 UI: the invite dialog
+   * (invitee kind / channel / role / member type), cursor-paginated pending
+   * panel, accept -> sign up -> auto-bind page, and `/root/customers`. Read in
+   * the browser via `useFlag()` (IdentityPage hosts, RootCustomersPage) and,
+   * pre-auth, via the AcceptInvitePage resolver. Default OFF. Release flag.
+   * Owner: frontend-engineer (identity).
+   * Removal criterion: 100% rollout; v1 invite modal / list / accept branch removed.
+   */
+  IDENTITY_INVITE_V2: 'fuzefront.identity.invite-v2',
+  /**
    * FF-EPIC-17 / S8 (#655) + S9 (#673) — Employee cross-org console.
    * Read in the browser via `useFlag()` in SidePanel / EmployeeConsolePage
    * (`/staff` routes), gated additionally on `isEmployee`. Default OFF.
@@ -370,6 +380,7 @@ export const WEB_EXPOSED_FLAGS: readonly FlagDescriptor[] = [
   // server-only, read directly by the security service's provisioning path.)
   { key: FLAG_KEYS.IDENTITY_PERSONAL_CONTEXT, type: 'release', default: false },
   { key: FLAG_KEYS.IDENTITY_MEMBER_DIRECTORY, type: 'release', default: false },
+  { key: FLAG_KEYS.IDENTITY_INVITE_V2, type: 'release', default: false },
   { key: FLAG_KEYS.IDENTITY_EMPLOYEE_CONSOLE, type: 'release', default: false },
   // FF-EPIC-17-S7 — the master-admin portal fleet console reuses this master
   // switch (see FLAG_KEYS doc). Registry `web_exposed` flipped false -> true

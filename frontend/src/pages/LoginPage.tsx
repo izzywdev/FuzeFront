@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useLanguage } from '../contexts/LanguageContext'
 import { useCurrentUser } from '../lib/shared'
 import { authAPI } from '../services/api'
-import type { SessionResult, BrokerClient } from '../services/api'
+import type { SessionResult, BrokerClient, SocialProvider } from '../services/api'
+import { invitePath, readPendingInvite } from '../lib/pendingInvite'
 import { Alert, AuthCard, BrandTokenScope } from '@fuzefront/design-system'
 import { useT } from '@fuzefront/i18n'
 import { AuthPanel, isAuthExperienceEnabled } from '@fuzefront/auth-ui'
@@ -230,11 +231,18 @@ function LoginPage() {
     window.sessionStorage.removeItem('fuzepicker:return-path')
     const authReturn = window.sessionStorage.getItem('auth:return-path')
     window.sessionStorage.removeItem('auth:return-path')
-    window.location.href = returnPath?.startsWith('/fuzepicker/mentions')
-      ? returnPath
-      : authReturn === '/signup/verify'
-        ? authReturn
-        : '/dashboard'
+    // Org invitations v2: an invitee who left /invitations/:token to sign in (or
+    // came back from a social provider) is returned to it so the accept flow
+    // auto-binds. Only the v2 accept page ever writes the pending token, so with
+    // the flag OFF this is inert; only an in-app path is ever built from it.
+    const pendingInvite = readPendingInvite()
+    window.location.href = pendingInvite
+      ? invitePath(pendingInvite)
+      : returnPath?.startsWith('/fuzepicker/mentions')
+        ? returnPath
+        : authReturn === '/signup/verify'
+          ? authReturn
+          : '/dashboard'
   }
 
   // Handle a social sign-in round-trip on page load. The provider callback
@@ -291,7 +299,9 @@ function LoginPage() {
         }
       },
       getAuthMethods: () => authAPI.getAuthMethods(),
-      startSocial: provider => authAPI.startSocialLogin(provider),
+      // `facebook` is not in the frozen contract's SocialProvider yet; the panel
+      // only offers it when the server advertises it, so the cast is the seam.
+      startSocial: provider => authAPI.startSocialLogin(provider as SocialProvider),
       // GET /v1/security/signup/email-available — the new signup's debounced inline
       // check. Offered only with `fuzefront.auth.experience` ON; it rejects on any
       // failure and the form renders that as "couldn't check" (fail-open).
