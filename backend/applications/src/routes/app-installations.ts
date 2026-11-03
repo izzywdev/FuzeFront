@@ -44,8 +44,7 @@ import {
   IdentityError,
   RefIndexError,
 } from '@izzywdev/fuzefront-identity'
-import { isRefEnforceEnabled, isEffectiveAccessEnabled } from '../app-registry/flags'
-import { getOwnedOrgIds } from '../app-registry/caller'
+import { isRefEnforceEnabled } from '../app-registry/flags'
 import { KnexRefIndexRepository } from '../repositories/ref-index.repository'
 import { prefixDtoIds } from '../identity/serializer'
 import {
@@ -163,26 +162,6 @@ async function getMemberOrgIds(userId: string): Promise<string[]> {
   return rows.map((r: any) => r.organization_id).filter(Boolean)
 }
 
-/**
- * FFRNT-377 / S2 — widen a membership org-id set to the EFFECTIVE read set
- * (memberships ∪ orgs the caller OWNS) when the effective-access flag is on.
- * This MUST match the app-registry canRead/list rule so an app the caller can
- * SEE in GET /apps is also loadable here — otherwise an org owner with no
- * membership row gets a "visible yet uninstallable" 404 from the install paths
- * while list()/canRead show the app. Flag OFF → unchanged (raw membership).
- * Used ONLY for the loadVisibleApp VISIBILITY gate; the per-record install
- * filters below stay membership-scoped so this never widens which installation
- * ROWS a caller sees, only whether the app itself is visible.
- */
-async function effectiveReadOrgIds(
-  userId: string,
-  memberOrgIds: string[]
-): Promise<string[]> {
-  if (!(await isEffectiveAccessEnabled({ userId }))) return memberOrgIds
-  const ownedOrgIds = await getOwnedOrgIds(userId)
-  return Array.from(new Set([...memberOrgIds, ...ownedOrgIds]))
-}
-
 /** The caller's role on one organization, or null when not an active member. */
 async function getMembershipRole(
   userId: string,
@@ -201,6 +180,18 @@ async function getMembershipRole(
  * read applies (org member, or public/marketplace). Returns undefined when the
  * app does not exist OR is not visible; callers must answer 404 for both so the
  * two are indistinguishable from outside.
+ *
+ * FFRNT-377 / S2 scope boundary (deliberate): this gate stays MEMBERSHIP-scoped
+ * (raw getMemberOrgIds), NOT the widened effective-access set the app-registry
+ * reads use. S2 widens the app-REGISTRY read surface (which app exists / is
+ * visible in GET /apps, canRead, list) so an org owner with no membership row
+ * can SEE their org's apps. It does NOT widen the INSTALL subsystem: POST
+ * /:id/install at `scope:'personal'` has loadVisibleApp as its ONLY authz gate,
+ * so widening it here would let a non-member owner install into their launcher —
+ * a WRITE the flag doc promises is unchanged. Install/uninstall therefore remain
+ * membership-gated. The "owner sees the app but the install dialog is gated" UX
+ * is a FRONTEND concern (hide/disable install for non-members), not a reason to
+ * widen a write path. (gate-code-review, #1773.)
  */
 async function loadVisibleApp(
   appId: string,
@@ -354,10 +345,7 @@ router.get(
     try {
       const userId = req.user.id
       const memberOrgIds = await getMemberOrgIds(userId)
-      const app = await loadVisibleApp(
-        req.params.id,
-        await effectiveReadOrgIds(userId, memberOrgIds)
-      )
+      const app = await loadVisibleApp(req.params.id, memberOrgIds)
       if (!app) {
         return res
           .status(404)
@@ -441,10 +429,7 @@ router.post(
     try {
       const userId = req.user.id
       const memberOrgIds = await getMemberOrgIds(userId)
-      const app = await loadVisibleApp(
-        req.params.id,
-        await effectiveReadOrgIds(userId, memberOrgIds)
-      )
+      const app = await loadVisibleApp(req.params.id, memberOrgIds)
       if (!app) {
         return res
           .status(404)
@@ -685,10 +670,7 @@ router.delete(
     try {
       const userId = req.user.id
       const memberOrgIds = await getMemberOrgIds(userId)
-      const app = await loadVisibleApp(
-        req.params.id,
-        await effectiveReadOrgIds(userId, memberOrgIds)
-      )
+      const app = await loadVisibleApp(req.params.id, memberOrgIds)
       if (!app) {
         return res
           .status(404)
