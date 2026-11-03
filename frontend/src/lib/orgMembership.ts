@@ -55,29 +55,37 @@ export function hasGenuinePersonalOrg(orgs: readonly Organization[]): boolean {
 }
 
 /**
- * Whether `o` should be treated as THE Personal context: hidden from the
- * switcher and resolved to the `null` ("operate as yourself") context, because
- * the first-class Personal row already represents it.
+ * Whether `o` should be treated as THE caller's Personal context: hidden from
+ * the switcher and resolved to the `null` ("operate as yourself") context,
+ * because the first-class Personal row already represents it.
  *
  * A genuine `type='personal'` org always is. An over-reclassified org
  * (`metadata.personal === true` but `type !== 'personal'`, from migration 022 —
- * see isPersonalWorkspaceOrg) is too, with ONE exception: when a genuine
- * `type='personal'` org ALSO exists in the list. That is the migration-025
- * collision case (025 skips restoring the over-reclassified row when the genuine
- * personal org already holds content), leaving two DISTINCT tenants. There
- * `securitySessionAPI.resolvePersonalTenant()` resolves the genuine one as the
- * `null` context, so hiding the over-reclassified one too would strand its data
- * — it must stay a selectable switcher target until the tenants are reconciled.
+ * see isPersonalWorkspaceOrg) is too, but ONLY when BOTH hold:
  *
- * List-aware by necessity: the collision is only visible across the whole list,
- * never from a single row. Prefix-safe: reads `type`/`metadata`, not an id.
+ *  - the caller OWNS it (`user_role === 'owner'`). Org lists are membership-
+ *    scoped, not owner-scoped, so a marked org the caller merely belongs to is
+ *    someone else's workspace — a DISTINCT tenant that must stay selectable, not
+ *    be swallowed into the caller's own Personal context. (Prefix-safe: compares
+ *    a role string, never an id.)
+ *  - no genuine `type='personal'` org exists in the list. That is the
+ *    migration-025 collision case (025 skips restoring the over-reclassified row
+ *    when a genuine personal org already holds content): there
+ *    `securitySessionAPI.resolvePersonalTenant()` resolves the genuine one as the
+ *    `null` context, so the over-reclassified one is a distinct tenant whose data
+ *    would be stranded if hidden too.
+ *
+ * Both edges reduce to the same principle the reviewer named: hide a marked org
+ * only when it is the actual tenant that Personal represents, never because no
+ * correctly-typed workspace happens to exist. List-aware by necessity — a
+ * collision is only visible across the whole list.
  */
 export function isPersonalContextOrg(o: Organization, orgs: readonly Organization[]): boolean {
   if (o.type === 'personal') return true
   if (o.metadata?.personal !== true) return false
-  // Over-reclassified: it is the Personal context only when it is the ONLY
-  // personal representation. A genuine sibling means this is a distinct tenant.
-  return !hasGenuinePersonalOrg(orgs)
+  // Over-reclassified: the Personal context only when the caller OWNS it and it
+  // is the sole personal representation (no genuine type='personal' sibling).
+  return o.user_role === 'owner' && !hasGenuinePersonalOrg(orgs)
 }
 
 /**

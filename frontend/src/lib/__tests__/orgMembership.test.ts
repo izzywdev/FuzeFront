@@ -73,6 +73,17 @@ describe('isPersonalContextOrg', () => {
     const list = [org({ type: 'organization', name: 'Personal' })]
     expect(isPersonalContextOrg(list[0], list)).toBe(false)
   })
+
+  it('only the OWNED marked org is the Personal context; a marked org the caller only belongs to is distinct', () => {
+    // Two over-reclassified orgs, no genuine type='personal': the caller owns
+    // their own (user_role 'owner') and is a member of someone else's. Only the
+    // owned one is the caller's Personal context; the other must stay selectable.
+    const owned = org({ id: 'org_mine', type: 'organization', user_role: 'owner', metadata: { personal: true } })
+    const othersMarked = org({ id: 'org_theirs', type: 'organization', user_role: 'member', metadata: { personal: true } })
+    const list = [owned, othersMarked]
+    expect(isPersonalContextOrg(owned, list)).toBe(true)
+    expect(isPersonalContextOrg(othersMarked, list)).toBe(false)
+  })
 })
 
 describe('isSwitcherContextOrg', () => {
@@ -90,6 +101,14 @@ describe('isSwitcherContextOrg', () => {
     expect(isSwitcherContextOrg(overReclassified, list)).toBe(true)
     // ...while the genuine personal org is still dropped.
     expect(isSwitcherContextOrg(genuinePersonal, list)).toBe(false)
+  })
+
+  it('keeps a marked org the caller only belongs to (someone else\'s workspace), hides their own', () => {
+    const owned = org({ id: 'org_mine', type: 'organization', user_role: 'owner', metadata: { personal: true } })
+    const othersMarked = org({ id: 'org_theirs', type: 'organization', user_role: 'member', metadata: { personal: true } })
+    const list = [owned, othersMarked]
+    expect(isSwitcherContextOrg(othersMarked, list)).toBe(true)
+    expect(isSwitcherContextOrg(owned, list)).toBe(false)
   })
 
   it('keeps a real organization membership', () => {
