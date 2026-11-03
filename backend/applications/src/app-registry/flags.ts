@@ -89,12 +89,12 @@ export const FLAGS = {
    * owner: backend-engineer (app-registry)
    * When ON, registry READS use EFFECTIVE access instead of raw membership:
    * the caller's effective read-org set is their active memberships UNION the
-   * orgs they OWN (organizations.owner_id), and an app's CREATOR
-   * (created_by_user_id) can always read it. Purely additive — it grants reads
-   * to owners/creators who should have them (fixes "I'm the org owner but see
+   * orgs they OWN (organizations.owner_id). Purely additive — it grants reads
+   * to org owners who should have them (fixes "I'm the org owner but see
    * nothing"); it never widens visibility to anyone else, and mutation
-   * (canMutate) is unchanged. OFF reverts to byte-identical pre-S2
-   * raw-membership reads. Shipped ON per owner directive, so the in-code
+   * (canMutate) is unchanged. Ownership is current entitlement (owner_id is
+   * re-read per request), so there is no immutable-field authz. OFF reverts to
+   * byte-identical pre-S2 raw-membership reads. Shipped ON per owner directive, so the in-code
    * default + unreachable-client fallback is TRUE (the feature is normally on;
    * the flag is the kill-switch back to raw membership).
    * removal criterion: delete once effective-access reads are the permanent

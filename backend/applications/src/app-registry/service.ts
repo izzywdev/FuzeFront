@@ -103,13 +103,6 @@ export interface AppCaller {
    * back to `organizationIds` when it is absent.
    */
   effectiveReadOrgIds?: string[]
-  /**
-   * FFRNT-377 / S2 — when true, an app's CREATOR (created_by_user_id) may read
-   * it regardless of visibility/org, and `effectiveReadOrgIds` is authoritative
-   * for reads. False/absent = pre-S2 raw-membership reads. Reads only; never
-   * affects `canMutate`.
-   */
-  effectiveAccess?: boolean
 }
 
 const DEFAULT_LIMIT = 50
@@ -178,18 +171,12 @@ export function canRead(app: AppRecord, caller: AppCaller): boolean {
   if (caller.isPlatformAdmin) return true
   const visibility = app.manifest.visibility ?? 'private'
   if (visibility === 'public' || visibility === 'marketplace') return true
-  // FFRNT-377 / S2 — ownership: the app's creator may always read it. Additive
-  // over raw membership; gated on effectiveAccess so flag-OFF is byte-identical.
-  if (
-    caller.effectiveAccess &&
-    app.createdByUserId &&
-    app.createdByUserId === caller.userId
-  ) {
-    return true
-  }
   if (!app.organizationId) return false // should be unreachable; fail closed, not open
-  // Effective read-org set (memberships ∪ owned orgs) when the flag is on;
-  // falls back to raw memberships otherwise.
+  // FFRNT-377 / S2 — effective read-org set: raw memberships ∪ orgs the caller
+  // OWNS (organizations.owner_id) when the flag is on; falls back to raw
+  // memberships otherwise. Ownership is CURRENT entitlement (owner_id is
+  // re-read each request), so an org owner with no membership row can read —
+  // the "owner sees nothing" fix — and loses it the moment ownership changes.
   const readOrgIds = caller.effectiveReadOrgIds ?? caller.organizationIds
   const inOrg = readOrgIds.includes(app.organizationId)
   if (visibility === 'organization' || visibility === 'private') return inOrg
@@ -498,13 +485,6 @@ export class AppRegistryService {
                 .whereIn('visibility', ['organization', 'private'])
                 .whereIn('organization_id', orgIds)
             })
-          }
-          // FFRNT-377 / S2 — ownership: the app's creator sees it regardless of
-          // visibility/org (mirrors canRead). Independent of the portal gate,
-          // like the org-owned branch above. Gated on effectiveAccess so the
-          // flag-OFF SQL is byte-identical to the pre-S2 path.
-          if (caller.effectiveAccess) {
-            builder.orWhere('created_by_user_id', caller.userId)
           }
         })
       }

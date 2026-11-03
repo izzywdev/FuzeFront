@@ -144,20 +144,19 @@ describe('app-registry BOLA visibility (canRead)', () => {
 })
 
 describe('app-registry effective-access reads (FFRNT-377 / S2)', () => {
-  // Flag ON: effectiveReadOrgIds = memberships ∪ owned orgs, and creator reads
-  // are enabled. Flag OFF (fields absent) = pre-S2 raw-membership behavior.
+  // Flag ON: effectiveReadOrgIds = memberships ∪ orgs the caller OWNS
+  // (organizations.owner_id). Flag OFF (field absent) = pre-S2 raw-membership
+  // behavior. Ownership is current entitlement — no immutable-field authz.
   const ownerNoMembership: AppCaller = {
     userId: 'owner1',
     organizationIds: [], // NO membership row...
     roles: ['user'],
     isPlatformAdmin: false,
     effectiveReadOrgIds: ['org-a'], // ...but owns org-a
-    effectiveAccess: true,
   }
   const effAccessMemberA: AppCaller = {
     ...memberOfOrgA,
     effectiveReadOrgIds: ['org-a'],
-    effectiveAccess: true,
   }
 
   it('flag OFF: an org owner with no membership row still cannot read (parity with pre-S2)', () => {
@@ -181,29 +180,27 @@ describe('app-registry effective-access reads (FFRNT-377 / S2)', () => {
     ).toBe(true)
   })
 
-  it('flag ON: an app creator reads their own app regardless of visibility/org', () => {
+  it('flag ON: no widening — an org not in the effective read set is still denied', () => {
     expect(
       canRead(
-        appWith({ visibility: 'private', organizationId: 'org-z', createdByUserId: 'u1' }),
+        appWith({ visibility: 'organization', organizationId: 'org-b' }),
         effAccessMemberA
       )
-    ).toBe(true)
-  })
-
-  it('flag OFF: creator ownership does NOT grant a read (byte-identical pre-S2)', () => {
+    ).toBe(false)
     expect(
       canRead(
-        appWith({ visibility: 'private', organizationId: 'org-z', createdByUserId: 'u1' }),
-        memberOfOrgA // no effectiveAccess field
+        appWith({ visibility: 'private', organizationId: 'org-b' }),
+        effAccessMemberA
       )
     ).toBe(false)
   })
 
-  it('flag ON: no widening — a non-owner, non-member, non-creator is still denied', () => {
+  it('a non-member, non-owner caller cannot read even their own created app (ownership is not an app-level read grant)', () => {
+    // created_by is immutable; S2 deliberately does NOT confer read from it.
     expect(
       canRead(
-        appWith({ visibility: 'organization', organizationId: 'org-b', createdByUserId: 'someone-else' }),
-        effAccessMemberA
+        appWith({ visibility: 'private', organizationId: 'org-z', createdByUserId: 'owner1' }),
+        ownerNoMembership // owns org-a, not org-z
       )
     ).toBe(false)
   })
