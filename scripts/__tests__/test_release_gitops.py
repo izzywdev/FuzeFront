@@ -249,7 +249,7 @@ class ReleaseGitOpsTest(unittest.TestCase):
                 log.write_text(lines)
                 script = block.replace("/tmp/skip-log", str(log))
                 r = subprocess.run(["bash", "-c", "set -e\nEXPECTED=0 SHA=abc\n" + script + "\necho FELL_THROUGH"],
-                                   capture_output=True, text=True)
+                                   capture_output=True, text=True, check=False)
                 self.assertEqual(r.returncode, code, r.stdout + r.stderr)
                 self.assertNotIn("already at", r.stdout)
                 self.assertNotIn("FELL_THROUGH", r.stdout)
@@ -298,7 +298,7 @@ class AllowBumpTest(unittest.TestCase):
         log.write_text("")
         r = subprocess.run(["bash", str(ALLOW), built, img], cwd=repo, capture_output=True, text=True,
                            env=dict(os.environ, SHA=self.built[:12], GITHUB_SHA=self.built, MASTER_SHA=master,
-                                    VP_CURRENT=str(vp), CHANGED_FILES=str(changed), SKIP_LOG=str(log)))
+                                    VP_CURRENT=str(vp), CHANGED_FILES=str(changed), SKIP_LOG=str(log)), check=False)
         return r, log.read_text()
 
     def test_unaffected_service_still_bumps_when_master_moved_elsewhere(self):
@@ -345,6 +345,44 @@ class AllowBumpTest(unittest.TestCase):
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("shallow", r.stderr)
         self.assertEqual(r.stdout.strip(), "")
+
+    def reset(self):
+        self.sh("git", "reset", "-q", "--hard", self.built, cwd=self.repo)
+
+    def test_design_system_change_skips_every_image_that_consumes_it(self):
+        # frontend aliases it to source; website/devportal frontends vendor it.
+        for img in ("fuzefront-frontend", "fuzefront-website-frontend", "fuzefront-devportal-frontend"):
+            with self.subTest(img=img):
+                self.reset()
+                r, log = self.run_gate(img, self.base[:12], ["design-system/src/Button.tsx"])
+                self.assertEqual((r.returncode, r.stdout.strip()), (0, "0"), r.stderr)
+                self.assertEqual(log.strip(), f"{img} newer")
+
+    def test_design_system_change_does_not_skip_images_that_do_not_use_it(self):
+        for img in ("fuzefront-clock-app", "fuzefront-website-backend", "fuzefront-backend", "fuzefront-email-service"):
+            with self.subTest(img=img):
+                self.reset()
+                r, _ = self.run_gate(img, self.base[:12], ["design-system/src/Button.tsx"])
+                self.assertEqual((r.returncode, r.stdout.strip()), (0, "1"), r.stderr)
+
+    def test_generated_client_change_skips_frontend_only(self):
+        for d in ("billing-client", "portal-client", "config-client"):
+            with self.subTest(d=d):
+                self.reset()
+                r, _ = self.run_gate("fuzefront-frontend", self.base[:12], [f"{d}/src/index.ts"])
+                self.assertEqual(r.stdout.strip(), "0", r.stderr)
+                self.reset()
+                r, _ = self.run_gate("fuzefront-security-service", self.base[:12], [f"{d}/src/index.ts"])
+                self.assertEqual(r.stdout.strip(), "1", r.stderr)
+
+    def test_custom_hostname_client_change_skips_backend_only(self):
+        r, log = self.run_gate("fuzefront-backend", self.base[:12], ["custom-hostname-client/src/index.ts"])
+        self.assertEqual(r.stdout.strip(), "0", r.stderr)
+        self.assertEqual(log.strip(), "fuzefront-backend newer")
+        for img in ("fuzefront-security-service", "fuzefront-applications-service"):
+            self.reset()
+            r, _ = self.run_gate(img, self.base[:12], ["custom-hostname-client/src/index.ts"])
+            self.assertEqual(r.stdout.strip(), "1", f"{img}: {r.stderr}")
 
     def test_unbuilt_image_is_never_allowed(self):
         r, _ = self.run_gate("fuzefront-email-service", self.base[:12], [], built="0")

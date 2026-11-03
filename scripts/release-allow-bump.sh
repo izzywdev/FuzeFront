@@ -59,8 +59,17 @@ if [ "$MASTER_SHA" != "$GITHUB_SHA" ] && [ -s "${CHANGED_FILES:-/dev/null}" ]; t
   own=()
   shared=1
   case "$img" in
-    fuzefront-backend|fuzefront-security-service|fuzefront-applications-service) own=(backend/) ;;
-    fuzefront-frontend) own=(frontend/) ;;
+    # Each extra dir below is verified against the image's real source (not a
+    # guess): backend/Dockerfile COPYs custom-hostname-client/ in full (the
+    # security/applications Dockerfiles copy only its package.json and never
+    # import it); frontend/vite.config.ts aliases design-system and the
+    # billing/portal/config clients to SOURCE and frontend/Dockerfile does
+    # `COPY . .`. The website/devportal frontends vendor the ROOT design-system/
+    # (sync-design-system.mjs run by release.yml before docker build); clock-app
+    # and website-backend do not reference it.
+    fuzefront-backend) own=(backend/ custom-hostname-client/) ;;
+    fuzefront-security-service|fuzefront-applications-service) own=(backend/) ;;
+    fuzefront-frontend) own=(frontend/ design-system/ billing-client/ portal-client/ config-client/) ;;
     fuzefront-email-service) own=(services/email-service/) ;;
     fuzefront-sms-service) own=(services/sms-service/) ;;
     fuzefront-provisioning-service) own=(services/provisioning-service/) ;;
@@ -72,8 +81,9 @@ if [ "$MASTER_SHA" != "$GITHUB_SHA" ] && [ -s "${CHANGED_FILES:-/dev/null}" ]; t
     fuzefront-config-service) own=(services/config-service/) ;;
     fuzefront-devportal-service) own=(services/devportal-service/ scripts/collect-devportal-specs.mjs) ;;
     fuzefront-clock-app) own=(clock-app/); shared=0 ;;
-    fuzefront-website-frontend|fuzefront-website-backend) own=(fuzefront-website/); shared=0 ;;
-    fuzefront-devportal-frontend) own=(devportal-frontend/); shared=0 ;;
+    fuzefront-website-frontend) own=(fuzefront-website/ design-system/); shared=0 ;;
+    fuzefront-website-backend) own=(fuzefront-website/); shared=0 ;;
+    fuzefront-devportal-frontend) own=(devportal-frontend/ design-system/); shared=0 ;;
     *) echo "::error::release-allow-bump: no input map for ${img}; add it" >&2; exit 1 ;;
   esac
   while IFS= read -r f; do
