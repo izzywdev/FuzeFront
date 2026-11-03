@@ -95,6 +95,16 @@ function isReservedOrganizationType(type: unknown): boolean {
 }
 
 function sanitizeInput(data: any) {
+  const metadata =
+    data.metadata && typeof data.metadata === 'object' ? { ...data.metadata } : {}
+  // `metadata.personal` is a SERVER-OWNED marker: `ensurePersonalOrg` stamps it
+  // on the per-user personal org, and the host treats any org carrying it as the
+  // Personal workspace — hidden from the switcher and resolved to the null
+  // context (frontend isPersonalWorkspaceOrg). A client must never set it, or it
+  // could make an ordinary organization permanently invisible in every member's
+  // switcher. Strip it on every create/update; only the provisioning path writes
+  // it. (`type: 'platform'` is reserved separately, in isReservedOrganizationType.)
+  delete (metadata as Record<string, unknown>).personal
   return {
     name: data.name?.trim(),
     slug: data.slug?.trim().toLowerCase(),
@@ -102,8 +112,7 @@ function sanitizeInput(data: any) {
     parent_id: data.parent_id?.trim() || null,
     settings:
       data.settings && typeof data.settings === 'object' ? data.settings : {},
-    metadata:
-      data.metadata && typeof data.metadata === 'object' ? data.metadata : {},
+    metadata,
   }
 }
 

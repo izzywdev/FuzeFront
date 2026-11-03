@@ -7,7 +7,7 @@ import {
   getPersistedPersonalTenantId,
   ROOT_ORG_ID,
 } from '../lib/shared'
-import { isProvisionedMembership } from '../lib/orgMembership'
+import { isProvisionedMembership, isPersonalWorkspaceOrg } from '../lib/orgMembership'
 import { useFlag } from '../platform/featureFlags'
 import { isEmployeeUser } from '../utils/employee'
 import { ProvisioningCard, ProvisioningState } from './ProvisioningCard'
@@ -113,7 +113,11 @@ export function WorkspaceProvisioningGate({
     // Non-employees cannot have ROOT_ORG_ID as their active organization
     const eligibleOrgs = memberOrgs.filter(o => isEmployee || o.id !== ROOT_ORG_ID)
 
-    const personal = eligibleOrgs.find(o => o.type === 'personal')
+    // Match the switcher: a personal workspace is `type='personal'` OR an
+    // over-reclassified org still carrying `metadata.personal` (isPersonalWorkspaceOrg).
+    // Keying on `type` alone here would select such an org as the active context
+    // while UserMenu hides its row — an unrepresented, unselectable context.
+    const personal = eligibleOrgs.find(isPersonalWorkspaceOrg)
 
     // Personal is a Security-owned tenant, independent of organization
     // membership. Resolve it even for organization members so selecting
@@ -134,20 +138,20 @@ export function WorkspaceProvisioningGate({
     const personalTenantId = resolvedPersonalTenantId ?? personal?.id ?? null
     dispatch({ type: 'SET_PERSONAL_TENANT', payload: personalTenantId })
 
-    if (personalContextRef.current && (personalTenantId || eligibleOrgs.some(o => o.type !== 'personal'))) {
+    if (personalContextRef.current && (personalTenantId || eligibleOrgs.some(o => !isPersonalWorkspaceOrg(o)))) {
       // A persisted personal-context choice reads back as `null`, the same as
       // "nothing persisted" — and a persisted id may name the legacy
       // type='personal' org this gate used to auto-select. Both mean Personal.
       // Only a persisted, still-valid, non-personal membership wins.
       const persistedId = getPersistedActiveOrganizationId()
       const persisted = persistedId
-        ? eligibleOrgs.find(o => o.id === persistedId && o.type !== 'personal')
+        ? eligibleOrgs.find(o => o.id === persistedId && !isPersonalWorkspaceOrg(o))
         : undefined
       // Without a resolvable personal tenant there is no Personal context to
       // fall back to, so land on a real org membership instead of `null`.
       const fallback = personalTenantId
         ? null
-        : eligibleOrgs.find(o => o.type !== 'personal') ?? null
+        : eligibleOrgs.find(o => !isPersonalWorkspaceOrg(o)) ?? null
       const active = persisted ?? fallback
       dispatch({ type: 'SET_ACTIVE_ORGANIZATION', payload: active ? active.id : null })
       markReady()
@@ -216,7 +220,10 @@ export function WorkspaceProvisioningGate({
   useEffect(() => {
     if (!personalContextEnabled || state.activeOrganizationId === null) return
     const active = state.organizations.find(o => o.id === state.activeOrganizationId)
-    if (active?.type === 'personal') {
+    // Also catches an over-reclassified personal org (type='organization' +
+    // metadata.personal) whose switcher row is hidden — without this it would
+    // linger as an active context with no checked row and no way to deselect.
+    if (active && isPersonalWorkspaceOrg(active)) {
       dispatch({ type: 'SET_ACTIVE_ORGANIZATION', payload: null })
     }
   }, [personalContextEnabled, state.activeOrganizationId, state.organizations, dispatch])
