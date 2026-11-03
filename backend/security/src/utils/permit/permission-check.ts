@@ -70,7 +70,11 @@ export async function bulkCheckPermissions(
       { checkCount: checks.length },
       'permit bulk permission check completed'
     )
-    return results
+    // Fail closed AND index-aligned: a missing/short engine response (e.g. the
+    // CI no-op Permit client resolving `undefined`) must never surface as a
+    // non-array or let a caller index past the end. Only a literal `true`
+    // at the matching index counts as an allow.
+    return checks.map((_, i) => Array.isArray(results) && results[i] === true)
   } catch (error) {
     logger.error(
       { err: error, checkCount: checks.length },

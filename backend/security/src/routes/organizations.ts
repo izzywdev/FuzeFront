@@ -1125,6 +1125,10 @@ const ORG_ROLE_CATALOG: { key: string; name: string; assignable: boolean }[] = [
  *                       permissions:
  *                         type: array
  *                         items: { type: string }
+ *                 platformRoles:
+ *                   type: array
+ *                   description: Present only when fuzefront.identity.employee-console is ON
+ *                   items: { type: object }
  *                 resources:
  *                   type: array
  *                   items:
@@ -1179,6 +1183,18 @@ router.get('/:id/roles', authenticateToken, async (req: any, res) => {
         name: def.name,
       })),
     }))
+
+    // FF-EPIC-17-S8: additive, flag-gated platform-role entry (Employee). It
+    // lives in its own field — never merged into `roles`, which stays the
+    // org-assignable set — and is omitted entirely when the flag is OFF so the
+    // default response is unchanged.
+    if (await isEmployeeConsoleEnabled({ userId: req.user.id })) {
+      return res.json({
+        roles,
+        resources,
+        platformRoles: [EMPLOYEE_ROLE_CATALOG_ENTRY],
+      })
+    }
 
     res.json({ roles, resources })
   } catch (error: any) {
