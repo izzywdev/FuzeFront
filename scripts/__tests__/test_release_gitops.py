@@ -24,6 +24,10 @@ if name == "git":
     elif args[0] == "ls-remote":
         sys.exit(128 if scenario == "transport" else 2)
     elif args[0] == "push" and scenario == "push_failed": sys.exit(1)
+    elif args[0] == "merge-base":
+        # `git merge-base --is-ancestor <source> <master>`: 0=ancestor (accept
+        # the rebase), 1=not an ancestor (divergent source -> reject).
+        sys.exit(1 if scenario == "divergent" else 0)
     sys.exit(0)
 if args[:2] == ["pr", "list"]:
     if scenario in ("new", "transport", "push_failed"):
@@ -50,7 +54,7 @@ elif args[0] == "api":
         counter = pathlib.Path(os.environ["MASTER_COUNT"])
         n = int(counter.read_text()) if counter.exists() else 0
         counter.write_text(str(n + 1))
-        print(("c" if scenario == "advanced_before_arm" or (scenario == "advanced" and n) else "a") * 40)
+        print(("c" if scenario in ("advanced_before_arm", "divergent") or (scenario == "advanced" and n) else "a") * 40)
 elif args[:2] != ["pr", "merge"]:
     sys.exit("unexpected gh invocation")
 '''
@@ -102,8 +106,20 @@ class ReleaseGitOpsTest(unittest.TestCase):
         self.assertTrue(any("--auto" in call for call in calls))
         self.assertFalse(any("--disable-auto" in call for call in calls))
 
-    def test_source_advanced_before_the_release_pr_is_armed(self):
+    def test_descendant_source_on_advanced_master_is_accepted(self):
+        # FFRNT rebase-and-retry: master advancing past source is EXPECTED when
+        # source is an ancestor of current master — the bump rebases onto current
+        # master (per-service ancestry-guarded in release.yml) rather than being
+        # rejected. This replaces the old abort-on-master-moved behavior that
+        # livelocked every release.
         result, calls = self.invoke("advanced_before_arm")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(any("--auto" in call for call in calls))
+
+    def test_divergent_source_is_rejected(self):
+        # A source that is NOT in current master's history (not an ancestor) is
+        # still refused — the one case the relaxed guard rejects.
+        result, calls = self.invoke("divergent")
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(any("--auto" in call for call in calls))
 
@@ -134,7 +150,11 @@ class ReleaseGitOpsTest(unittest.TestCase):
         self.assertIn("token: ${{ steps.release_app.outputs.token }}", workflow)
         self.assertIn("if: needs.release-source.outputs.build == 'true'", workflow)
         self.assertIn('git log -1 --format=%s', workflow)
-        self.assertIn("master changed during the build", workflow)
+        # FFRNT: the abort-on-master-moved guard is gone — replaced by
+        # rebase-and-retry with a per-service ancestry check.
+        self.assertNotIn("master changed during the build", workflow)
+        self.assertIn("rebasing bump onto current master", workflow)
+        self.assertIn("merge-base --is-ancestor", workflow)
         self.assertLess(workflow.index('bash scripts/publish-release-gitops.sh'), workflow.index('- name: Dispatch post-deploy verification'))
         self.assertIn("dispatch-post-deploy-verification:", (ROOT / ".github/workflows/auto-merge.yml").read_text())
 
