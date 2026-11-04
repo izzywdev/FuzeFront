@@ -293,14 +293,15 @@ class AllowBumpTest(unittest.TestCase):
         self.built = self.commit(self.repo, {"README.md": "1"}, "built")
         self.sibling = None
 
-    def run_gate(self, img, cur, master_changes, built="1", repo=None):
+    def run_gate(self, img, cur, master_changes, built="1", repo=None, vp_text=None):
         repo = repo or self.repo
         # Master advances after the built commit by changing `master_changes`.
         master = self.sh("git", "rev-parse", "HEAD", cwd=repo)
         if master_changes:
             master = self.commit(repo, {f: "m" for f in master_changes}, "master moved")
         vp = self.root / "vp.yaml"
-        vp.write_text(f"image:\n  repository: ghcr.io/izzywdev/{img}\n  tag: {cur}\n")
+        vp.write_text(vp_text if vp_text is not None
+                      else f"image:\n  repository: ghcr.io/izzywdev/{img}\n  tag: {cur}\n")
         changed = self.root / "changed.txt"
         changed.write_text(self.sh("git", "diff", "--name-only", self.built, master, cwd=repo) + "\n")
         log = self.root / "skiplog"
@@ -375,7 +376,7 @@ class AllowBumpTest(unittest.TestCase):
                 self.assertEqual((r.returncode, r.stdout.strip()), (0, "1"), r.stderr)
 
     def test_generated_client_change_skips_frontend_only(self):
-        for d in ("billing-client", "portal-client", "config-client"):
+        for d in ("apps-client", "billing-client", "portal-client", "config-client"):
             with self.subTest(d=d):
                 self.reset()
                 r, _ = self.run_gate("fuzefront-frontend", self.base[:12], [f"{d}/src/index.ts"])
@@ -392,6 +393,63 @@ class AllowBumpTest(unittest.TestCase):
             self.reset()
             r, _ = self.run_gate(img, self.base[:12], ["custom-hostname-client/src/index.ts"])
             self.assertEqual(r.stdout.strip(), "1", f"{img}: {r.stderr}")
+
+    def test_empty_current_tag_fails_closed_as_unresolved(self):
+        # Block missing / comment between repository: and tag: / empty value: the
+        # ancestry guard cannot run, so we must NOT publish over an unknown tag.
+        img = "fuzefront-email-service"
+        cases = {
+            "missing block": "other:\n  repository: ghcr.io/izzywdev/fuzefront-sms-service\n  tag: abc1234\n",
+            "comment between": f"i:\n  repository: ghcr.io/izzywdev/{img}\n  # note\n  tag: {self.base[:12]}\n",
+            "empty tag": f"i:\n  repository: ghcr.io/izzywdev/{img}\n  tag:\n",
+        }
+        for name, text in cases.items():
+            with self.subTest(name):
+                r, log = self.run_gate(img, "", [], vp_text=text)
+                self.assertEqual((r.returncode, r.stdout.strip()), (0, "0"), r.stderr)
+                self.assertEqual(log.strip(), f"{img} unresolved")
+
+    def test_repository_match_is_anchored_not_a_substring(self):
+        img = "fuzefront-email-service"
+        # A comment mentioning the image, with an unrelated pin, must not be read
+        # as this image's block; the real block (ancestor) wins.
+        text = (f"# ghcr.io/izzywdev/{img} is pinned below\n  # repository: ghcr.io/izzywdev/{img}\n  tag: stable-pin\n"
+                f"i:\n  repository: ghcr.io/izzywdev/{img}\n  tag: {self.base[:12]}\n")
+        r, _ = self.run_gate(img, "", [], vp_text=text)
+        self.assertEqual((r.returncode, r.stdout.strip()), (0, "1"), r.stderr)
+        # An image whose name is a prefix of another must not match the longer block.
+        text = ("a:\n  repository: ghcr.io/izzywdev/fuzefront-email-service-extra\n  tag: stable-pin\n"
+                f"b:\n  repository: ghcr.io/izzywdev/{img}\n  tag: {self.base[:12]}\n")
+        r, _ = self.run_gate(img, "", [], vp_text=text)
+        self.assertEqual((r.returncode, r.stdout.strip()), (0, "1"), r.stderr)
+        # CRLF tolerated.
+        text = f"i:\r\n  repository: ghcr.io/izzywdev/{img}\r\n  tag: {self.base[:12]}\r\n"
+        r, _ = self.run_gate(img, "", [], vp_text=text)
+        self.assertEqual((r.returncode, r.stdout.strip()), (0, "1"), r.stderr)
+
+    def test_apps_client_and_vendored_roots_map_to_their_consumers(self):
+        # apps-client -> frontend only; design-system -> standalone vendoring
+        # frontends (shared=0); custom-hostname-client -> backend only.
+        for img, path, want in (
+            ("fuzefront-frontend", "apps-client/src/index.ts", "0"),
+            ("fuzefront-backend", "apps-client/src/index.ts", "1"),
+            ("fuzefront-devportal-frontend", "design-system/index.js", "0"),
+            ("fuzefront-website-frontend", "design-system/index.js", "0"),
+            ("fuzefront-website-backend", "design-system/index.js", "1"),
+            ("fuzefront-backend", "custom-hostname-client/src/a.ts", "0"),
+        ):
+            with self.subTest(img=img, path=path):
+                self.reset()
+                r, _ = self.run_gate(img, self.base[:12], [path])
+                self.assertEqual(r.stdout.strip(), want, r.stderr)
+
+    def test_every_source_input_dir_is_a_release_trigger(self):
+        # A "newer" skip promises the input's own push-triggered release ships the
+        # service; that only holds if the dir is in release.yml's `paths:`.
+        wf = (ROOT / ".github/workflows/release.yml").read_text()
+        for d in ("design-system", "apps-client", "billing-client", "portal-client",
+                  "config-client", "custom-hostname-client"):
+            self.assertIn(f"- '{d}/**'", wf, d)
 
     def test_unbuilt_image_is_never_allowed(self):
         r, _ = self.run_gate("fuzefront-email-service", self.base[:12], [], built="0")
@@ -460,7 +518,7 @@ elif a[0] == "api":
         self.tag = self.built[:12]
         self.branch = f"release/gitops-bump-{self.tag}"
 
-    def publish(self, late_changes):
+    def publish(self, late_changes, allow=None):
         tip = self.commit(late_changes, "late master change") if late_changes else self.basis
         self.sh("git", "push", "-q", "origin", "master", cwd=self.repo)
         # release.yml's tree: detached at the basis with the candidate bump written.
@@ -468,7 +526,7 @@ elif a[0] == "api":
         (self.repo / FILE).write_text(self.values(self.tag, self.tag))
         env = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}", GITHUB_REPOSITORY="o/r",
                    STATE=str(self.state), TIP=tip, RELEASE_MASTER_SHA=self.basis,
-                   RELEASE_ALLOW_BUMP=str(ALLOW), GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@e",
+                   RELEASE_ALLOW_BUMP=str(allow or ALLOW), GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@e",
                    GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@e")
         r = subprocess.run(["bash", str(SCRIPT), FILE, self.tag, self.built], cwd=self.repo, env=env,
                            capture_output=True, text=True, timeout=30, check=False)
@@ -498,6 +556,42 @@ elif a[0] == "api":
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("bumped NOTHING", r.stdout)
         self.assertFalse((self.state / "created").exists())
+
+    DRIFT = ("backend:\n  image:\n    repository: ghcr.io/izzywdev/fuzefront-backend\n    tag: {p}\n"
+             "email:\n  image:\n    repository: ghcr.io/izzywdev/fuzefront-email-service\n    # moved\n    tag: {p}\n")
+
+    def test_late_layout_drift_is_left_at_masters_tag_not_silently_dropped(self):
+        # The gate now fails closed on an unextractable tag (comment between
+        # repository: and tag:), so email keeps master's tag and backend ships.
+        r, _ = self.publish({FILE: self.DRIFT.format(p=self.prev)})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("unresolved", r.stdout)
+        body = self.pushed(f"refs/heads/{self.branch}:{FILE}")
+        self.assertIn("tag: " + self.tag, body.split("fuzefront-email-service")[0])
+        self.assertNotIn("tag: " + self.tag, body.split("fuzefront-email-service")[1])
+
+    def test_late_count_guard_fails_when_gate_allows_but_rewrite_cannot_apply(self):
+        # Defense in depth: even if the gate wrongly allows a service whose block no
+        # longer matches repository:+tag:, the rewrite count mismatch must fail
+        # loudly instead of reporting "bumped NOTHING".
+        yes = self.root / "allow-all.sh"
+        yes.write_text("#!/usr/bin/env bash\necho 1\n")
+        r, _ = self.publish({FILE: self.DRIFT.format(p=self.prev)}, allow=yes)
+        self.assertNotEqual(r.returncode, 0, r.stdout)
+        self.assertIn("expected 2 tag rewrite(s)", r.stdout)
+        self.assertFalse((self.state / "created").exists())
+
+    def test_late_unresolved_service_does_not_abort_when_others_are_allowed(self):
+        r, _ = self.publish({FILE: self.values("stable-pin", self.prev)})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        body = self.pushed(f"refs/heads/{self.branch}:{FILE}")
+        backend, email = body.split("fuzefront-email-service")[0], body.split("fuzefront-email-service")[1]
+        self.assertIn("tag: " + self.tag, backend)
+        self.assertIn("tag: stable-pin", email)
+
+    def test_late_nothing_allowed_with_unresolved_still_fails(self):
+        r, _ = self.publish({FILE: self.values("stable-pin", self.prev), "backend/a.ts": "x"})
+        self.assertNotEqual(r.returncode, 0, r.stdout)
 
     def test_no_late_advance_skips_reevaluation(self):
         r, _ = self.publish(None)

@@ -36,6 +36,15 @@ on:
       # their manifests (check-dockerfile-lockfile requires the full workspace
       # set, or npm hoists a different tree than the lockfile). That makes them
       # image inputs, so a change confined to either must rebuild.
+      # Source-aliased/vendored image inputs (see scripts/release-allow-bump.sh):
+      # a change here is skipped as "newer" for the images that consume it, so it
+      # MUST trigger its own release or the skipped image is never rebuilt.
+      - 'design-system/**'
+      - 'apps-client/**'
+      - 'billing-client/**'
+      - 'portal-client/**'
+      - 'config-client/**'
+      - 'custom-hostname-client/**'
       - 'api-client/**'
       - 'sdk/**'
       - 'services/email-service/**'

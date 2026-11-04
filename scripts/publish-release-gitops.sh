@@ -65,19 +65,39 @@ if [[ -n "${RELEASE_MASTER_SHA:-}" ]]; then
       if [[ "$verdict" == 1 ]]; then allowed+="${img} "; fi
     done
     # Rebuild on the FRESH head: only allowed services take our tag.
-    awk -v tag="$tag" -v allowed="$allowed" '
+    awk -v tag="$tag" -v allowed="$allowed" -v countfile="$work/rewrites" '
       hot { hot=0
         if ($0 ~ /^[[:space:]]*tag:/) { match($0, /^[[:space:]]*/)
-          print substr($0, 1, RLENGTH) "tag: " tag ($0 ~ /\r$/ ? "\r" : ""); next } }
+          n++; print substr($0, 1, RLENGTH) "tag: " tag ($0 ~ /\r$/ ? "\r" : ""); next } }
       match($0, /repository: ghcr\.io\/izzywdev\/[a-z0-9-]+\r?$/) {
         i=substr($0, RSTART + length("repository: ghcr.io/izzywdev/")); sub(/\r$/, "", i)
         if (index(allowed, " " i " ")) hot=1 }
-      { print }' "$work/vp-fresh.yaml" > "$work/vp-new.yaml"
+      { print }
+      END { print n + 0 > countfile }' "$work/vp-fresh.yaml" > "$work/vp-new.yaml"
+    # Layout-drift guard (counterpart of release.yml's COUNT -ne EXPECTED): every
+    # allowed service must have had its `repository:` + next-line `tag:` rewritten.
+    # If fresh master moved/removed a block or put a comment between the two lines,
+    # the awk silently rewrites nothing; without this the release would report
+    # "bumped NOTHING" (a quiet stale ship) instead of failing loudly.
+    expected_n=$(wc -w <<< "$allowed" | tr -d ' ')
+    rewrites_n=$(cat "$work/rewrites")
+    if [[ "$rewrites_n" != "$expected_n" ]]; then
+      echo "::error::expected ${expected_n} tag rewrite(s) against fresh master ${fresh_master}, got ${rewrites_n} - values-prod layout changed in the late window; refusing a silent stale ship"
+      exit 1
+    fi
     git checkout -q -f -B release-rebase "$fresh_master"
     cp "$work/vp-new.yaml" "$file"
-    if grep -qv ' newer$' "$work/skip-log"; then
-      echo "::error::late-window re-evaluation hit an unresolvable/hand-pinned tag; see notices above"
-      exit 1
+    if [[ "$expected_n" -eq 0 ]]; then
+      # Mirror release.yml: abort only when NOTHING is allowed AND something was
+      # skipped for a reason that needs a human (unresolvable/hand-pinned).
+      # Otherwise (some allowed) proceed with the allowed set; unresolved
+      # services are already logged as notices and keep master's tag.
+      if [[ -s "$work/skip-log" ]] && grep -qv ' newer$' "$work/skip-log"; then
+        echo "::error::late-window re-evaluation bumped NOTHING and at least one service was skipped for an unresolvable/hand-pinned tag; see notices above"
+        exit 1
+      fi
+    elif [[ -s "$work/skip-log" ]] && grep -v ' newer$' "$work/skip-log" >/dev/null; then
+      echo "::warning::late-window re-evaluation left service(s) at master's tag (unresolved/hand-pinned): $(grep -v ' newer$' "$work/skip-log" | tr '\n' ';')"
     fi
     if cmp -s "$work/vp-fresh.yaml" "$file"; then
       echo "::warning::release of ${tag} bumped NOTHING after re-evaluating against master ${fresh_master}: every service was skipped (a newer master change owns them)."

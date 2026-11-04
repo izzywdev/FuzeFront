@@ -32,12 +32,27 @@ skip() { # <reason> <message>
 
 [ "$built" = "1" ] || { echo 0; exit 0; }
 
-cur=$(awk -v img="repository: ghcr.io/izzywdev/${img}" '
-  found { sub(/\r$/,""); if ($1=="tag:") print $2; exit }
-  index($0, img) { found=1 }' "$VP_CURRENT")
+# Current tag for THIS image's block. The match is anchored exactly like the awk
+# passes in release.yml / publish-release-gitops.sh: the whole line must be
+# `repository: ghcr.io/izzywdev/<img>` (CRLF tolerated, nothing after it), and
+# the image name is compared for EQUALITY, so a `# ghcr.io/izzywdev/...` comment
+# or an image whose name is a prefix of another can never select the wrong block.
+cur=$(awk -v img="${img}" '
+  { sub(/\r$/,"") }
+  found { if ($1=="tag:") print $2; exit }
+  /^[[:space:]]*repository:[[:space:]]*ghcr\.io\/izzywdev\/[a-z0-9-]+[[:space:]]*$/ {
+    n=$0; sub(/^.*\/izzywdev\//,"",n); sub(/[[:space:]]+$/,"",n)
+    if (n == img) found=1 }' "$VP_CURRENT")
 cur=${cur//\"/}
 
-if [ -n "$cur" ] && [ "$cur" != "$SHA" ]; then
+# FAIL CLOSED: an unextractable current tag (block missing/reordered, a comment
+# between `repository:` and `tag:`, empty value) means we cannot prove our build
+# is not older than what master ships, so we must not publish over it.
+if [ -z "$cur" ]; then
+  skip unresolved "cannot extract current tag for ${img} from values-prod (block missing, reordered, or not followed directly by tag:); refusing to publish over an unknown tag"
+fi
+
+if [ "$cur" != "$SHA" ]; then
   if ! [[ "$cur" =~ ^[0-9a-f]{7,40}$ ]]; then
     # Deliberate hand-pin (label, not a commit). Never overwritten, but visible.
     skip unresolved "values-prod tag '${cur}' is not a commit sha (hand-pinned label); leaving it pinned"
@@ -59,17 +74,24 @@ if [ "$MASTER_SHA" != "$GITHUB_SHA" ] && [ -s "${CHANGED_FILES:-/dev/null}" ]; t
   own=()
   shared=1
   case "$img" in
-    # Each extra dir below is verified against the image's real source (not a
-    # guess): backend/Dockerfile COPYs custom-hostname-client/ in full (the
-    # security/applications Dockerfiles copy only its package.json and never
-    # import it); frontend/vite.config.ts aliases design-system and the
-    # billing/portal/config clients to SOURCE and frontend/Dockerfile does
-    # `COPY . .`. The website/devportal frontends vendor the ROOT design-system/
-    # (sync-design-system.mjs run by release.yml before docker build); clock-app
-    # and website-backend do not reference it.
+    # COMPLETE per-image input map. Sources of truth (re-read these when adding
+    # an image or a workspace dep, do not guess):
+    #   frontend/vite.config.ts resolve.alias  -> every dir aliased to SOURCE
+    #     (apps-client, billing-client, config-client, portal-client,
+    #      design-system; the packages/* aliases are covered by `shared` below)
+    #   <service>/Dockerfile COPY lines        -> backend copies
+    #     custom-hostname-client/ in full; chat-service also copies docs/ (RAG corpus; deliberately NOT an
+    #     input because docs/** is not a release trigger);
+    #     devportal-service bakes services/*/openapi.yaml + the collector script
+    #   fuzefront-website|devportal-frontend scripts/sync-design-system.mjs
+    #     (run by release.yml before docker build) -> vendor the ROOT design-system/
+    #   Dockerfiles that COPY only a root client's package.json (security,
+    #   applications, chat, ...) do not build from its source, so they are NOT
+    #   inputs. Over-listing only costs a skipped bump; under-listing publishes a
+    #   stale image, so when unsure for a source-consuming image, list it.
     fuzefront-backend) own=(backend/ custom-hostname-client/) ;;
     fuzefront-security-service|fuzefront-applications-service) own=(backend/) ;;
-    fuzefront-frontend) own=(frontend/ design-system/ billing-client/ portal-client/ config-client/) ;;
+    fuzefront-frontend) own=(frontend/ design-system/ apps-client/ billing-client/ portal-client/ config-client/) ;;
     fuzefront-email-service) own=(services/email-service/) ;;
     fuzefront-sms-service) own=(services/sms-service/) ;;
     fuzefront-provisioning-service) own=(services/provisioning-service/) ;;
