@@ -76,6 +76,11 @@ beforeAll(async () => {
     t.string('created_by_user_id')
     t.string('scope_level')
     t.string('org_install_mode')
+    t.string('url')
+    t.string('icon_url')
+    t.boolean('is_active')
+    t.integer('install_count')
+    t.timestamp('updated_at')
   })
   await db.schema.createTable('organization_memberships', t => {
     t.string('user_id')
@@ -96,7 +101,12 @@ beforeAll(async () => {
     t.string('scope')
     t.string('install_mode')
     t.string('status')
+    t.string('installed_by')
+    t.string('settings')
     t.timestamp('created_at')
+    t.timestamp('updated_at')
+    t.timestamp('revoked_at')
+    t.string('revoked_by')
   })
   await db('apps').insert([
     { id: 'priv', name: 'Priv', visibility: 'private', organization_id: ORG, created_by_user_id: 'creator', scope_level: 'both' },
@@ -105,6 +115,7 @@ beforeAll(async () => {
   ])
   const m = (user_id: string) => ({ user_id, organization_id: ORG, status: 'active', role: 'member' })
   await db('organization_memberships').insert([m('creator'), m('member'), m('owner'), m('admin')])
+  await db('organization_memberships').insert({ user_id: 'orgadmin', organization_id: ORG, status: 'active', role: 'admin' })
   await db('organizations').insert({ id: ORG, owner_id: 'owner', is_active: true })
 })
 beforeEach(() => {
@@ -160,5 +171,87 @@ describe('loadVisibleApp x private-owner-only (GET /:id/installations)', () => {
     const res = await postInstall('priv', 'member')
     expect(res.status).toBe(404)
     expect(await db('app_installations').where('app_id', 'priv').count({ c: '*' })).toEqual([{ c: 0 }])
+  })
+})
+
+const del = (appId: string, instId: string, user: string) =>
+  request(buildApp()).delete(`/api/apps/${appId}/install/${instId}`).set(as(user))
+
+async function seedInstall(id: string, over: Record<string, any>) {
+  await db('app_installations').insert({
+    id, app_id: 'priv', user_id: 'creator', organization_id: ORG,
+    scope: 'organization', install_mode: 'everyone', status: 'active', ...over,
+  })
+}
+const status = (id: string) =>
+  db('app_installations').where('id', id).first().then((r: any) => r.status)
+
+describe('DELETE /:id/install/:installationId x private-owner-only', () => {
+  beforeEach(async () => {
+    await db('app_installations').del()
+    await seedInstall('inst-all', {})
+  })
+
+  it('flag ON: a non-owner org ADMIN cannot revoke an everyone install of a private app', async () => {
+    privateOnly = true
+    const res = await del('priv', 'inst-all', 'orgadmin')
+    expect(res.status).toBe(404)
+    expect(await status('inst-all')).toBe('active')
+  })
+
+  it('flag ON: the creator (org admin role not needed for rule; needs ORG_ADMIN) is still gated by org role', async () => {
+    privateOnly = true
+    // creator is role=member -> passes private rule, then fails the admin check
+    expect((await del('priv', 'inst-all', 'creator')).status).toBe(403)
+  })
+
+  it('flag ON: the org owner (admin role) path still works for owner-level callers', async () => {
+    privateOnly = true
+    await db('organization_memberships').where({ user_id: 'owner' }).update({ role: 'owner' })
+    expect((await del('priv', 'inst-all', 'owner')).status).toBe(200)
+    expect(await status('inst-all')).toBe('revoked')
+    await db('organization_memberships').where({ user_id: 'owner' }).update({ role: 'member' })
+  })
+
+  it('flag OFF: a non-owner org admin can revoke the everyone install (unchanged)', async () => {
+    const res = await del('priv', 'inst-all', 'orgadmin')
+    expect(res.status).toBe(200)
+    expect(await status('inst-all')).toBe('revoked')
+  })
+
+  it('flag ON: a user can still remove their OWN personal install of a private app they can no longer see', async () => {
+    privateOnly = true
+    await seedInstall('inst-mine', { user_id: 'member', scope: 'personal', install_mode: 'self', organization_id: null })
+    const res = await del('priv', 'inst-mine', 'member')
+    expect(res.status).toBe(200)
+    expect(await status('inst-mine')).toBe('revoked')
+  })
+})
+
+describe('GET /installed x private-owner-only', () => {
+  beforeEach(async () => {
+    await db('app_installations').del()
+    await seedInstall('p1', { user_id: 'member', scope: 'personal', install_mode: 'self', organization_id: null })
+    await seedInstall('o1', { user_id: 'creator' })
+    await seedInstall('o2', { app_id: 'orgapp', user_id: 'creator' })
+  })
+  const names = (res: any) => res.body.map((r: any) => r.app.name).sort()
+
+  it('flag OFF: private apps are listed (unchanged)', async () => {
+    const res = await request(buildApp()).get(`/api/apps/installed?organizationId=${ORG}`).set(as('member'))
+    expect(names(res)).toEqual(['Org', 'Priv', 'Priv'])
+  })
+
+  it('flag ON: a private app the caller did not create is omitted; org app stays', async () => {
+    privateOnly = true
+    const res = await request(buildApp()).get(`/api/apps/installed?organizationId=${ORG}`).set(as('member'))
+    expect(res.status).toBe(200)
+    expect(names(res)).toEqual(['Org'])
+  })
+
+  it('flag ON: the creator still sees the private app', async () => {
+    privateOnly = true
+    const res = await request(buildApp()).get(`/api/apps/installed?organizationId=${ORG}`).set(as('creator'))
+    expect(names(res)).toEqual(['Org', 'Priv'])
   })
 })
