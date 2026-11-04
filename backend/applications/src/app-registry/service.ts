@@ -103,6 +103,18 @@ export interface AppCaller {
    * back to `organizationIds` when it is absent.
    */
   effectiveReadOrgIds?: string[]
+  /**
+   * FFRNT-379 / S4 — set (true) by resolveCaller only when the
+   * `fuzefront.app-registry.private-owner-only` flag is ON. Absent/false =>
+   * pre-S4 behavior (`private` is read like `organization`).
+   */
+  privateOwnerOnly?: boolean
+  /**
+   * FFRNT-379 / S4 — org ids the caller OWNS (organizations.owner_id); the
+   * "owner-context" allowed to read a `private` app it did not create. Only
+   * populated alongside `privateOwnerOnly`.
+   */
+  ownedOrgIds?: string[]
 }
 
 const DEFAULT_LIMIT = 50
@@ -160,7 +172,12 @@ function rowToApp(row: any): AppRecord {
  *  - they are a platform admin (sees all), OR
  *  - visibility is public|marketplace (everyone), OR
  *  - visibility is organization AND the app's org is one the caller belongs to, OR
- *  - visibility is private AND the app's org is one the caller belongs to (owner org).
+ *  - visibility is private AND (flag fuzefront.app-registry.private-owner-only
+ *    OFF) the app's org is one the caller belongs to; or (flag ON, FFRNT-379 / S4)
+ *    the caller created the app and is still in its org, or OWNS its org.
+ * `platform` is NOT a visibility tier (owner ruling): platform-internal apps are
+ * root-org-owned `private` apps, which platform admins (root-org owner/admin)
+ * and the root-org owner read.
  * `organization_id` is NOT NULL on `apps` (see ROOT_ORG_ID's doc comment
  * above) — the `!app.organizationId` branch below is unreachable defensive
  * code, kept rather than deleted so a future regression on the DB
@@ -179,7 +196,19 @@ export function canRead(app: AppRecord, caller: AppCaller): boolean {
   // the "owner sees nothing" fix — and loses it the moment ownership changes.
   const readOrgIds = caller.effectiveReadOrgIds ?? caller.organizationIds
   const inOrg = readOrgIds.includes(app.organizationId)
-  if (visibility === 'organization' || visibility === 'private') return inOrg
+  if (visibility === 'organization') return inOrg
+  if (visibility === 'private') {
+    if (!caller.privateOwnerOnly) return inOrg // pre-S4 (flag OFF)
+    // FFRNT-379 / S4 — `private` = creator/owner-only WITHIN the owning org: the
+    // app's creator, or a caller who OWNS the owning org. NOT every member. A
+    // personal-account app is a personal org whose owner is its creator, so it
+    // falls out of the same rule. Fail closed: an unknown creator
+    // (created_by_user_id null) is readable only by the org owner/platform admin.
+    // The creator must STILL be in the owning org (a creator who left loses it);
+    // the org owner reads by ownership regardless of a membership row.
+    if ((caller.ownedOrgIds ?? []).includes(app.organizationId)) return true
+    return inOrg && !!app.createdByUserId && app.createdByUserId === caller.userId
+  }
   return false
 }
 
@@ -401,6 +430,46 @@ function decodePublicationCursor(
   }
 }
 
+/**
+ * The org-scoped half of the read-visibility SQL (organization + private
+ * branches), shared by list() and the legacy /api/apps routes so they cannot
+ * drift. Mirrors canRead exactly (FFRNT-377 effective read-org set; FFRNT-379
+ * private-owner-only). Call INSIDE a where-group (it adds OR branches); the
+ * caller supplies the public/marketplace branch and skips this for platform
+ * admins.
+ */
+export function addOrgVisibilityBranches(builder: any, caller: AppCaller): void {
+  const orgIds = caller.effectiveReadOrgIds ?? caller.organizationIds
+  if (orgIds.length > 0) {
+    if (!caller.privateOwnerOnly) {
+      builder.orWhere((sub: any) => {
+        sub
+          .whereIn('visibility', ['organization', 'private'])
+          .whereIn('organization_id', orgIds)
+      })
+    } else {
+      // `organization` stays org-wide; `private` is the creator (still in the
+      // org) or the org's owner only.
+      builder.orWhere((sub: any) => {
+        sub.where('visibility', 'organization').whereIn('organization_id', orgIds)
+      })
+      builder.orWhere((sub: any) => {
+        sub
+          .where('visibility', 'private')
+          .whereIn('organization_id', orgIds)
+          .where('created_by_user_id', caller.userId)
+      })
+    }
+  }
+  if (caller.privateOwnerOnly && (caller.ownedOrgIds ?? []).length > 0) {
+    builder.orWhere((sub: any) => {
+      sub
+        .where('visibility', 'private')
+        .whereIn('organization_id', caller.ownedOrgIds as string[])
+    })
+  }
+}
+
 export class AppRegistryService {
   /**
    * BOLA-safe, paginated list. Visibility filtering is applied IN SQL so a caller
@@ -433,10 +502,6 @@ export class AppRegistryService {
     // ENTIRE block — including the FF-EPIC-12-S2 portal-catalog gate below —
     // same "sees everything" convention `canRead`/`canMutate` already apply.
     if (!caller.isPlatformAdmin) {
-      // FFRNT-377 / S2 — effective read-org set (memberships ∪ owned orgs) when
-      // the flag is on; raw memberships otherwise. Mirrors canRead exactly.
-      const orgIds = caller.effectiveReadOrgIds ?? caller.organizationIds
-
       // FF-EPIC-12-S2 AC4 — fail closed. A 'denied' portal context (the flag
       // is ON and the caller's portal context is missing/malformed) must
       // NEVER fall back to the unscoped global list — match no rows at all,
@@ -479,13 +544,7 @@ export class AppRegistryService {
               })
             }
           })
-          if (orgIds.length > 0) {
-            builder.orWhere(sub => {
-              sub
-                .whereIn('visibility', ['organization', 'private'])
-                .whereIn('organization_id', orgIds)
-            })
-          }
+          addOrgVisibilityBranches(builder, caller)
         })
       }
     }

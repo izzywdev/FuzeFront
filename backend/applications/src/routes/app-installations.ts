@@ -44,7 +44,9 @@ import {
   IdentityError,
   RefIndexError,
 } from '@izzywdev/fuzefront-identity'
-import { isRefEnforceEnabled } from '../app-registry/flags'
+import { isRefEnforceEnabled, isPrivateOwnerOnlyEnabled } from '../app-registry/flags'
+import { getOwnedOrgIds } from '../app-registry/caller'
+import { isRootOrgPlatformAdmin } from '../app-registry/platform-admin'
 import { KnexRefIndexRepository } from '../repositories/ref-index.repository'
 import { prefixDtoIds } from '../identity/serializer'
 import {
@@ -113,6 +115,7 @@ interface AppRow {
   id: string
   name: string
   organization_id: string | null
+  created_by_user_id?: string | null
   visibility: 'private' | 'organization' | 'public' | 'marketplace'
   scope_level: AppScopeLevel
   org_install_mode?: 'self' | 'everyone' | 'both' | null
@@ -195,7 +198,8 @@ async function getMembershipRole(
  */
 async function loadVisibleApp(
   appId: string,
-  memberOrgIds: string[]
+  memberOrgIds: string[],
+  privateCtx?: PrivateOwnerCtx | null
 ): Promise<AppRow | undefined> {
   const app = (await db('apps').where('id', appId).first()) as
     AppRow | undefined
@@ -205,9 +209,56 @@ async function loadVisibleApp(
     return app
   }
   if (app.organization_id && memberOrgIds.includes(app.organization_id)) {
+    // FFRNT-379 / S4 — with private-owner-only ON, `private` narrows from
+    // "every owning-org member" to creator / org owner / platform admin. This
+    // ONLY narrows (membership is still required first), so it never widens the
+    // install write path. privateCtx is null/undefined when the flag is OFF
+    // (byte-identical pre-S4) or the caller does not apply the narrowing.
+    if (app.visibility === 'private' && privateCtx) {
+      if (!passesPrivateOwnerRule(app, privateCtx)) return undefined
+    }
     return app
   }
   return undefined
+}
+
+interface PrivateOwnerCtx {
+  userId: string
+  ownedOrgIds: string[]
+  isPlatformAdmin: boolean
+}
+
+/**
+ * FFRNT-379 / S4 — the private-owner-only predicate for a `private` app the
+ * caller is already an org member of: creator, owning-org owner, or platform
+ * admin. Fail closed on a missing org/creator.
+ */
+function passesPrivateOwnerRule(
+  app: {
+    created_by_user_id?: string | null
+    organization_id?: string | null
+  },
+  ctx: PrivateOwnerCtx
+): boolean {
+  const isCreator =
+    !!app.created_by_user_id && app.created_by_user_id === ctx.userId
+  const ownsOrg =
+    !!app.organization_id && ctx.ownedOrgIds.includes(app.organization_id)
+  return isCreator || ownsOrg || ctx.isPlatformAdmin
+}
+
+/**
+ * FFRNT-379 / S4 — the context loadVisibleApp needs to apply private-owner-only,
+ * or null when the flag is OFF. Fail closed: if resolving the context throws,
+ * the route's try/catch returns 500 (never falls back to the wider rule).
+ */
+async function resolvePrivateCtx(userId: string): Promise<PrivateOwnerCtx | null> {
+  if (!(await isPrivateOwnerOnlyEnabled({ userId }))) return null
+  return {
+    userId,
+    ownedOrgIds: await getOwnedOrgIds(userId),
+    isPlatformAdmin: await isRootOrgPlatformAdmin(userId),
+  }
 }
 
 /**
@@ -296,12 +347,33 @@ router.get(
           'apps.url as app_url',
           'apps.icon_url as app_icon_url',
           'apps.is_active as app_is_active',
-          'apps.scope_level as app_scope_level'
+          'apps.scope_level as app_scope_level',
+          'apps.visibility as app_visibility',
+          'apps.created_by_user_id as app_created_by_user_id',
+          'apps.organization_id as app_organization_id'
         )
         .orderBy('apps.name')) as any[]
 
+      // FFRNT-379 / S4 — flag ON: omit `private` apps the caller may not read
+      // (non-creator / non-owner / non-platform-admin). null ctx (flag OFF) =>
+      // unchanged. A lookup error throws to the 500 handler (fail closed).
+      const privateCtx = await resolvePrivateCtx(userId)
+      const visibleRows = privateCtx
+        ? rows.filter(
+            row =>
+              row.app_visibility !== 'private' ||
+              passesPrivateOwnerRule(
+                {
+                  created_by_user_id: row.app_created_by_user_id,
+                  organization_id: row.app_organization_id,
+                },
+                privateCtx
+              )
+          )
+        : rows
+
       res.json(
-        rows.map(row => {
+        visibleRows.map(row => {
           const installation = prefixDtoIds(
             toInstallation(row as InstallationRow),
             {
@@ -345,7 +417,11 @@ router.get(
     try {
       const userId = req.user.id
       const memberOrgIds = await getMemberOrgIds(userId)
-      const app = await loadVisibleApp(req.params.id, memberOrgIds)
+      const app = await loadVisibleApp(
+        req.params.id,
+        memberOrgIds,
+        await resolvePrivateCtx(userId)
+      )
       if (!app) {
         return res
           .status(404)
@@ -429,7 +505,11 @@ router.post(
     try {
       const userId = req.user.id
       const memberOrgIds = await getMemberOrgIds(userId)
-      const app = await loadVisibleApp(req.params.id, memberOrgIds)
+      const app = await loadVisibleApp(
+        req.params.id,
+        memberOrgIds,
+        await resolvePrivateCtx(userId)
+      )
       if (!app) {
         return res
           .status(404)
@@ -691,6 +771,20 @@ router.delete(
       }
 
       if (installation.install_mode === 'everyone') {
+        // FFRNT-379 / S4 — removing an org-wide install of a `private` app
+        // affects every member, so under the flag the caller must also pass the
+        // private-owner rule (creator / org owner / platform admin). Personal
+        // and org-self removals below stay on the existing rule so a user can
+        // always clean up their own launcher. Non-disclosing 404.
+        if (app.visibility === 'private') {
+          const privateCtx = await resolvePrivateCtx(userId)
+          if (privateCtx && !passesPrivateOwnerRule(app, privateCtx)) {
+            return res.status(404).json({
+              error: 'Installation not found',
+              code: 'INSTALLATION_NOT_FOUND',
+            })
+          }
+        }
         const role = installation.organization_id
           ? await getMembershipRole(userId, installation.organization_id)
           : null

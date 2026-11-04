@@ -1,6 +1,5 @@
 import { Button } from '@fuzefront/design-system'
-import { useCurrentUser, useOrganizations, ROOT_ORG_ID } from '../lib/shared'
-import { isEmployeeUser } from '../utils/employee'
+import { useCurrentUser, useOrganizations } from '../lib/shared'
 import { useRegisteredApps } from '../platform/appRegistry'
 import { iconGlyph, iconImageUrl, integrationTypeOf, appHref } from '../platform/appManifest'
 import type { App as RegistryApp } from '@fuzefront/app-registry-client'
@@ -13,21 +12,15 @@ import { UnverifiedGate } from '../components/UnverifiedGate'
  * platform-global app just because org hydration hasn't finished yet /
  * `activeOrganizationId` is momentarily null — that was the crux of BUG 2.
  *
- * Apps that declare requiresOrgContext/visibility='organization' or the
- * internal executive app are excluded in personal context or for non-employees
- * on the root organization.
+ * Apps that declare requiresOrgContext/visibility='organization' are excluded
+ * in personal context. Internal apps (e.g. `executive`) are NOT special-cased
+ * here: the server returns only apps the caller may read (root-org-owned
+ * `private` apps are owner/platform-admin only).
  */
 export function isAppVisibleForOrg(
   app: Pick<RegistryApp, 'organizationId'> & { slug?: string; manifest?: any },
-  activeOrganizationId: string | null,
-  isEmployee: boolean = false
+  activeOrganizationId: string | null
 ): boolean {
-  if (app.slug === 'executive') {
-    if (activeOrganizationId === null) return false
-    if (activeOrganizationId === ROOT_ORG_ID && !isEmployee) return false
-    return true
-  }
-
   // Public / marketplace apps are visible to EVERY authenticated caller,
   // regardless of which org is active. This mirrors the server's own BOLA rule
   // (backend/applications/src/app-registry/service.ts `canRead`/`list()`, and
@@ -75,7 +68,6 @@ function integrationIcon(type: string) {
 function DashboardPage() {
   const { user } = useCurrentUser()
   const { activeOrganizationId } = useOrganizations()
-  const isEmployee = isEmployeeUser(user?.roles)
   // BUG 2 root cause: this page previously called the legacy `fetchApps()`
   // (`GET /apps`) instead of the same `@fuzefront/app-registry-client`
   // source (`GET /api/v1/app-registry/apps?status=activated`) the sidebar
@@ -89,7 +81,7 @@ function DashboardPage() {
   // whether org hydration has completed yet.
   const { apps: registeredApps } = useRegisteredApps()
   const allApps = registeredApps.filter(app =>
-    isAppVisibleForOrg(app, activeOrganizationId, isEmployee)
+    isAppVisibleForOrg(app, activeOrganizationId)
   )
 
   const handleAppClick = (app: RegistryApp) => {

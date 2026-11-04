@@ -101,6 +101,23 @@ export const FLAGS = {
    * behavior and no traffic relies on the raw-membership path.
    */
   EFFECTIVE_ACCESS: 'fuzefront.app-registry.effective-access',
+  /**
+   * fuzefront.app-registry.private-owner-only (FFRNT-379 / S4)
+   * type: release | default: OFF
+   * owner: backend-engineer (app-registry)
+   * When ON, `private` visibility means creator/owner-only WITHIN the owning
+   * org: readable by the app's creator (apps.created_by_user_id) or a caller who
+   * OWNS the owning org (organizations.owner_id), plus platform admins — NOT by
+   * every org member. `organization` stays org-wide. OFF = byte-identical
+   * pre-S4 behavior (`private` treated like `organization`).
+   * Default OFF because this NARROWS reads: callers who today see a `private`
+   * app as an ordinary org member (e.g. root-org employees seeing `executive`)
+   * lose access when it flips. An unreachable flag store therefore stays on the
+   * OLD behaviour (no change), and the flip is a deliberate staged rollout.
+   * removal criterion: delete once private=owner-only is the permanent behavior
+   * (100% rolled out and stable) and the off-path branches are removed.
+   */
+  PRIVATE_OWNER_ONLY: 'fuzefront.app-registry.private-owner-only',
 } as const
 
 let injected: FlagClientLike | null = null
@@ -217,6 +234,15 @@ export function isBuildWithAgentEnabled(ctx?: Partial<FlagContext>): Promise<boo
 /** release flag (default OFF): creator ownership (created_by + creator role + DTO). */
 export function isCreatorOwnershipEnabled(ctx?: Partial<FlagContext>): Promise<boolean> {
   return releaseFlag(FLAGS.CREATOR_OWNERSHIP, ctx)
+}
+
+/**
+ * FFRNT-379 / S4 — release flag (default OFF): is `private` visibility
+ * creator/owner-only (rather than org-wide like `organization`)? Fails to OFF
+ * (the prior behavior) on an absent client or evaluation error.
+ */
+export function isPrivateOwnerOnlyEnabled(ctx?: Partial<FlagContext>): Promise<boolean> {
+  return releaseFlag(FLAGS.PRIVATE_OWNER_ONLY, ctx)
 }
 
 /** release flag (default OFF): marketplace publication-request endpoints. */

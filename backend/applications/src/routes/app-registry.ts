@@ -28,6 +28,7 @@ import {
   isKafkaEmitEnabled,
   isRefEnforceEnabled,
   isCreatorOwnershipEnabled,
+  isPrivateOwnerOnlyEnabled,
 } from '../app-registry/flags'
 import { resolvePortalCatalogContext } from '../app-registry/portalContext'
 import { assertRefExists, parseId, toUuid } from '@izzywdev/fuzefront-identity'
@@ -232,8 +233,18 @@ router.post('/apps', authenticateConsumerOrSession, async (req: any, res) => {
     const creatorOn =
       isHuman &&
       (await isCreatorOwnershipEnabled({ organizationId: orgId, userId: caller.userId }))
+    // FFRNT-379 P2: private-owner-only's creator arm reads created_by_user_id, so
+    // that column MUST be persisted whenever the narrowing is on — independent of
+    // the creator-ownership flag — or a non-owner who registers a private app
+    // would be locked out of it (and of the follow-up activate). Persisting the
+    // column does NOT turn on the creator Permit role or the DTO fields; those
+    // stay gated by `creatorOn` alone.
+    const persistCreator =
+      isHuman &&
+      (creatorOn ||
+        (await isPrivateOwnerOnlyEnabled({ userId: caller.userId })))
     const app = await appRegistryService.register(manifest, orgId, heartbeatToken, {
-      createdByUserId: creatorOn ? caller.userId : null,
+      createdByUserId: persistCreator ? caller.userId : null,
     })
     if (creatorOn && orgId) {
       // Best-effort + fail-soft: a Permit problem never fails registration.

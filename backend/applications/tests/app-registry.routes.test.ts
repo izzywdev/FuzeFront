@@ -15,10 +15,15 @@ interface Row {
 const store: { rows: Row[] } = { rows: [] }
 
 function makeQuery(table: string) {
-  if (table !== 'apps' && table !== 'organization_memberships') {
+  if (table !== 'apps' && table !== 'organization_memberships' && table !== 'organizations') {
     throw new Error(`fake-knex: unexpected table ${table}`)
   }
-  let dataset = table === 'apps' ? store.rows : (store as any).memberships || []
+  let dataset =
+    table === 'apps'
+      ? store.rows
+      : table === 'organizations'
+        ? (store as any).organizations || []
+        : (store as any).memberships || []
   const predicates: ((r: Row) => boolean)[] = []
   let orderKeys: { col: string; dir: 'asc' | 'desc' }[] = []
   let limitN: number | undefined
@@ -248,11 +253,13 @@ setAppRegistryEmitter(stubEmitter)
 let writeFlag = true
 let kafkaFlag = true
 let creatorFlag = false
+let privateOnlyFlag = false
 setFlagClient({
   getBooleanValue: async (key: string, def: boolean) => {
     if (key === FLAGS.V1_REGISTRY_WRITE) return writeFlag
     if (key === FLAGS.KAFKA_EVENTS_KILL_SWITCH) return kafkaFlag
     if (key === FLAGS.CREATOR_OWNERSHIP) return creatorFlag
+    if (key === FLAGS.PRIVATE_OWNER_ONLY) return privateOnlyFlag
     return def
   },
 })
@@ -303,12 +310,16 @@ beforeEach(() => {
   ;(store as any).memberships = [
     { user_id: 'user-a', organization_id: orgA, status: 'active', role: 'admin' },
     { user_id: 'user-b', organization_id: orgB, status: 'active', role: 'admin' },
+    // FFRNT-379: platform admin = admin-or-higher on the ROOT org (not the role string).
+    { user_id: 'admin', organization_id: '00000000-0000-0000-0000-000000000010', status: 'active', role: 'admin' },
   ]
+  ;(store as any).organizations = []
   emitted.length = 0
   permitGrant = true
   writeFlag = true
   kafkaFlag = true
   creatorFlag = false
+  privateOnlyFlag = false
 })
 
 describe('registerApp', () => {
@@ -941,6 +952,49 @@ describe('creator ownership', () => {
     creatorInfo = { isCurrentMember: false, displayName: null }
     const res = await request(app).get('/api/v1/app-registry/apps/mine').set(asUser(userA))
     expect(res.body.creator).toEqual({ userId: fromUuid('user', creatorUuid), isCurrentMember: false })
+  })
+
+  // FFRNT-379 P2 — private-owner-only's creator arm reads created_by_user_id, so
+  // registration must persist it even with creator-ownership OFF; otherwise the
+  // creator is locked out of their own private app (and the activate 404s).
+  describe('private-owner-only ON, creator-ownership OFF: register -> activate', () => {
+    const privateManifest = () => manifest('secret', { visibility: 'private' })
+    const otherUuid = '44444444-4444-4444-8444-444444444444'
+
+    it('persists created_by, creator reads + activates it, creator role/DTO stay off', async () => {
+      privateOnlyFlag = true
+      creatorFlag = false
+      const reg = await register(human, { manifest: privateManifest() })
+      expect(reg.status).toBe(201)
+      expect(store.rows[0].created_by_user_id).toBe(creatorUuid)
+      // creator-ownership behavior unchanged: no Permit role, no DTO fields.
+      expect(assigned).toEqual([])
+      expect(reg.body).not.toHaveProperty('createdBy')
+      expect(reg.body).not.toHaveProperty('creator')
+
+      const get = await request(app).get('/api/v1/app-registry/apps/secret').set(asUser(human))
+      expect(get.status).toBe(200)
+      const act = await request(app).post('/api/v1/app-registry/apps/secret/activate').set(asUser(human))
+      expect(act.status).toBe(200)
+      expect(act.body.status).toBe('activated')
+    })
+
+    it('a different member of the owning org cannot read the private app (404)', async () => {
+      privateOnlyFlag = true
+      await register(human, { manifest: privateManifest() })
+      ;(store as any).memberships.push({ user_id: otherUuid, organization_id: orgA, status: 'active', role: 'member' })
+      const get = await request(app)
+        .get('/api/v1/app-registry/apps/secret')
+        .set(asUser({ id: otherUuid, roles: ['user'] }))
+      expect(get.status).toBe(404)
+    })
+
+    it('both flags OFF: created_by is not persisted (unchanged)', async () => {
+      privateOnlyFlag = false
+      creatorFlag = false
+      await register(human, { manifest: privateManifest() })
+      expect(store.rows[0].created_by_user_id ?? null).toBeNull()
+    })
   })
 
   describe('creator.contactEmail visibility (owning-org members + platform admins only)', () => {

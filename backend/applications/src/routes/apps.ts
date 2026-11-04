@@ -4,6 +4,8 @@ import { db } from '../config/database'
 import { authenticateToken, requireRole } from '../middleware/auth'
 import { App } from '../types/shared'
 import { prefixDtoIds } from '../identity/serializer'
+import { resolveCaller } from '../app-registry/caller'
+import { addOrgVisibilityBranches } from '../app-registry/service'
 import {
   ScopeLevel,
   enforceOrgInstallMode,
@@ -84,10 +86,30 @@ async function checkAppHealth(app: AppRow): Promise<boolean> {
   }
 }
 
+/**
+ * BOLA scope for the legacy list/health reads. Previously these returned EVERY
+ * active app (any org, any visibility) to any authenticated caller. They now
+ * apply the same read-visibility as app-registry list()/canRead: platform admin
+ * sees all; public/marketplace to everyone; `organization` to the caller's
+ * effective org set; `private` per the (flagged) private-owner-only rule.
+ * Fail closed: a caller-resolution failure propagates to the route's 500.
+ */
+async function visibleActiveApps(user: any) {
+  const caller = await resolveCaller(user)
+  const query = db('apps').where('is_active', true)
+  if (!caller.isPlatformAdmin) {
+    query.where((builder: any) => {
+      builder.whereIn('visibility', ['public', 'marketplace'])
+      addOrgVisibilityBranches(builder, caller)
+    })
+  }
+  return query.orderBy('name')
+}
+
 // GET /api/apps/health - Check health of all registered apps
 router.get('/health', authenticateToken, async (req: any, res) => {
   try {
-    const apps = await db('apps').where('is_active', true).orderBy('name')
+    const apps = await visibleActiveApps(req.user)
 
     const healthChecks = await Promise.all(
       apps.map(async (app: AppRow) => {
@@ -163,7 +185,7 @@ router.get('/', authenticateToken, async (req: any, res) => {
   try {
     const { healthyOnly } = req.query
 
-    const apps = await db('apps').where('is_active', true).orderBy('name')
+    const apps = await visibleActiveApps(req.user)
 
     // Get health status for all apps
     const appsWithHealth = await Promise.all(
