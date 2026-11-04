@@ -44,7 +44,9 @@ import {
   IdentityError,
   RefIndexError,
 } from '@izzywdev/fuzefront-identity'
-import { isRefEnforceEnabled } from '../app-registry/flags'
+import { isRefEnforceEnabled, isPrivateOwnerOnlyEnabled } from '../app-registry/flags'
+import { getOwnedOrgIds } from '../app-registry/caller'
+import { isRootOrgPlatformAdmin } from '../app-registry/platform-admin'
 import { KnexRefIndexRepository } from '../repositories/ref-index.repository'
 import { prefixDtoIds } from '../identity/serializer'
 import {
@@ -113,6 +115,7 @@ interface AppRow {
   id: string
   name: string
   organization_id: string | null
+  created_by_user_id?: string | null
   visibility: 'private' | 'organization' | 'public' | 'marketplace'
   scope_level: AppScopeLevel
   org_install_mode?: 'self' | 'everyone' | 'both' | null
@@ -195,7 +198,8 @@ async function getMembershipRole(
  */
 async function loadVisibleApp(
   appId: string,
-  memberOrgIds: string[]
+  memberOrgIds: string[],
+  privateCtx?: PrivateOwnerCtx | null
 ): Promise<AppRow | undefined> {
   const app = (await db('apps').where('id', appId).first()) as
     AppRow | undefined
@@ -205,9 +209,40 @@ async function loadVisibleApp(
     return app
   }
   if (app.organization_id && memberOrgIds.includes(app.organization_id)) {
+    // FFRNT-379 / S4 — with private-owner-only ON, `private` narrows from
+    // "every owning-org member" to creator / org owner / platform admin. This
+    // ONLY narrows (membership is still required first), so it never widens the
+    // install write path. privateCtx is null/undefined when the flag is OFF
+    // (byte-identical pre-S4) or the caller does not apply the narrowing.
+    if (app.visibility === 'private' && privateCtx) {
+      const isCreator =
+        !!app.created_by_user_id && app.created_by_user_id === privateCtx.userId
+      const ownsOrg = privateCtx.ownedOrgIds.includes(app.organization_id)
+      if (!(isCreator || ownsOrg || privateCtx.isPlatformAdmin)) return undefined
+    }
     return app
   }
   return undefined
+}
+
+interface PrivateOwnerCtx {
+  userId: string
+  ownedOrgIds: string[]
+  isPlatformAdmin: boolean
+}
+
+/**
+ * FFRNT-379 / S4 — the context loadVisibleApp needs to apply private-owner-only,
+ * or null when the flag is OFF. Fail closed: if resolving the context throws,
+ * the route's try/catch returns 500 (never falls back to the wider rule).
+ */
+async function resolvePrivateCtx(userId: string): Promise<PrivateOwnerCtx | null> {
+  if (!(await isPrivateOwnerOnlyEnabled({ userId }))) return null
+  return {
+    userId,
+    ownedOrgIds: await getOwnedOrgIds(userId),
+    isPlatformAdmin: await isRootOrgPlatformAdmin(userId),
+  }
 }
 
 /**
@@ -345,7 +380,11 @@ router.get(
     try {
       const userId = req.user.id
       const memberOrgIds = await getMemberOrgIds(userId)
-      const app = await loadVisibleApp(req.params.id, memberOrgIds)
+      const app = await loadVisibleApp(
+        req.params.id,
+        memberOrgIds,
+        await resolvePrivateCtx(userId)
+      )
       if (!app) {
         return res
           .status(404)
@@ -429,7 +468,11 @@ router.post(
     try {
       const userId = req.user.id
       const memberOrgIds = await getMemberOrgIds(userId)
-      const app = await loadVisibleApp(req.params.id, memberOrgIds)
+      const app = await loadVisibleApp(
+        req.params.id,
+        memberOrgIds,
+        await resolvePrivateCtx(userId)
+      )
       if (!app) {
         return res
           .status(404)

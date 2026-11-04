@@ -430,6 +430,46 @@ function decodePublicationCursor(
   }
 }
 
+/**
+ * The org-scoped half of the read-visibility SQL (organization + private
+ * branches), shared by list() and the legacy /api/apps routes so they cannot
+ * drift. Mirrors canRead exactly (FFRNT-377 effective read-org set; FFRNT-379
+ * private-owner-only). Call INSIDE a where-group (it adds OR branches); the
+ * caller supplies the public/marketplace branch and skips this for platform
+ * admins.
+ */
+export function addOrgVisibilityBranches(builder: any, caller: AppCaller): void {
+  const orgIds = caller.effectiveReadOrgIds ?? caller.organizationIds
+  if (orgIds.length > 0) {
+    if (!caller.privateOwnerOnly) {
+      builder.orWhere((sub: any) => {
+        sub
+          .whereIn('visibility', ['organization', 'private'])
+          .whereIn('organization_id', orgIds)
+      })
+    } else {
+      // `organization` stays org-wide; `private` is the creator (still in the
+      // org) or the org's owner only.
+      builder.orWhere((sub: any) => {
+        sub.where('visibility', 'organization').whereIn('organization_id', orgIds)
+      })
+      builder.orWhere((sub: any) => {
+        sub
+          .where('visibility', 'private')
+          .whereIn('organization_id', orgIds)
+          .where('created_by_user_id', caller.userId)
+      })
+    }
+  }
+  if (caller.privateOwnerOnly && (caller.ownedOrgIds ?? []).length > 0) {
+    builder.orWhere((sub: any) => {
+      sub
+        .where('visibility', 'private')
+        .whereIn('organization_id', caller.ownedOrgIds as string[])
+    })
+  }
+}
+
 export class AppRegistryService {
   /**
    * BOLA-safe, paginated list. Visibility filtering is applied IN SQL so a caller
@@ -462,10 +502,6 @@ export class AppRegistryService {
     // ENTIRE block — including the FF-EPIC-12-S2 portal-catalog gate below —
     // same "sees everything" convention `canRead`/`canMutate` already apply.
     if (!caller.isPlatformAdmin) {
-      // FFRNT-377 / S2 — effective read-org set (memberships ∪ owned orgs) when
-      // the flag is on; raw memberships otherwise. Mirrors canRead exactly.
-      const orgIds = caller.effectiveReadOrgIds ?? caller.organizationIds
-
       // FF-EPIC-12-S2 AC4 — fail closed. A 'denied' portal context (the flag
       // is ON and the caller's portal context is missing/malformed) must
       // NEVER fall back to the unscoped global list — match no rows at all,
@@ -508,35 +544,7 @@ export class AppRegistryService {
               })
             }
           })
-          if (orgIds.length > 0) {
-            if (!caller.privateOwnerOnly) {
-              builder.orWhere(sub => {
-                sub
-                  .whereIn('visibility', ['organization', 'private'])
-                  .whereIn('organization_id', orgIds)
-              })
-            } else {
-              // FFRNT-379 / S4 — mirrors canRead exactly: `organization` stays
-              // org-wide; `private` is the creator (still in the org) or the
-              // org's owner only.
-              builder.orWhere(sub => {
-                sub.where('visibility', 'organization').whereIn('organization_id', orgIds)
-              })
-              builder.orWhere(sub => {
-                sub
-                  .where('visibility', 'private')
-                  .whereIn('organization_id', orgIds)
-                  .where('created_by_user_id', caller.userId)
-              })
-            }
-          }
-          if (caller.privateOwnerOnly && (caller.ownedOrgIds ?? []).length > 0) {
-            builder.orWhere(sub => {
-              sub
-                .where('visibility', 'private')
-                .whereIn('organization_id', caller.ownedOrgIds as string[])
-            })
-          }
+          addOrgVisibilityBranches(builder, caller)
         })
       }
     }
