@@ -88,10 +88,21 @@ export interface AppRecord {
 
 export interface AppCaller {
   userId: string
-  /** Org memberships of the caller (org ids). Used for `organization` visibility. */
+  /**
+   * Raw active org memberships (org ids). Used for MUTATION (`canMutate`) and,
+   * when effective access is off, for READS too.
+   */
   organizationIds: string[]
   roles: string[]
   isPlatformAdmin: boolean
+  /**
+   * FFRNT-377 / S2 — effective READ org set: memberships ∪ orgs the caller
+   * OWNS (organizations.owner_id), populated by resolveCaller when the
+   * `fuzefront.app-registry.effective-access` flag is on. Optional so existing
+   * AppCaller constructors (tests, host shims) keep compiling; read paths fall
+   * back to `organizationIds` when it is absent.
+   */
+  effectiveReadOrgIds?: string[]
 }
 
 const DEFAULT_LIMIT = 50
@@ -161,7 +172,13 @@ export function canRead(app: AppRecord, caller: AppCaller): boolean {
   const visibility = app.manifest.visibility ?? 'private'
   if (visibility === 'public' || visibility === 'marketplace') return true
   if (!app.organizationId) return false // should be unreachable; fail closed, not open
-  const inOrg = caller.organizationIds.includes(app.organizationId)
+  // FFRNT-377 / S2 — effective read-org set: raw memberships ∪ orgs the caller
+  // OWNS (organizations.owner_id) when the flag is on; falls back to raw
+  // memberships otherwise. Ownership is CURRENT entitlement (owner_id is
+  // re-read each request), so an org owner with no membership row can read —
+  // the "owner sees nothing" fix — and loses it the moment ownership changes.
+  const readOrgIds = caller.effectiveReadOrgIds ?? caller.organizationIds
+  const inOrg = readOrgIds.includes(app.organizationId)
   if (visibility === 'organization' || visibility === 'private') return inOrg
   return false
 }
@@ -416,7 +433,9 @@ export class AppRegistryService {
     // ENTIRE block — including the FF-EPIC-12-S2 portal-catalog gate below —
     // same "sees everything" convention `canRead`/`canMutate` already apply.
     if (!caller.isPlatformAdmin) {
-      const orgIds = caller.organizationIds
+      // FFRNT-377 / S2 — effective read-org set (memberships ∪ owned orgs) when
+      // the flag is on; raw memberships otherwise. Mirrors canRead exactly.
+      const orgIds = caller.effectiveReadOrgIds ?? caller.organizationIds
 
       // FF-EPIC-12-S2 AC4 — fail closed. A 'denied' portal context (the flag
       // is ON and the caller's portal context is missing/malformed) must

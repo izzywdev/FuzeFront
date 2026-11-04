@@ -83,6 +83,24 @@ export const FLAGS = {
   BUILD_WITH_AGENT: 'fuzefront.apps.build-with-agent',
   CREATOR_OWNERSHIP: 'fuzefront.apps.creator-ownership',
   MARKETPLACE_PUBLISHING: 'fuzefront.apps.marketplace-publishing',
+  /**
+   * fuzefront.app-registry.effective-access (FFRNT-377 / S2)
+   * type: release | default: ON (owner directive, 2026-11-03)
+   * owner: backend-engineer (app-registry)
+   * When ON, registry READS use EFFECTIVE access instead of raw membership:
+   * the caller's effective read-org set is their active memberships UNION the
+   * orgs they OWN (organizations.owner_id). Purely additive — it grants reads
+   * to org owners who should have them (fixes "I'm the org owner but see
+   * nothing"); it never widens visibility to anyone else, and mutation
+   * (canMutate) is unchanged. Ownership is current entitlement (owner_id is
+   * re-read per request), so there is no immutable-field authz. OFF reverts to
+   * byte-identical pre-S2 raw-membership reads. Shipped ON per owner directive, so the in-code
+   * default + unreachable-client fallback is TRUE (the feature is normally on;
+   * the flag is the kill-switch back to raw membership).
+   * removal criterion: delete once effective-access reads are the permanent
+   * behavior and no traffic relies on the raw-membership path.
+   */
+  EFFECTIVE_ACCESS: 'fuzefront.app-registry.effective-access',
 } as const
 
 let injected: FlagClientLike | null = null
@@ -204,4 +222,32 @@ export function isCreatorOwnershipEnabled(ctx?: Partial<FlagContext>): Promise<b
 /** release flag (default OFF): marketplace publication-request endpoints. */
 export function isMarketplacePublishingEnabled(ctx?: Partial<FlagContext>): Promise<boolean> {
   return releaseFlag(FLAGS.MARKETPLACE_PUBLISHING, ctx)
+}
+
+/**
+ * FFRNT-377 / S2 — release flag shipped ON (owner directive): do registry
+ * READS use effective access (memberships ∪ orgs the caller OWNS) in place of
+ * raw membership? Default/fallback is TRUE — OFF is the kill-switch back to the
+ * pre-S2 raw-membership path. See the FLAGS.EFFECTIVE_ACCESS doc.
+ *
+ * DELIBERATELY fails OPEN (true), unlike every other release flag in this
+ * module, which fail closed. That is safe here specifically BECAUSE the
+ * widening is bounded: the effective set is only ever `memberships ∪ orgs the
+ * CALLER owns`, so an outage that forces this ON cannot expose any app to a
+ * third party — at most it keeps an org owner able to read their OWN org's
+ * apps (the exact "owner sees nothing" bug this fixes). The kill-switch still
+ * works whenever the flag store is reachable; the only state it cannot reach is
+ * a store outage, during which the safe-and-correct behavior is "owners keep
+ * seeing their own orgs", not "owners suddenly see nothing". A classic
+ * over-exposure flag (one that could reveal another tenant's data) would fail
+ * closed; this one cannot over-expose, so it tracks the shipped-ON intent.
+ */
+export async function isEffectiveAccessEnabled(ctx?: Partial<FlagContext>): Promise<boolean> {
+  const client = resolveClient()
+  if (!client) return true // shipped ON; bounded widening cannot over-expose (see doc)
+  try {
+    return await client.getBooleanValue(FLAGS.EFFECTIVE_ACCESS, true, buildContext(ctx))
+  } catch {
+    return true
+  }
 }

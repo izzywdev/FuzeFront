@@ -225,6 +225,90 @@ async function getMemberOrgIds(userId: string): Promise<string[]> {
   return rows.map((r: any) => r.organization_id).filter(Boolean)
 }
 
+// FFRNT-377 / S2 — effective-access parity for THIS local route.
+//
+// The ingress routes `/api/apps` to applications-service in a real deploy, whose
+// app-registry `list()` scopes reads to the caller's EFFECTIVE org set
+// (memberships ∪ orgs they OWN) when `fuzefront.app-registry.effective-access`
+// is ON. This route serves `/api/apps` only under docker-compose and this file's
+// integration tests, but its doc contract (above `scopeAppsQuery`) requires it to
+// AGREE with that production rule — otherwise an org owner with no membership row
+// sees their org's apps in prod but not locally/in tests. These helpers restore
+// that parity; they mirror applications-service `caller.ts` exactly.
+const EFFECTIVE_ACCESS_FLAG = 'fuzefront.app-registry.effective-access'
+
+interface AppsFlagsClient {
+  getBooleanValue(key: string, def: boolean, ctx?: Record<string, unknown>): Promise<boolean>
+}
+
+function loadFlagsClient(): AppsFlagsClient | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const mod = require('@fuzefront/feature-flags')
+    return typeof mod.getClient === 'function' ? mod.getClient() : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Shipped ON (owner directive 2026-11-03). Fails OPEN (true) on an absent client
+ * or evaluation error — safe here, and ONLY here among this backend's flags,
+ * because the widening it gates is bounded to the caller's OWN orgs and so can
+ * never over-expose another tenant's data (see the applications-service
+ * isEffectiveAccessEnabled doc). OFF is the kill-switch back to raw membership.
+ */
+async function isEffectiveAccessEnabled(userId: string): Promise<boolean> {
+  const client = loadFlagsClient()
+  if (!client) return true
+  const context = {
+    environment: process.env.NODE_ENV === 'production' ? 'prod' : process.env.FLAG_ENV || 'local',
+    app: 'fuzefront-backend',
+    ...(userId ? { userId } : {}),
+  }
+  try {
+    return await client.getBooleanValue(EFFECTIVE_ACCESS_FLAG, true, context)
+  } catch {
+    return true
+  }
+}
+
+/**
+ * Orgs the caller OWNS (`organizations.owner_id`), ACTIVE only — a distinct
+ * relationship from a membership row. `is_active = true` because org delete is a
+ * soft-delete that leaves `owner_id` intact; without it an owner would keep
+ * reading a deactivated org's apps. Fails CLOSED to [] on error (reads fall back
+ * to memberships), but logs so a real fault is distinguishable.
+ */
+async function getOwnedOrgIds(userId: string): Promise<string[]> {
+  try {
+    const rows = await db('organizations')
+      .where('owner_id', userId)
+      .where('is_active', true)
+      .select('id')
+    return rows.map((r: any) => r.id).filter(Boolean)
+  } catch (error) {
+    console.error(
+      '[apps] getOwnedOrgIds failed for user %s; owner reads fall back to memberships only',
+      userId,
+      error
+    )
+    return []
+  }
+}
+
+/**
+ * The caller's EFFECTIVE read-org set: memberships ∪ owned orgs when the flag is
+ * on, raw memberships otherwise. Keeps scopeAppsQuery in lock-step with the
+ * production app-registry list().
+ */
+async function getEffectiveReadOrgIds(userId: string): Promise<string[]> {
+  const memberOrgIds = await getMemberOrgIds(userId)
+  if (!(await isEffectiveAccessEnabled(userId))) return memberOrgIds
+  const ownedOrgIds = await getOwnedOrgIds(userId)
+  return Array.from(new Set([...memberOrgIds, ...ownedOrgIds]))
+}
+
 /**
  * Apply org/visibility scoping to an apps query for the given user.
  *
@@ -254,22 +338,25 @@ async function getMemberOrgIds(userId: string): Promise<string[]> {
  *
  * The caller may see an app when ANY of:
  *   - its visibility is 'public'/'marketplace', OR
- *   - its visibility is 'organization'/'private' AND its organization_id is
- *     one the caller is an active member of.
+ *   - its visibility is 'organization'/'private' AND its organization_id is in
+ *     the caller's EFFECTIVE read-org set — active memberships, plus orgs the
+ *     caller OWNS when fuzefront.app-registry.effective-access is ON (FFRNT-377),
+ *     matching the production list() rule. The callers pass
+ *     getEffectiveReadOrgIds(), not raw getMemberOrgIds().
  * An organization/private app of an org the caller does NOT belong to is
  * excluded either way (BOLA). Does not implement the app-registry's
  * platform-admin bypass or scoped-portal gate (portal_apps) — this table
  * predates that multi-tenant portal concept; only the core visibility/org
  * rule is kept in parity here.
  */
-function scopeAppsQuery(query: any, memberOrgIds: string[]) {
+function scopeAppsQuery(query: any, readOrgIds: string[]) {
   return query.where(function (this: any) {
     this.whereIn('apps.visibility', ['public', 'marketplace'])
-    if (memberOrgIds.length > 0) {
+    if (readOrgIds.length > 0) {
       this.orWhere((ownOrg: any) => {
         ownOrg
           .whereIn('apps.visibility', ['organization', 'private'])
-          .whereIn('apps.organization_id', memberOrgIds)
+          .whereIn('apps.organization_id', readOrgIds)
       })
     }
   })
@@ -280,10 +367,10 @@ router.get('/health', appsReadLimiter, authenticateToken, async (req: any, res) 
   try {
     // HIGH-4: scope to the caller's orgs + public/marketplace visibility
     // instead of returning every active app on the platform.
-    const memberOrgIds = await getMemberOrgIds(req.user.id)
+    const readOrgIds = await getEffectiveReadOrgIds(req.user.id)
     const apps = await scopeAppsQuery(
       db('apps').where('is_active', true),
-      memberOrgIds
+      readOrgIds
     ).orderBy('name')
 
     // Resolve same-origin remote entries against the origin this request
@@ -357,10 +444,10 @@ router.get('/', appsReadLimiter, authenticateToken, async (req: any, res) => {
     const { healthyOnly } = req.query
 
     // HIGH-4: object-level read scoping (org membership + visibility).
-    const memberOrgIds = await getMemberOrgIds(req.user.id)
+    const readOrgIds = await getEffectiveReadOrgIds(req.user.id)
     const apps = await scopeAppsQuery(
       db('apps').where('is_active', true),
-      memberOrgIds
+      readOrgIds
     ).orderBy('name')
 
     // Get health status for all apps.

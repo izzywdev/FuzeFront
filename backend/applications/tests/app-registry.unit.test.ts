@@ -143,6 +143,69 @@ describe('app-registry BOLA visibility (canRead)', () => {
   })
 })
 
+describe('app-registry effective-access reads (FFRNT-377 / S2)', () => {
+  // Flag ON: effectiveReadOrgIds = memberships ∪ orgs the caller OWNS
+  // (organizations.owner_id). Flag OFF (field absent) = pre-S2 raw-membership
+  // behavior. Ownership is current entitlement — no immutable-field authz.
+  const ownerNoMembership: AppCaller = {
+    userId: 'owner1',
+    organizationIds: [], // NO membership row...
+    roles: ['user'],
+    isPlatformAdmin: false,
+    effectiveReadOrgIds: ['org-a'], // ...but owns org-a
+  }
+  const effAccessMemberA: AppCaller = {
+    ...memberOfOrgA,
+    effectiveReadOrgIds: ['org-a'],
+  }
+
+  it('flag OFF: an org owner with no membership row still cannot read (parity with pre-S2)', () => {
+    const ownerFlagOff: AppCaller = {
+      userId: 'owner1',
+      organizationIds: [],
+      roles: ['user'],
+      isPlatformAdmin: false,
+    }
+    expect(
+      canRead(appWith({ visibility: 'organization', organizationId: 'org-a' }), ownerFlagOff)
+    ).toBe(false)
+  })
+
+  it('flag ON: an org owner (no membership row) reads their org\'s organization/private apps', () => {
+    expect(
+      canRead(appWith({ visibility: 'organization', organizationId: 'org-a' }), ownerNoMembership)
+    ).toBe(true)
+    expect(
+      canRead(appWith({ visibility: 'private', organizationId: 'org-a' }), ownerNoMembership)
+    ).toBe(true)
+  })
+
+  it('flag ON: no widening — an org not in the effective read set is still denied', () => {
+    expect(
+      canRead(
+        appWith({ visibility: 'organization', organizationId: 'org-b' }),
+        effAccessMemberA
+      )
+    ).toBe(false)
+    expect(
+      canRead(
+        appWith({ visibility: 'private', organizationId: 'org-b' }),
+        effAccessMemberA
+      )
+    ).toBe(false)
+  })
+
+  it('a non-member, non-owner caller cannot read even their own created app (ownership is not an app-level read grant)', () => {
+    // created_by is immutable; S2 deliberately does NOT confer read from it.
+    expect(
+      canRead(
+        appWith({ visibility: 'private', organizationId: 'org-z', createdByUserId: 'owner1' }),
+        ownerNoMembership // owns org-a, not org-z
+      )
+    ).toBe(false)
+  })
+})
+
 describe('app-registry BOLA mutation (canMutate)', () => {
   it('member of owning org may mutate', () => {
     expect(canMutate(appWith({ organizationId: 'org-a' }), memberOfOrgA)).toBe(

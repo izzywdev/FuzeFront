@@ -180,6 +180,18 @@ async function getMembershipRole(
  * read applies (org member, or public/marketplace). Returns undefined when the
  * app does not exist OR is not visible; callers must answer 404 for both so the
  * two are indistinguishable from outside.
+ *
+ * FFRNT-377 / S2 scope boundary (deliberate): this gate stays MEMBERSHIP-scoped
+ * (raw getMemberOrgIds), NOT the widened effective-access set the app-registry
+ * reads use. S2 widens the app-REGISTRY read surface (which app exists / is
+ * visible in GET /apps, canRead, list) so an org owner with no membership row
+ * can SEE their org's apps. It does NOT widen the INSTALL subsystem: POST
+ * /:id/install at `scope:'personal'` has loadVisibleApp as its ONLY authz gate,
+ * so widening it here would let a non-member owner install into their launcher —
+ * a WRITE the flag doc promises is unchanged. Install/uninstall therefore remain
+ * membership-gated. The "owner sees the app but the install dialog is gated" UX
+ * is a FRONTEND concern (hide/disable install for non-members), not a reason to
+ * widen a write path. (gate-code-review, #1773.)
  */
 async function loadVisibleApp(
   appId: string,
