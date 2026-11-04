@@ -36,16 +36,26 @@ on:
       # their manifests (check-dockerfile-lockfile requires the full workspace
       # set, or npm hoists a different tree than the lockfile). That makes them
       # image inputs, so a change confined to either must rebuild.
-      # Source-aliased/vendored image inputs (see scripts/release-allow-bump.sh):
-      # a change here is skipped as "newer" for the images that consume it, so it
-      # MUST trigger its own release or the skipped image is never rebuilt.
-      - 'design-system/**'
-      - 'apps-client/**'
-      - 'billing-client/**'
-      - 'portal-client/**'
-      - 'config-client/**'
-      - 'custom-hostname-client/**'
       - 'api-client/**'
+      # @fuzefront/design-system is aliased to source by frontend/vite.config.ts and
+      # vendored into the website/devportal images by their sync-design-system.mjs, so a
+      # change confined here must rebuild those images or they ship stale (silent-ship gap).
+      - 'design-system/**'
+      # frontend/vite.config.ts aliases @fuzefront/app-registry-client to apps-client/src,
+      # so the frontend bundle embeds it from source; a change confined here must rebuild.
+      - 'apps-client/**'
+      # Aliased to source by frontend/vite.config.ts and bundled into the frontend image;
+      # a change confined here must rebuild or the image ships stale.
+      - 'billing-client/**'
+      # Aliased to source by frontend/vite.config.ts and bundled into the frontend image;
+      # a change confined here must rebuild or the image ships stale.
+      - 'portal-client/**'
+      # Aliased to source by frontend/vite.config.ts and bundled into the frontend image;
+      # a change confined here must rebuild or the image ships stale.
+      - 'config-client/**'
+      # backend/Dockerfile COPYs custom-hostname-client/ into the backend image,
+      # so a change confined here must rebuild the backend image.
+      - 'custom-hostname-client/**'
       - 'sdk/**'
       - 'services/email-service/**'
       - 'services/sms-service/**'
