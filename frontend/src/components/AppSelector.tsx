@@ -4,8 +4,7 @@ import type { App } from '@fuzefront/app-registry-client'
 import { AppTile } from '@fuzefront/design-system'
 import { useLanguage } from '../contexts/LanguageContext'
 import { useRegisteredApps } from '../platform/appRegistry'
-import { useCurrentUser, useOrganizations, ROOT_ORG_ID } from '../lib/shared'
-import { isEmployeeUser } from '../utils/employee'
+import { useOrganizations } from '../lib/shared'
 import {
   iconImageUrl,
   iconGlyph,
@@ -30,16 +29,10 @@ function AppSelector() {
   const { t } = useLanguage()
   const navigate = useNavigate()
   const { apps } = useRegisteredApps()
-  const { user } = useCurrentUser()
   const { activeOrganizationId } = useOrganizations()
   const isPersonalContext = activeOrganizationId === null
-  const isEmployee = isEmployeeUser(user?.roles)
 
   const visibleApps = apps.filter(app => {
-    if (app.slug === 'executive') {
-      if (isPersonalContext) return false
-      if (activeOrganizationId === ROOT_ORG_ID && !isEmployee) return false
-    }
     const manifest = app.manifest as any
     const orgRequired =
       manifest?.requiresOrgContext === true ||

@@ -15,10 +15,15 @@ interface Row {
 const store: { rows: Row[] } = { rows: [] }
 
 function makeQuery(table: string) {
-  if (table !== 'apps' && table !== 'organization_memberships') {
+  if (table !== 'apps' && table !== 'organization_memberships' && table !== 'organizations') {
     throw new Error(`fake-knex: unexpected table ${table}`)
   }
-  let dataset = table === 'apps' ? store.rows : (store as any).memberships || []
+  let dataset =
+    table === 'apps'
+      ? store.rows
+      : table === 'organizations'
+        ? (store as any).organizations || []
+        : (store as any).memberships || []
   const predicates: ((r: Row) => boolean)[] = []
   let orderKeys: { col: string; dir: 'asc' | 'desc' }[] = []
   let limitN: number | undefined
@@ -303,7 +308,10 @@ beforeEach(() => {
   ;(store as any).memberships = [
     { user_id: 'user-a', organization_id: orgA, status: 'active', role: 'admin' },
     { user_id: 'user-b', organization_id: orgB, status: 'active', role: 'admin' },
+    // FFRNT-379: platform admin = admin-or-higher on the ROOT org (not the role string).
+    { user_id: 'admin', organization_id: '00000000-0000-0000-0000-000000000010', status: 'active', role: 'admin' },
   ]
+  ;(store as any).organizations = []
   emitted.length = 0
   permitGrant = true
   writeFlag = true

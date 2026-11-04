@@ -1,11 +1,12 @@
 // Resolves the BOLA-safe caller context from the authenticated user. Mirrors the
-// host backend's getMemberOrgIds + platform-admin convention
-// (backend/src/routes/apps.ts): a caller's org scope is their ACTIVE
-// organization_memberships; platform admin is the `admin` platform role.
+// host backend's getMemberOrgIds: a caller's org scope is their ACTIVE
+// organization_memberships. Platform admin is an AUTHORIZATION POLICY — owner OR
+// admin-or-higher on the ROOT org (platform-admin.ts) — not a role string.
 import { db } from '../config/database'
 import { AppCaller } from './service'
 import { SYNTHETIC_CONSUMER_USER_ID } from '../middleware/consumer-auth'
-import { isEffectiveAccessEnabled } from './flags'
+import { isEffectiveAccessEnabled, isPrivateOwnerOnlyEnabled } from './flags'
+import { isRootOrgPlatformAdmin } from './platform-admin'
 
 interface SessionUser {
   id: string
@@ -91,9 +92,11 @@ export async function resolveCaller(user: SessionUser): Promise<AppCaller> {
   // which is why it survived: the fault is here, in the platform.
   //
   // A service caller belongs to no organization, so the correct answer is an
-  // empty org list, not a query. `isPlatformAdmin` still comes from `roles`
-  // below, exactly as before; the consumer's `admin` role is what authorises it,
-  // and nothing about that changes.
+  // empty org list, not a query. The service principal is its OWN branch: it is
+  // platform-trusted by the pre-shared secret consumer-auth already verified
+  // (which is what attaches its `admin` role), so it is authorised from that
+  // role and NEVER passed through the root-org owner/admin policy used for real
+  // users below — it has no users/org/membership row to look up.
   if (user.id === SYNTHETIC_CONSUMER_USER_ID) {
     // A service principal owns no org — effective access adds nothing. Leave
     // effectiveReadOrgIds UNSET so reads fall back to its (empty) memberships.
@@ -104,6 +107,10 @@ export async function resolveCaller(user: SessionUser): Promise<AppCaller> {
       isPlatformAdmin: roles.includes('admin'),
     }
   }
+
+  // Real users: platform admin = owner OR admin-or-higher on the ROOT org.
+  // `roles` (the JWT platform-role string) is deliberately NOT consulted.
+  const isPlatformAdmin = await isRootOrgPlatformAdmin(user.id)
 
   const organizationIds = await getMemberOrgIds(user.id)
 
@@ -124,11 +131,20 @@ export async function resolveCaller(user: SessionUser): Promise<AppCaller> {
     effectiveReadOrgIds = Array.from(new Set([...organizationIds, ...ownedOrgIds]))
   }
 
+  // FFRNT-379 / S4 — `private` = creator/owner-only. Only when the release flag
+  // is on do we resolve the orgs the caller OWNS (the "owner-context" that may
+  // read a private app it did not create) and mark the caller so canRead/list
+  // apply the tightened rule. Flag off => both fields stay UNSET and reads are
+  // byte-identical to pre-S4.
+  const privateOwnerOnly = await isPrivateOwnerOnlyEnabled({ userId: user.id })
+  const ownedOrgIds = privateOwnerOnly ? await getOwnedOrgIds(user.id) : undefined
+
   return {
     userId: user.id,
     organizationIds,
     roles,
-    isPlatformAdmin: roles.includes('admin'),
+    isPlatformAdmin,
     effectiveReadOrgIds,
+    ...(privateOwnerOnly ? { privateOwnerOnly: true, ownedOrgIds } : {}),
   }
 }

@@ -10,6 +10,7 @@ import { prefixDtoIds } from '../identity/serializer'
 // database — see appHealth.ts for why a 404 is no longer 'healthy'.
 import { checkAppHealth, probeOrigin } from './appHealth'
 import { ROOT_ORG_ID } from '../migrations/015_seed_root_platform_organization'
+import { isRootOrgPlatformAdmin } from '../utils/platformAdmin'
 
 const router = express.Router()
 
@@ -192,9 +193,9 @@ function requireAppAction(action: 'update' | 'delete') {
           return next()
         }
       } else if (!app.organization_id) {
-        // Un-owned legacy app: only a platform admin may touch it.
-        const roles: string[] = req.user.roles || []
-        if (roles.includes('admin')) {
+        // Un-owned legacy app: only a platform admin (owner/admin of the ROOT
+        // org — a policy, not the `admin` role string) may touch it.
+        if (await isRootOrgPlatformAdmin(req.user.id)) {
           req.app_row = app
           return next()
         }
@@ -309,6 +310,28 @@ async function getEffectiveReadOrgIds(userId: string): Promise<string[]> {
   return Array.from(new Set([...memberOrgIds, ...ownedOrgIds]))
 }
 
+const PRIVATE_OWNER_ONLY_FLAG = 'fuzefront.app-registry.private-owner-only'
+
+/**
+ * FFRNT-379 / S4 — release flag, default OFF (fails to OFF on absent client or
+ * error: the prior behavior). Returns null when OFF (pre-S4 scoping), or the org
+ * ids the caller OWNS when ON (the owner-context allowed to read `private`).
+ */
+async function getPrivateOwnerScope(userId: string): Promise<string[] | null> {
+  const client = loadFlagsClient()
+  if (!client) return null
+  try {
+    const on = await client.getBooleanValue(PRIVATE_OWNER_ONLY_FLAG, false, {
+      environment: process.env.NODE_ENV === 'production' ? 'prod' : process.env.FLAG_ENV || 'local',
+      app: 'fuzefront-backend',
+      ...(userId ? { userId } : {}),
+    })
+    return on ? await getOwnedOrgIds(userId) : null
+  } catch {
+    return null
+  }
+}
+
 /**
  * Apply org/visibility scoping to an apps query for the given user.
  *
@@ -349,15 +372,41 @@ async function getEffectiveReadOrgIds(userId: string): Promise<string[]> {
  * predates that multi-tenant portal concept; only the core visibility/org
  * rule is kept in parity here.
  */
-function scopeAppsQuery(query: any, readOrgIds: string[]) {
+function scopeAppsQuery(
+  query: any,
+  readOrgIds: string[],
+  privateOwnerScope: string[] | null = null
+) {
   return query.where(function (this: any) {
     this.whereIn('apps.visibility', ['public', 'marketplace'])
-    if (readOrgIds.length > 0) {
-      this.orWhere((ownOrg: any) => {
-        ownOrg
-          .whereIn('apps.visibility', ['organization', 'private'])
-          .whereIn('apps.organization_id', readOrgIds)
-      })
+    if (privateOwnerScope === null) {
+      // pre-S4 (flag OFF): `private` is read like `organization`.
+      if (readOrgIds.length > 0) {
+        this.orWhere((ownOrg: any) => {
+          ownOrg
+            .whereIn('apps.visibility', ['organization', 'private'])
+            .whereIn('apps.organization_id', readOrgIds)
+        })
+      }
+    } else {
+      // FFRNT-379 / S4 (flag ON): `organization` stays org-wide; `private` is
+      // owner-only. This local table has no created_by column, so the creator
+      // arm of the production rule has no equivalent here — only the owner arm
+      // applies (strictly narrower, fail-closed).
+      if (readOrgIds.length > 0) {
+        this.orWhere((ownOrg: any) => {
+          ownOrg
+            .where('apps.visibility', 'organization')
+            .whereIn('apps.organization_id', readOrgIds)
+        })
+      }
+      if (privateOwnerScope.length > 0) {
+        this.orWhere((owned: any) => {
+          owned
+            .where('apps.visibility', 'private')
+            .whereIn('apps.organization_id', privateOwnerScope)
+        })
+      }
     }
   })
 }
@@ -370,7 +419,8 @@ router.get('/health', appsReadLimiter, authenticateToken, async (req: any, res) 
     const readOrgIds = await getEffectiveReadOrgIds(req.user.id)
     const apps = await scopeAppsQuery(
       db('apps').where('is_active', true),
-      readOrgIds
+      readOrgIds,
+      await getPrivateOwnerScope(req.user.id)
     ).orderBy('name')
 
     // Resolve same-origin remote entries against the origin this request
@@ -447,7 +497,8 @@ router.get('/', appsReadLimiter, authenticateToken, async (req: any, res) => {
     const readOrgIds = await getEffectiveReadOrgIds(req.user.id)
     const apps = await scopeAppsQuery(
       db('apps').where('is_active', true),
-      readOrgIds
+      readOrgIds,
+      await getPrivateOwnerScope(req.user.id)
     ).orderBy('name')
 
     // Get health status for all apps.

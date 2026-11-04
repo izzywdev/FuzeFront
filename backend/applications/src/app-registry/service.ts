@@ -103,6 +103,18 @@ export interface AppCaller {
    * back to `organizationIds` when it is absent.
    */
   effectiveReadOrgIds?: string[]
+  /**
+   * FFRNT-379 / S4 — set (true) by resolveCaller only when the
+   * `fuzefront.app-registry.private-owner-only` flag is ON. Absent/false =>
+   * pre-S4 behavior (`private` is read like `organization`).
+   */
+  privateOwnerOnly?: boolean
+  /**
+   * FFRNT-379 / S4 — org ids the caller OWNS (organizations.owner_id); the
+   * "owner-context" allowed to read a `private` app it did not create. Only
+   * populated alongside `privateOwnerOnly`.
+   */
+  ownedOrgIds?: string[]
 }
 
 const DEFAULT_LIMIT = 50
@@ -160,7 +172,12 @@ function rowToApp(row: any): AppRecord {
  *  - they are a platform admin (sees all), OR
  *  - visibility is public|marketplace (everyone), OR
  *  - visibility is organization AND the app's org is one the caller belongs to, OR
- *  - visibility is private AND the app's org is one the caller belongs to (owner org).
+ *  - visibility is private AND (flag fuzefront.app-registry.private-owner-only
+ *    OFF) the app's org is one the caller belongs to; or (flag ON, FFRNT-379 / S4)
+ *    the caller created the app and is still in its org, or OWNS its org.
+ * `platform` is NOT a visibility tier (owner ruling): platform-internal apps are
+ * root-org-owned `private` apps, which platform admins (root-org owner/admin)
+ * and the root-org owner read.
  * `organization_id` is NOT NULL on `apps` (see ROOT_ORG_ID's doc comment
  * above) — the `!app.organizationId` branch below is unreachable defensive
  * code, kept rather than deleted so a future regression on the DB
@@ -179,7 +196,19 @@ export function canRead(app: AppRecord, caller: AppCaller): boolean {
   // the "owner sees nothing" fix — and loses it the moment ownership changes.
   const readOrgIds = caller.effectiveReadOrgIds ?? caller.organizationIds
   const inOrg = readOrgIds.includes(app.organizationId)
-  if (visibility === 'organization' || visibility === 'private') return inOrg
+  if (visibility === 'organization') return inOrg
+  if (visibility === 'private') {
+    if (!caller.privateOwnerOnly) return inOrg // pre-S4 (flag OFF)
+    // FFRNT-379 / S4 — `private` = creator/owner-only WITHIN the owning org: the
+    // app's creator, or a caller who OWNS the owning org. NOT every member. A
+    // personal-account app is a personal org whose owner is its creator, so it
+    // falls out of the same rule. Fail closed: an unknown creator
+    // (created_by_user_id null) is readable only by the org owner/platform admin.
+    // The creator must STILL be in the owning org (a creator who left loses it);
+    // the org owner reads by ownership regardless of a membership row.
+    if ((caller.ownedOrgIds ?? []).includes(app.organizationId)) return true
+    return inOrg && !!app.createdByUserId && app.createdByUserId === caller.userId
+  }
   return false
 }
 
@@ -480,10 +509,32 @@ export class AppRegistryService {
             }
           })
           if (orgIds.length > 0) {
+            if (!caller.privateOwnerOnly) {
+              builder.orWhere(sub => {
+                sub
+                  .whereIn('visibility', ['organization', 'private'])
+                  .whereIn('organization_id', orgIds)
+              })
+            } else {
+              // FFRNT-379 / S4 — mirrors canRead exactly: `organization` stays
+              // org-wide; `private` is the creator (still in the org) or the
+              // org's owner only.
+              builder.orWhere(sub => {
+                sub.where('visibility', 'organization').whereIn('organization_id', orgIds)
+              })
+              builder.orWhere(sub => {
+                sub
+                  .where('visibility', 'private')
+                  .whereIn('organization_id', orgIds)
+                  .where('created_by_user_id', caller.userId)
+              })
+            }
+          }
+          if (caller.privateOwnerOnly && (caller.ownedOrgIds ?? []).length > 0) {
             builder.orWhere(sub => {
               sub
-                .whereIn('visibility', ['organization', 'private'])
-                .whereIn('organization_id', orgIds)
+                .where('visibility', 'private')
+                .whereIn('organization_id', caller.ownedOrgIds as string[])
             })
           }
         })

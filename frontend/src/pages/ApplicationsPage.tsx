@@ -28,16 +28,10 @@ import { MobileDistributionLinks } from '../components/MobileDistributionLinks'
 function ApplicationsPage() {
   const navigate = useNavigate()
   const { apps, loading, error } = useRegisteredApps()
-  const { user } = useCurrentUser()
   const { activeOrganizationId } = useOrganizations()
   const isPersonalContext = activeOrganizationId === null
-  const isEmployee = isEmployeeUser(user?.roles)
 
   const visibleApps = apps.filter(app => {
-    if (app.slug === 'executive') {
-      if (isPersonalContext) return false
-      if (activeOrganizationId === ROOT_ORG_ID && !isEmployee) return false
-    }
     const manifest = app.manifest as any
     const orgRequired =
       manifest?.requiresOrgContext === true ||

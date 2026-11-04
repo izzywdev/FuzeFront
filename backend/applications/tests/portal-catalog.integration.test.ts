@@ -81,12 +81,19 @@ beforeAll(async () => {
   await c.connect()
   await c.query('CREATE EXTENSION IF NOT EXISTS pgcrypto')
   await c.query('CREATE TABLE users (id uuid PRIMARY KEY DEFAULT gen_random_uuid())')
-  await c.query('CREATE TABLE organizations (id uuid PRIMARY KEY DEFAULT gen_random_uuid())')
+  await c.query(
+    'CREATE TABLE organizations (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), owner_id uuid, is_active boolean NOT NULL DEFAULT true)'
+  )
   await c.query(
     'CREATE TABLE portals (id varchar(44) PRIMARY KEY, organization_id uuid, is_root boolean NOT NULL DEFAULT false)'
   )
   await c.query('CREATE TABLE organization_memberships (user_id uuid, organization_id uuid, status varchar, role varchar)')
   await c.query(`INSERT INTO organizations (id) VALUES ('${ROOT_ORG_ID}'), ('${TENANT_ORG_ID}'), ('${OTHER_ORG_ID}')`)
+  // FFRNT-379: platform admin = admin-or-higher on the ROOT org (not the role string).
+  await c.query(
+    `INSERT INTO organization_memberships (user_id, organization_id, status, role)
+     VALUES ('10000000-0000-0000-0000-0000000000a3', '${ROOT_ORG_ID}', 'active', 'admin')`
+  )
   await c.query(
     `INSERT INTO portals (id, organization_id, is_root) VALUES
        ('${ROOT_PORTAL_ID}', '${ROOT_ORG_ID}', true),
