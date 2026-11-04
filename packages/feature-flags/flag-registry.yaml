@@ -194,6 +194,51 @@ flags:
     web_exposed: true
     jira: ~
 
+  - key: fuzefront.account-security.password-reset
+    type: release
+    default: false
+    description: >
+      Gates the password reset / change-password / set-first-password UI
+      (@fuzefront/account-security-ui PasswordResetFlow, ChangePasswordFlow,
+      SetPasswordFlow). Ships dark; flag OFF leaves /account/security/password
+      unchanged (not exposed).
+    owner: frontend-engineer
+    removal_criterion: When the password flows are GA and enabled for 100% of users.
+    gates:
+      - /account/security/password (change / set first password)
+    web_exposed: true
+    jira: FFRNT-140
+
+  # ---------------------------------------------------------------------------
+  # fuzefront.security.*
+  # ---------------------------------------------------------------------------
+  - key: fuzefront.security.mfa-management
+    type: release
+    default: false
+    description: >
+      Gates the MFA management UI (overview, authenticator and SMS enrolment,
+      recovery codes, remove factor) and the desktop login step-up. SMS
+      enrolment additionally honest-degrades on the server's mfa.types.
+    owner: frontend-engineer
+    removal_criterion: When MFA management is GA and enabled for 100% of users.
+    gates:
+      - /account/security/mfa* routes and the LoginPage MFA step-up
+    web_exposed: true
+    jira: FFRNT-141
+
+  - key: fuzefront.security.mfa-stepup-mobile
+    type: release
+    default: false
+    description: >
+      Gates the mobile (375px / Android TWA) MFA step-up, phone contact
+      verification and the combined security-status panel.
+    owner: frontend-engineer
+    removal_criterion: When mobile step-up is GA and enabled for 100% of users.
+    gates:
+      - LoginPage mobile step-up, /account/security/verify/phone, the mobile security-status panel
+    web_exposed: true
+    jira: FFRNT-362
+
   # ---------------------------------------------------------------------------
   # fuzefront.billing.*
   # ---------------------------------------------------------------------------

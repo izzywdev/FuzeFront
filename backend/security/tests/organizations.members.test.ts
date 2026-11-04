@@ -672,6 +672,13 @@ describe('Organization Members', () => {
   // ─── PUT /:id/members/:memberId ───────────────────────────────────────────
 
   describe('PUT /api/organizations/:id/members/:memberId', () => {
+    beforeEach(() => {
+      // The role update, the re-read and the authorization-changed outbox event
+      // run in ONE transaction; hand the callback the table-dispatching mock so
+      // the per-test chains apply (and the handler gets the re-read row back).
+      dbMock.transaction.mockImplementation(async (cb: any) => cb(dbMock))
+    })
+
     it('returns 200 with updated membership when role is changed', async () => {
       const adminMembershipChain = makeDbQuery({
         id: MEMBER_ID, role: 'owner', user_id: USER_ID, organization_id: ORG_ID, status: 'active',
@@ -809,9 +816,10 @@ describe('Organization Members', () => {
 
       expect(res.status).toBe(200)
       expect(res.body.message).toMatch(/Member removed/i)
-      // The removal enqueues identity.membership.removed in the same txn.
+      // The removal enqueues identity.membership.removed AND the tenant-scoped
+      // identity.authorization.changed cache-invalidation signal in the same txn.
       expect(dbMock.transaction).toHaveBeenCalledTimes(1)
-      expect(enqueueEventMock).toHaveBeenCalledTimes(1)
+      expect(enqueueEventMock).toHaveBeenCalledTimes(2)
       const [trxArg, topic, payload, correlationId] = enqueueEventMock.mock.calls[0]
       expect(trxArg).toBe(dbMock)
       expect(topic).toBe(TOPICS.IDENTITY_MEMBERSHIP_REMOVED)
@@ -821,6 +829,14 @@ describe('Organization Members', () => {
         role: 'member',
       })
       expect(correlationId).toMatch(/^identity-membership-removed-[0-9a-f-]{36}$/)
+      const [authzTrx, authzTopic, authzPayload] = enqueueEventMock.mock.calls[1]
+      expect(authzTrx).toBe(dbMock)
+      expect(authzTopic).toBe(TOPICS.IDENTITY_AUTHORIZATION_CHANGED)
+      expect(authzPayload).toEqual({
+        organizationId: ORG_ID,
+        subjectId: 'other-user',
+        change: 'membership_removed',
+      })
     })
 
     it('does NOT enqueue a removed event when the owner membership is protected (403)', async () => {
@@ -847,24 +863,28 @@ describe('Organization Members', () => {
       expect(enqueueEventMock).not.toHaveBeenCalled()
     })
 
-    it('returns 409 when trying to remove the LAST owner', async () => {
+    // The route protects EVERY owner membership (403), which is strictly
+    // stronger than the "never remove the LAST owner" invariant: no owner —
+    // last or not — can be removed through this endpoint, so an org cannot
+    // lose its last owner here. (The earlier 409 / countActiveOwners variants of
+    // these tests described a guard this route no longer has; the 403 contract
+    // is the one the handler, the PUT sibling and the test above enforce.)
+    it.each([
+      ['the LAST owner', 'the-owner'],
+      ['a non-last owner', 'other-owner'],
+    ])('refuses to remove %s with 403 and enqueues nothing', async (_label, ownerUserId) => {
       const adminMembershipChain = makeDbQuery({
         id: MEMBER_ID, role: 'owner', user_id: USER_ID, organization_id: ORG_ID, status: 'active',
       })
-      const ownerMembership = {
-        id: TARGET_MEMBER_ID, role: 'owner', user_id: 'the-owner', organization_id: ORG_ID,
-      }
-      const targetChain = makeDbQuery(ownerMembership)
-      // countActiveOwners → 1: this is the only owner, so removal is refused.
-      const ownerCountChain = makeDbQuery({ count: '1' })
+      const targetChain = makeDbQuery({
+        id: TARGET_MEMBER_ID, role: 'owner', user_id: ownerUserId, organization_id: ORG_ID,
+      })
 
       let membershipCallCount = 0
       dbMock.mockImplementation((table: string) => {
         if (table === 'organization_memberships') {
           membershipCallCount++
-          if (membershipCallCount === 1) return adminMembershipChain
-          if (membershipCallCount === 2) return targetChain
-          return ownerCountChain
+          return membershipCallCount === 1 ? adminMembershipChain : targetChain
         }
         return makeDbQuery(null)
       })
@@ -872,39 +892,10 @@ describe('Organization Members', () => {
       const res = await request(app)
         .delete(`/api/organizations/${ORG_ID}/members/${TARGET_MEMBER_ID}`)
 
-      expect(res.status).toBe(409)
-      expect(res.body.error).toMatch(/last owner/i)
-    })
-
-    it('removes a non-last owner when another owner remains → 200', async () => {
-      const adminMembershipChain = makeDbQuery({
-        id: MEMBER_ID, role: 'owner', user_id: USER_ID, organization_id: ORG_ID, status: 'active',
-      })
-      const ownerMembership = {
-        id: TARGET_MEMBER_ID, role: 'owner', user_id: 'other-owner', organization_id: ORG_ID,
-      }
-      const targetChain = makeDbQuery(ownerMembership)
-      // countActiveOwners → 2: a second owner remains, so removal is allowed.
-      const ownerCountChain = makeDbQuery({ count: '2' })
-      const deleteChain = { where: jest.fn().mockReturnThis(), delete: jest.fn().mockResolvedValue(1) }
-
-      let membershipCallCount = 0
-      dbMock.mockImplementation((table: string) => {
-        if (table === 'organization_memberships') {
-          membershipCallCount++
-          if (membershipCallCount === 1) return adminMembershipChain
-          if (membershipCallCount === 2) return targetChain
-          if (membershipCallCount === 3) return ownerCountChain
-          return deleteChain
-        }
-        return makeDbQuery(null)
-      })
-
-      const res = await request(app)
-        .delete(`/api/organizations/${ORG_ID}/members/${TARGET_MEMBER_ID}`)
-
-      expect(res.status).toBe(200)
-      expect(res.body.message).toMatch(/Member removed/i)
+      expect(res.status).toBe(403)
+      expect(res.body.error).toMatch(/cannot remove the organization owner/i)
+      expect(targetChain.delete).not.toHaveBeenCalled()
+      expect(enqueueEventMock).not.toHaveBeenCalled()
     })
 
     it('returns 403 when caller is not admin or owner', async () => {

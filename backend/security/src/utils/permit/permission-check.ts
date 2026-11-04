@@ -70,7 +70,22 @@ export async function bulkCheckPermissions(
       { checkCount: checks.length },
       'permit bulk permission check completed'
     )
-    return results
+    // Fail closed AND index-aligned: a missing/short engine response (e.g. the
+    // CI no-op Permit client resolving `undefined`) must never surface as a
+    // non-array or let a caller index past the end. Only a literal `true`
+    // at the matching index counts as an allow.
+    if (!Array.isArray(results) || results.length !== checks.length) {
+      // Not a policy result: a half-ready/failed PDP. Surface it above DEBUG so
+      // an authz outage is distinguishable from genuine denies.
+      logger.warn(
+        {
+          checkCount: checks.length,
+          resultCount: Array.isArray(results) ? results.length : null,
+        },
+        'permit bulk permission check returned a malformed/short response - denying unmatched checks (fail closed)'
+      )
+    }
+    return checks.map((_, i) => Array.isArray(results) && results[i] === true)
   } catch (error) {
     logger.error(
       { err: error, checkCount: checks.length },

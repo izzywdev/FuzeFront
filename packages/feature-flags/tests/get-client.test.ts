@@ -85,6 +85,10 @@ describe('WEB_EXPOSED_FLAGS catalog', () => {
     const keys = WEB_EXPOSED_FLAGS.map(f => f.key);
     expect(keys).toContain('fuzefront.account-security.hub');
     expect(keys).toContain('fuzefront.billing.invoice-history');
+    // FFRNT-140/141/362 account-security flows are browser-gated via useFlag().
+    expect(keys).toContain('fuzefront.account-security.password-reset');
+    expect(keys).toContain('fuzefront.security.mfa-management');
+    expect(keys).toContain('fuzefront.security.mfa-stepup-mobile');
     // FF-EPIC-17 identity UI flags must be web-exposed, or flipping them in
     // Unleash leaves the browser UI dark (GET /api/flags never discloses them).
     expect(keys).toContain('fuzefront.identity.personal-context');

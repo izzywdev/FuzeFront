@@ -11,6 +11,7 @@ import { SetPasswordBanner } from '../hub/SetPasswordBanner'
 import { LoadErrorRetry } from '../hub/LoadErrorRetry'
 import { createAccountSecurityClient } from '../../api/securityClient'
 import { HttpError } from '../../api/http'
+import { useInFlight } from '../common/flowKit'
 import { providerDisplayName } from './providers'
 import type { AccountSecurityClient, IdentityConnections, SocialProvider } from '../../types'
 
@@ -88,6 +89,7 @@ function ConnectedAccountsPanelInner({
 }: ConnectedAccountsPanelProps) {
   const { messages: m, t, dir } = useAccountSecurityI18n()
   const [state, setState] = useState<LoadState>({ status: 'loading' })
+  const inFlight = useInFlight()
   const [connectState, setConnectState] = useState<ConnectState>(
     errorProvider ? { status: 'link-failed', provider: errorProvider } : { status: 'idle' }
   )
@@ -122,7 +124,7 @@ function ConnectedAccountsPanelInner({
   }, [])
 
   const handleConfirmConnect = useCallback(
-    async (provider: SocialProvider) => {
+    (provider: SocialProvider) => inFlight(async () => {
       if (!api.linkProvider) return
       try {
         const { redirectUrl } = await api.linkProvider(provider)
@@ -134,8 +136,8 @@ function ConnectedAccountsPanelInner({
           setConnectState({ status: 'link-failed', provider })
         }
       }
-    },
-    [api, navigate]
+    }),
+    [api, navigate, inFlight]
   )
 
   const handleCancelConnect = useCallback(() => setConnectState({ status: 'idle' }), [])

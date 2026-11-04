@@ -84,7 +84,24 @@ describe('#750 — nothing inserts a reference to an unverified root organizatio
   })
 
   describe('migration 015 (root-membership backfill + personal-org reclassify)', () => {
-    it('skips the backfill when the root organization does not exist', async () => {
+    it('skips the backfill when no platform root organization exists', async () => {
+      // A non-platform org is not a root: nothing resolves, so nothing is
+      // inserted (an unverified reference would be a 23503 crash-loop, #750).
+      const { knex, raws } = makeKnex({
+        users: [{ id: 'user-1' }],
+        organizations: [{ id: 'some-customer-org', slug: 'acme', type: 'organization' }],
+      })
+
+      await migration015.up(knex)
+
+      expect(membershipInserts(raws)).toHaveLength(0)
+    })
+
+    it('backfills against an ADOPTED platform org when ROOT_ORG_ID has no row (2026-08-16 P1 fix)', async () => {
+      // 015 resolves the root org like ensureRootPortal(): ROOT_ORG_ID if
+      // present, else the oldest type='platform' row. Migration 014 can adopt a
+      // platform org under a different id, so the backfill must target THAT
+      // id — hardcoding ROOT_ORG_ID is the 23503 crash-loop this guards.
       const { knex, raws } = makeKnex({
         users: [{ id: 'user-1' }],
         organizations: [{ id: 'legacy-platform-id', slug: 'legacy', type: 'platform' }],
@@ -92,7 +109,9 @@ describe('#750 — nothing inserts a reference to an unverified root organizatio
 
       await migration015.up(knex)
 
-      expect(membershipInserts(raws)).toHaveLength(0)
+      const inserts = membershipInserts(raws)
+      expect(inserts).toHaveLength(1)
+      expect(inserts[0].bindings).toEqual(['legacy-platform-id', 'legacy-platform-id'])
     })
 
     it('2026-08-23 AMENDMENT: also SKIPS the personal-org reclassify when the backfill is skipped', async () => {

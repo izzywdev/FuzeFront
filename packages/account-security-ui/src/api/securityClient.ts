@@ -4,10 +4,17 @@
  */
 import { HttpClient, type HttpClientOptions } from './http'
 import type {
-  AccountSecurityClient,
   AuthMethods,
+  FullAccountSecurityClient,
   IdentityConnections,
+  MfaChallengeAck,
+  MfaEnrollResult,
+  MfaFactor,
+  MfaRecoveryVerifyRequest,
+  MfaSession,
+  RecoveryCodesStatusResult,
   SocialLinkStart,
+  VerificationStatus,
 } from '../types'
 
 const BASE = '/api/v1/security'
@@ -19,7 +26,7 @@ interface SessionsResponse {
 
 export function createAccountSecurityClient(
   opts: HttpClientOptions = {}
-): AccountSecurityClient {
+): FullAccountSecurityClient {
   const http = new HttpClient(opts)
   return {
     getConnections() {
@@ -49,6 +56,68 @@ export function createAccountSecurityClient(
       // Contract: POST /v1/security/password (packages/security/openapi.yaml).
       // Rejects with HttpError(status 409) if a password already exists.
       return http.post<IdentityConnections>(`${BASE}/password`, { newPassword })
+    },
+
+    // ── Password reset / change (FFRNT-140) ─────────────────────────────────
+    async requestPasswordReset(email) {
+      // Contract: POST /session/password/reset-request — ALWAYS 202 (no enumeration).
+      await http.post(`${BASE}/session/password/reset-request`, { email })
+    },
+    async confirmPasswordReset(token, newPassword) {
+      // Contract: POST /session/password/reset-confirm — 200 { reset: true } | 400.
+      await http.post(`${BASE}/session/password/reset-confirm`, { token, newPassword })
+    },
+    async changePassword(currentPassword, newPassword) {
+      // Contract (backend #1555): POST /v1/security/password/change { currentPassword, newPassword }
+      // → 204 | 400 INVALID_CREDENTIALS (wrong current) | 422 PASSWORD_POLICY | 409 NO_PASSWORD.
+      await http.post(`${BASE}/password/change`, { currentPassword, newPassword })
+    },
+
+    // ── MFA factor management (FFRNT-141) ───────────────────────────────────
+    async listFactors() {
+      const res = await http.get<{ items: MfaFactor[] }>(`${BASE}/mfa/factors`)
+      return Array.isArray(res?.items) ? res.items : []
+    },
+    enrollFactor(req) {
+      return http.post<MfaEnrollResult>(`${BASE}/mfa/factors`, req)
+    },
+    activateFactor(factorId, code) {
+      return http.post<MfaFactor>(`${BASE}/mfa/factors/${encodeURIComponent(factorId)}/activate`, { code })
+    },
+    async removeFactor(factorId) {
+      await http.delete(`${BASE}/mfa/factors/${encodeURIComponent(factorId)}`)
+    },
+    async regenerateRecoveryCodes() {
+      const res = await http.post<{ codes: string[] }>(`${BASE}/mfa/recovery-codes`)
+      return Array.isArray(res?.codes) ? res.codes : []
+    },
+
+    getRecoveryCodesStatus() {
+      return http.get<RecoveryCodesStatusResult>(`${BASE}/mfa/recovery-codes`)
+    },
+
+    // ── Login step-up (FFRNT-141 / FFRNT-362) ───────────────────────────────
+    challengeMfa(challengeId, factorId) {
+      return http.post<MfaChallengeAck>(`${BASE}/mfa/challenge`, { challengeId, factorId })
+    },
+    verifyMfa(challengeId, factorId, code) {
+      return http.post<MfaSession>(`${BASE}/mfa/verify`, { challengeId, factorId, code })
+    },
+
+    verifyRecoveryCode(challengeId, recoveryCode) {
+      const body: MfaRecoveryVerifyRequest = { challengeId, recoveryCode }
+      return http.post<MfaSession>(`${BASE}/mfa/verify`, body)
+    },
+
+    // ── Contact verification (FFRNT-362) ────────────────────────────────────
+    async startPhoneVerification(phone) {
+      await http.post(`${BASE}/verify/phone/start`, { phone })
+    },
+    confirmPhoneVerification(phone, code) {
+      return http.post<VerificationStatus>(`${BASE}/verify/phone/confirm`, { phone, code })
+    },
+    getVerificationStatus() {
+      return http.get<VerificationStatus>(`${BASE}/verify/status`)
     },
   }
 }

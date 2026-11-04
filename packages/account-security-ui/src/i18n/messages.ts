@@ -1,5 +1,7 @@
+import type { FlowMessages } from './flows/en'
+
 /** Message contract for the account-security hub. `en` is the complete base. */
-export interface AccountSecurityMessages {
+export interface AccountSecurityMessages extends FlowMessages {
   page: {
     title: string
     subtitle: string
@@ -90,4 +92,15 @@ export interface AccountSecurityMessages {
     alreadyLinkedTitle: string
     alreadyLinkedText: string
   }
+}
+
+type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K] }
+
+/**
+ * A non-base locale: the legacy hub groups are complete, the flow groups
+ * (password / reset / mfa / stepUp / contact / securityStatus) may be a
+ * deep-partial — the provider falls back to `en` for any missing string.
+ */
+export type LocaleMessages = Omit<AccountSecurityMessages, keyof FlowMessages> & {
+  [K in keyof FlowMessages]?: DeepPartial<FlowMessages[K]>
 }

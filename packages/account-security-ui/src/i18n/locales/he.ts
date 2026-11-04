@@ -1,7 +1,8 @@
-import type { AccountSecurityMessages } from '../messages'
+import type { LocaleMessages } from '../messages'
+import { flowsHe } from '../flows/he'
 
 /** Hebrew (RTL) locale — exercises the RTL mirror path via logical properties. */
-export const he: AccountSecurityMessages = {
+export const he: LocaleMessages = {
   page: {
     title: 'אבטחה',
     subtitle: 'נהל/י כיצד את/ה מתחבר/ת ושמור/י על חשבונך מאובטח.',
@@ -102,4 +103,5 @@ export const he: AccountSecurityMessages = {
     alreadyLinkedTitle: '{provider} כבר מקושר/ת',
     alreadyLinkedText: 'ספק זה כבר נמצא בין הדרכים שבהן את/ה מתחבר/ת.',
   },
+  ...flowsHe,
 }

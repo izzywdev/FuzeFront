@@ -264,6 +264,7 @@ POST /api/v1/billing/webhooks/{}  # billing-service: webhook route exists but sc
 GET /api/v1/security/broker/clients/{}  # security: broker client lookup; planned feature, not yet implemented
 POST /api/v1/security/broker/handoff  # security: broker handoff; planned feature, not yet implemented
 POST /api/v1/security/broker/token-exchange  # security: broker token exchange; planned feature, not yet implemented
+GET /api/v1/security/mfa/recovery-codes  # security: recovery-code status (contract 1.3.0, contract-first freeze); backend-engineer implements next — REMOVE this line in that PR
 DELETE /custom-hostnames/{}  # custom-hostname-api: route exists but scanner cannot find Express handler
 GET /custom-hostnames/{}  # custom-hostname-api: route exists but scanner cannot find Express handler
 GET /healthz  # custom-hostname-api: healthz handler not an Express route; infra-level
