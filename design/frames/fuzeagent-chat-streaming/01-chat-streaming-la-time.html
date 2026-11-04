@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FuzeAgent — 01 Chat Streaming LA Time</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  body {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    margin: 0;
+    padding: 0;
+  }
+  .wrap {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: var(--space-8) var(--space-6) var(--space-16);
+  }
+  .crumb {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    margin-bottom: var(--space-4);
+  }
+  .crumb a { color: var(--cyan-400); text-decoration: none; }
+  .crumb a:hover { text-decoration: underline; }
+  h1 {
+    font-family: var(--font-display);
+    font-size: var(--text-xl);
+    letter-spacing: var(--tracking-display);
+    margin: 0 0 var(--space-2);
+  }
+  .lead {
+    color: var(--text-secondary);
+    margin: 0 0 var(--space-8);
+    max-width: 68ch;
+  }
+  .workspace {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-height: 520px;
+  }
+  .top-bar {
+    background: var(--bg-tertiary);
+    border-bottom: 1px solid var(--border-color);
+    padding: var(--space-4) var(--space-6);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .agent-info {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+  }
+  .avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-lg);
+    background: var(--seam);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-weight: 700;
+    font-size: var(--text-sm);
+  }
+  .agent-name {
+    font-weight: 600;
+    font-size: var(--text-sm);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .badge {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    padding: 2px 8px;
+    border-radius: var(--radius-pill);
+    background: rgba(110, 92, 255, 0.15);
+    color: #a78bfa;
+    border: 1px solid rgba(110, 92, 255, 0.35);
+  }
+  .pill {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    padding: 2px 8px;
+    border-radius: var(--radius-pill);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-wide);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .pill.running {
+    color: var(--success-color);
+    background: rgba(52, 211, 153, 0.12);
+    border: 1px solid rgba(52, 211, 153, 0.35);
+  }
+  .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: pulse 2s infinite ease-in-out;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.85); }
+  }
+  .chat-stream {
+    flex: 1;
+    padding: var(--space-6);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-6);
+  }
+  .msg-row {
+    display: flex;
+    gap: var(--space-3);
+    max-width: 85%;
+  }
+  .msg-row.user {
+    align-self: flex-end;
+    flex-direction: row-reverse;
+  }
+  .msg-row.assistant {
+    align-self: flex-start;
+  }
+  .bubble {
+    padding: var(--space-4) var(--space-5);
+    border-radius: var(--radius-xl);
+    font-size: var(--text-sm);
+    line-height: 1.6;
+    position: relative;
+  }
+  .bubble.user {
+    background: var(--accent-color);
+    color: #fff;
+    border-bottom-right-radius: 4px;
+  }
+  .bubble.assistant {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    border-bottom-left-radius: 4px;
+  }
+  .bubble.assistant.streaming {
+    border-color: rgba(110, 92, 255, 0.6);
+    box-shadow: 0 0 16px rgba(110, 92, 255, 0.15);
+  }
+  .bubble.assistant.streaming::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; height: 2px;
+    background: var(--seam);
+  }
+  .time-card {
+    margin-top: var(--space-3);
+    padding: var(--space-4);
+    background: var(--bg-quaternary);
+    border: 1px solid rgba(110, 92, 255, 0.35);
+    border-radius: var(--radius-lg);
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    position: relative;
+    overflow: hidden;
+  }
+  .time-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; bottom: 0; width: 3px;
+    background: var(--seam);
+  }
+  .time-icon {
+    font-size: var(--text-2xl);
+  }
+  .time-main {
+    font-family: var(--font-mono);
+    font-size: var(--text-lg);
+    font-weight: 700;
+    color: #fff;
+  }
+  .time-sub {
+    font-size: var(--text-2xs);
+    color: var(--cyan-400);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+  }
+  .thought-box {
+    margin-bottom: var(--space-2);
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    color: var(--text-tertiary);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .thought-box .spinner {
+    width: 12px;
+    height: 12px;
+    border: 2px solid rgba(110, 92, 255, 0.2);
+    border-top-color: var(--accent-color);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .chat-input-bar {
+    background: var(--bg-tertiary);
+    border-top: 1px solid var(--border-color);
+    padding: var(--space-4) var(--space-6);
+  }
+  .quick-prompts {
+    display: flex;
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
+  }
+  .prompt-btn {
+    font-family: var(--font-sans);
+    font-size: var(--text-xs);
+    background: var(--bg-quaternary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-pill);
+    padding: var(--space-1) var(--space-3);
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+  .prompt-btn:hover {
+    color: var(--text-primary);
+    border-color: var(--accent-color);
+  }
+  .input-group {
+    display: flex;
+    gap: var(--space-3);
+  }
+  .input-field {
+    flex: 1;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: var(--space-3) var(--space-4);
+    color: var(--text-primary);
+    font-size: var(--text-sm);
+  }
+  .input-field:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 1px var(--accent-color);
+  }
+  .send-btn {
+    background: var(--seam);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-lg);
+    padding: var(--space-3) var(--space-6);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: var(--shadow-sm);
+  }
+  .notes {
+    margin-top: var(--space-8);
+    font-size: var(--text-sm);
+    color: var(--text-tertiary);
+  }
+  .notes code {
+    font-family: var(--font-mono);
+    color: var(--text-secondary);
+  }
+</style>
+</head>
+<body>
+<div class="wrap" data-frame="01-chat-streaming-la-time">
+  <div class="crumb"><a href="index.html">← All FuzeAgent Frames</a> · Flow 01</div>
+  <h1>Real-Time Chat Streaming — Los Angeles Time</h1>
+  <p class="lead">
+    Demonstrates active agent WebSocket streaming in response to <code>"What is the time now in LA?"</code>.
+    The response streams tokens in real-time with the signature fuse seam glowing border, thinking indicator,
+    and structured <code>TimeInZoneCard</code>.
+  </p>
+
+  <div class="workspace" data-chat-workspace>
+    <div class="top-bar">
+      <div class="agent-info">
+        <div class="avatar">FA</div>
+        <div>
+          <div class="agent-name">
+            <span>DevOps Agent Assistant</span>
+            <span class="badge">claude-3-5-sonnet</span>
+          </div>
+          <div style="font-size: var(--text-2xs); color: var(--text-tertiary);">Session: sess-prod-la-time-8910</div>
+        </div>
+      </div>
+      <div>
+        <span class="pill running" data-pod-status="running">
+          <span class="dot"></span>
+          pod: agent-sbx-python-dev-prod (active)
+        </span>
+      </div>
+    </div>
+
+    <div class="chat-stream">
+      <!-- User message -->
+      <div class="msg-row user" data-message-role="user">
+        <div class="bubble user" data-msg-id="u-1">
+          What is the time now in LA?
+        </div>
+      </div>
+
+      <!-- Assistant streaming response -->
+      <div class="msg-row assistant" data-message-role="assistant">
+        <div class="avatar" style="width: 28px; height: 28px; font-size: 11px;">AI</div>
+        <div class="bubble assistant streaming" data-msg-id="a-1" data-stream-active="true">
+          <div class="thought-box">
+            <span class="spinner"></span>
+            <span>Querying timezone metadata for America/Los_Angeles (PDT)...</span>
+          </div>
+          <div>
+            The current time in <strong>Los Angeles, California</strong> is:
+          </div>
+
+          <div class="time-card" data-time-card>
+            <div class="time-icon">🕒</div>
+            <div>
+              <div class="time-main">01:55 AM PDT</div>
+              <div class="time-sub">America/Los_Angeles · Friday, October 16, 2026 · UTC-7</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="chat-input-bar">
+      <div class="quick-prompts">
+        <button class="prompt-btn" data-action="quick-prompt" data-prompt="time-la">🕒 Time in LA</button>
+        <button class="prompt-btn" data-action="quick-prompt" data-prompt="k8s-pods">🛡️ Pods Health</button>
+        <button class="prompt-btn" data-action="quick-prompt" data-prompt="build-status">🚀 Deploy Status</button>
+      </div>
+      <div class="input-group">
+        <input 
+          type="text" 
+          class="input-field" 
+          data-chat-input 
+          value="What is the time now in LA?" 
+          placeholder="Ask an agent or prompt a pod command..." 
+        />
+        <button class="send-btn" data-action="send-prompt">Stream Reply</button>
+      </div>
+    </div>
+  </div>
+
+  <p class="notes">
+    Test hooks: <code>[data-frame='01-chat-streaming-la-time']</code> · <code>[data-chat-workspace]</code> · 
+    <code>[data-message-role='assistant']</code> · <code>[data-time-card]</code> · <code>[data-action='send-prompt']</code>.
+    Adheres strictly to FuzeFront's token system and design system guidelines.
+  </p>
+</div>
+</body>
+</html>

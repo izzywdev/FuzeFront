@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FuzeAgent - Enlightening Multi-Tier Brain Context Pipeline</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #090D16;
+      --card-bg: #111827;
+      --border: #1F293D;
+      --text: #F1F5F9;
+      --text-muted: #94A3B8;
+      --accent: #38BDF8;
+      --accent-glow: rgba(56, 189, 248, 0.15);
+      --success: #10B981;
+      --purple: #8B5CF6;
+      --amber: #F59E0B;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
+    body { background: var(--bg); color: var(--text); padding: 32px; min-height: 100vh; }
+    .container { max-width: 1000px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
+    
+    .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 20px; }
+    .agent-badge { display: flex; align-items: center; gap: 14px; }
+    .avatar-preview { width: 48px; height: 48px; border-radius: 50%; border: 2px solid var(--accent); }
+    .agent-title { font-size: 18px; font-weight: 700; color: #FFF; }
+    .agent-subtitle { font-size: 13px; color: var(--text-muted); }
+    
+    /* Interactive Prompt Input */
+    .prompt-box {
+      background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px;
+      padding: 16px 20px; display: flex; gap: 12px; align-items: center;
+    }
+    .prompt-input {
+      flex: 1; background: transparent; border: none; color: #FFF; font-size: 15px; outline: none;
+    }
+    .btn-run {
+      background: linear-gradient(135deg, #0284C7, #6366F1); color: white; border: none;
+      border-radius: 8px; padding: 10px 20px; font-weight: 600; cursor: pointer; transition: transform 0.1s;
+    }
+    .btn-run:active { transform: scale(0.98); }
+
+    /* Pipeline Process Stepper */
+    .pipeline-container {
+      background: var(--card-bg); border: 1px solid var(--border); border-radius: 14px;
+      padding: 24px; display: flex; flex-direction: column; gap: 20px;
+    }
+    .step-card {
+      background: #0B1120; border: 1px solid #1E293B; border-radius: 10px;
+      padding: 16px 20px; display: flex; flex-direction: column; gap: 12px;
+      transition: all 0.3s;
+    }
+    .step-card.active { border-color: var(--accent); box-shadow: 0 0 20px var(--accent-glow); }
+    .step-card.ready { border-color: var(--success); }
+    
+    .step-header { display: flex; justify-content: space-between; align-items: center; }
+    .step-title { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px; }
+    .step-status { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; }
+    
+    /* 4-Tier Grid */
+    .tiers-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 6px; }
+    .tier-box {
+      background: #111827; border: 1px solid #1F293D; border-radius: 8px;
+      padding: 12px; display: flex; flex-direction: column; gap: 6px;
+    }
+    .tier-badge { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+    .tier-name { font-size: 12px; font-weight: 600; color: #E2E8F0; }
+    .tier-stat { font-size: 11px; color: var(--accent); font-family: 'JetBrains Mono', monospace; }
+
+    /* Graph Visualizer */
+    .graph-triples { display: flex; flex-direction: column; gap: 6px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #CBD5E1; }
+    .triple-item { background: #131C31; padding: 6px 12px; border-radius: 6px; border-left: 3px solid var(--purple); }
+
+    /* Ready Summary Bar */
+    .ready-banner {
+      background: rgba(16, 185, 129, 0.1); border: 1px solid var(--success); border-radius: 8px;
+      padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; color: #34D399; font-weight: 600; font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    
+    <!-- Header with Human Name & Role -->
+    <div class="header">
+      <div class="agent-badge">
+        <svg class="avatar-preview" viewBox="0 0 128 128">
+          <circle cx="64" cy="64" r="60" fill="#0284C7"/>
+          <circle cx="64" cy="50" r="22" fill="#FFFFFF"/>
+          <path d="M28 116 C28 88, 100 88, 100 116 Z" fill="#FFFFFF"/>
+        </svg>
+        <div>
+          <div class="agent-title">John <span style="font-weight:400; color:#94A3B8;">(Senior Backend Engineer)</span></div>
+          <div class="agent-subtitle">Active Brains: Agent Persona + Platform Squad + Cross-Backend + Global Org</div>
+        </div>
+      </div>
+      <div style="font-size: 12px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace;">
+        RAG Engine: pgvector + FuzeInfra Neo4j
+      </div>
+    </div>
+
+    <!-- User Input -->
+    <div class="prompt-box">
+      <input type="text" id="promptInput" class="prompt-input" value="How should we implement asyncpg connection pooling with zero trust auth in FastAPI?">
+      <button class="btn-run" onclick="simulatePipeline()">Run Multi-Tier RAG</button>
+    </div>
+
+    <!-- Enlightening Pipeline Visualizer -->
+    <div class="pipeline-container">
+      
+      <!-- Stage 1: Parallel Fetching Across 4 Tiers -->
+      <div class="step-card active" id="step1">
+        <div class="step-header">
+          <div class="step-title">
+            <span>🔍 Step 1: Hierarchical Parallel Fetching</span>
+          </div>
+          <span class="step-status" style="color:var(--accent);">4 TIERS IN PARALLEL (pgvector)</span>
+        </div>
+        <div class="tiers-grid">
+          <div class="tier-box">
+            <span class="tier-badge" style="color:#60A5FA;">Tier 4: Agent Brain</span>
+            <span class="tier-name">brain_agent_python_dev</span>
+            <span class="tier-stat">3 hits • max: 0.94 score</span>
+          </div>
+          <div class="tier-box">
+            <span class="tier-badge" style="color:#34D399;">Tier 3: Team Brain</span>
+            <span class="tier-name">brain_team_platform</span>
+            <span class="tier-stat">2 hits • max: 0.87 score</span>
+          </div>
+          <div class="tier-box">
+            <span class="tier-badge" style="color:#FBBF24;">Tier 2: Cross-Functional</span>
+            <span class="tier-name">brain_cross_backend</span>
+            <span class="tier-stat">4 hits • max: 0.96 score</span>
+          </div>
+          <div class="tier-box">
+            <span class="tier-badge" style="color:#C084FC;">Tier 1: Global Org</span>
+            <span class="tier-name">brain_org_global</span>
+            <span class="tier-stat">2 hits • max: 0.89 score</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stage 2: Neo4j GraphRAG Augmentation -->
+      <div class="step-card active" id="step2">
+        <div class="step-header">
+          <div class="step-title">
+            <span>🕸️ Step 2: Neo4j GraphRAG 2-Hop Traversal</span>
+          </div>
+          <span class="step-status" style="color:var(--purple);">BOLT: 7687 (FUZEINFRA)</span>
+        </div>
+        <div class="graph-triples">
+          <div class="triple-item">(FastAPI:Service) -[:CONNECTS_VIA]-> (asyncpg_pool:Component) -[:AUTHENTICATES_TO]-> (PostgreSQL:Database)</div>
+          <div class="triple-item">(PostgreSQL:Database) -[:ENFORCES]-> (ZeroTrustPolicy:Rule) -[:AUTHORED_BY]-> (GlobalSecurityTeam:Org)</div>
+        </div>
+      </div>
+
+      <!-- Stage 3: RRF & Distillation -->
+      <div class="step-card active" id="step3">
+        <div class="step-header">
+          <div class="step-title">
+            <span>⚡ Step 3: Reciprocal Rank Fusion & Token Distillation</span>
+          </div>
+          <span class="step-status" style="color:var(--amber);">3,420 / 4,000 TOKENS (BUDGET FIT)</span>
+        </div>
+        <div style="font-size: 13px; color: #94A3B8; line-height: 1.5;">
+          Merged 11 chunk embeddings with 2 graph traversal paths. Deduplicated overlapping snippets, prioritized agent-level coding conventions, and compressed context into 3,420 tokens.
+        </div>
+      </div>
+
+      <!-- Stage 4: Ready -->
+      <div class="ready-banner">
+        <span>✅ Context Ready! (Total Latency: 284ms • Confidence Score: 96.8%)</span>
+        <button class="btn-run" style="padding: 6px 14px; font-size: 12px;">Dispatched to LLM</button>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    function simulatePipeline() {
+      const banner = document.querySelector('.ready-banner');
+      banner.style.opacity = '0.4';
+      banner.querySelector('span').innerText = '⏳ Resolving 4 Brain tiers in parallel...';
+      setTimeout(() => {
+        banner.style.opacity = '1';
+        banner.querySelector('span').innerText = '✅ Context Ready! (Total Latency: 298ms • Confidence Score: 97.2%)';
+      }, 350);
+    }
+  </script>
+</body>
+</html>

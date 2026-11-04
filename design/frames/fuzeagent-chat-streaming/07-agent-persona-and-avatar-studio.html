@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FuzeAgent - Agent Persona & Avatar Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #090D16;
+      --card-bg: #111827;
+      --border: #1F293D;
+      --text: #F1F5F9;
+      --text-muted: #94A3B8;
+      --accent: #38BDF8;
+      --accent-glow: rgba(56, 189, 248, 0.15);
+      --success: #10B981;
+      --purple: #8B5CF6;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
+    body { background: var(--bg); color: var(--text); padding: 32px; min-height: 100vh; }
+    .container { max-width: 1040px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+    
+    .header { display: flex; justify-content: space-between; align-items: flex-start; }
+    .title { font-size: 26px; font-weight: 700; color: #FFF; }
+    .subtitle { font-size: 14px; color: var(--text-muted); margin-top: 4px; }
+    
+    /* Persona Grid */
+    .persona-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+    .persona-card {
+      background: var(--card-bg); border: 1px solid var(--border); border-radius: 14px;
+      padding: 24px; display: flex; gap: 20px; align-items: flex-start; transition: transform 0.2s, border-color 0.2s;
+    }
+    .persona-card:hover { border-color: #334155; transform: translateY(-2px); }
+    
+    .avatar-wrapper { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+    .avatar-box {
+      width: 96px; height: 96px; border-radius: 50%; border: 2px solid var(--border);
+      overflow: hidden; background: #0B1120; display: flex; align-items: center; justify-content: center;
+      position: relative;
+    }
+    .avatar-box svg { width: 100%; height: 100%; }
+    
+    .btn-gen {
+      background: #1E293B; border: 1px solid #334155; color: #CBD5E1; border-radius: 6px;
+      padding: 4px 10px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;
+    }
+    .btn-gen:hover { background: #38BDF8; color: #0F172A; border-color: #38BDF8; }
+
+    .persona-details { flex: 1; display: flex; flex-direction: column; gap: 10px; }
+    .field-group { display: flex; flex-direction: column; gap: 4px; }
+    .field-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
+    
+    .input-row { display: flex; gap: 10px; }
+    .input-text {
+      background: #0B1120; border: 1px solid #1E293B; border-radius: 8px; color: #FFF;
+      padding: 8px 12px; font-size: 14px; outline: none; width: 100%; transition: border-color 0.2s;
+    }
+    .input-text:focus { border-color: var(--accent); }
+
+    .role-badge {
+      display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 6px;
+      font-size: 12px; font-weight: 600; background: rgba(56, 189, 248, 0.1); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.2);
+    }
+    
+    .save-bar { display: flex; justify-content: flex-end; margin-top: 6px; }
+    .btn-save {
+      background: #0284C7; color: white; border: none; border-radius: 6px;
+      padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer;
+    }
+    .btn-save:hover { background: #0369A1; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div>
+        <h1 class="title">Agent Persona & Avatar Studio</h1>
+        <p class="subtitle">Assign human names, customize role positions, and generate high-res SVG avatars persisted to S3 brains/{brain_id}/avatars/</p>
+      </div>
+    </div>
+
+    <div class="persona-grid">
+      
+      <!-- Persona 1: Python Dev -> John -->
+      <div class="persona-card" id="card-python-dev">
+        <div class="avatar-wrapper">
+          <div class="avatar-box" id="avatar-python-dev">
+            <svg viewBox="0 0 128 128">
+              <defs>
+                <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#3B82F6"/>
+                  <stop offset="100%" stop-color="#8B5CF6"/>
+                </linearGradient>
+              </defs>
+              <rect width="128" height="128" fill="url(#grad1)"/>
+              <circle cx="64" cy="50" r="22" fill="#FFFFFF" fill-opacity="0.9"/>
+              <path d="M28 116 C28 88, 100 88, 100 116 Z" fill="#FFFFFF" fill-opacity="0.9"/>
+              <rect x="76" y="76" width="44" height="44" rx="22" fill="#0F172A" stroke="#FFFFFF" stroke-width="2"/>
+              <text x="98" y="103" font-family="sans-serif" font-size="14" font-weight="700" fill="#38BDF8" text-anchor="middle">J</text>
+            </svg>
+          </div>
+          <button class="btn-gen" onclick="randomizeAvatar('python-dev')">↻ Regenerate</button>
+        </div>
+        <div class="persona-details">
+          <div class="field-group">
+            <label class="field-label">Human Name</label>
+            <input type="text" class="input-text" id="name-python-dev" value="John">
+          </div>
+          <div class="field-group">
+            <label class="field-label">Position / Role</label>
+            <input type="text" class="input-text" id="role-python-dev" value="Senior Backend Engineer">
+          </div>
+          <div style="font-size: 12px; color: var(--text-muted);">
+            S3 URI: <code>s3://fuzeagent-org-default/brains/brain_agent_python_dev/avatars/avatar.svg</code>
+          </div>
+          <div class="save-bar">
+            <button class="btn-save" onclick="alert('Saved to S3 & Persona store!')">Save Persona</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Persona 2: React Dev -> Sarah -->
+      <div class="persona-card" id="card-react-dev">
+        <div class="avatar-wrapper">
+          <div class="avatar-box" id="avatar-react-dev">
+            <svg viewBox="0 0 128 128">
+              <defs>
+                <linearGradient id="grad2" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#10B981"/>
+                  <stop offset="100%" stop-color="#14B8A6"/>
+                </linearGradient>
+              </defs>
+              <rect width="128" height="128" fill="url(#grad2)"/>
+              <circle cx="64" cy="50" r="22" fill="#FFFFFF" fill-opacity="0.9"/>
+              <path d="M28 116 C28 88, 100 88, 100 116 Z" fill="#FFFFFF" fill-opacity="0.9"/>
+              <rect x="76" y="76" width="44" height="44" rx="22" fill="#0F172A" stroke="#FFFFFF" stroke-width="2"/>
+              <text x="98" y="103" font-family="sans-serif" font-size="14" font-weight="700" fill="#34D399" text-anchor="middle">S</text>
+            </svg>
+          </div>
+          <button class="btn-gen" onclick="randomizeAvatar('react-dev')">↻ Regenerate</button>
+        </div>
+        <div class="persona-details">
+          <div class="field-group">
+            <label class="field-label">Human Name</label>
+            <input type="text" class="input-text" id="name-react-dev" value="Sarah">
+          </div>
+          <div class="field-group">
+            <label class="field-label">Position / Role</label>
+            <input type="text" class="input-text" id="role-react-dev" value="Frontend & UI Architect">
+          </div>
+          <div style="font-size: 12px; color: var(--text-muted);">
+            S3 URI: <code>s3://fuzeagent-org-default/brains/brain_cross_frontend/avatars/avatar.svg</code>
+          </div>
+          <div class="save-bar">
+            <button class="btn-save" onclick="alert('Saved to S3 & Persona store!')">Save Persona</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Persona 3: DevOps Agent -> Alex -->
+      <div class="persona-card" id="card-devops-agent">
+        <div class="avatar-wrapper">
+          <div class="avatar-box" id="avatar-devops-agent">
+            <svg viewBox="0 0 128 128">
+              <defs>
+                <linearGradient id="grad3" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#F59E0B"/>
+                  <stop offset="100%" stop-color="#EF4444"/>
+                </linearGradient>
+              </defs>
+              <rect width="128" height="128" fill="url(#grad3)"/>
+              <circle cx="64" cy="50" r="22" fill="#FFFFFF" fill-opacity="0.9"/>
+              <path d="M28 116 C28 88, 100 88, 100 116 Z" fill="#FFFFFF" fill-opacity="0.9"/>
+              <rect x="76" y="76" width="44" height="44" rx="22" fill="#0F172A" stroke="#FFFFFF" stroke-width="2"/>
+              <text x="98" y="103" font-family="sans-serif" font-size="14" font-weight="700" fill="#FBBF24" text-anchor="middle">A</text>
+            </svg>
+          </div>
+          <button class="btn-gen" onclick="randomizeAvatar('devops-agent')">↻ Regenerate</button>
+        </div>
+        <div class="persona-details">
+          <div class="field-group">
+            <label class="field-label">Human Name</label>
+            <input type="text" class="input-text" id="name-devops-agent" value="Alex">
+          </div>
+          <div class="field-group">
+            <label class="field-label">Position / Role</label>
+            <input type="text" class="input-text" id="role-devops-agent" value="DevOps & Cloud SRE">
+          </div>
+          <div style="font-size: 12px; color: var(--text-muted);">
+            S3 URI: <code>s3://fuzeagent-org-default/brains/brain_cross_devops/avatars/avatar.svg</code>
+          </div>
+          <div class="save-bar">
+            <button class="btn-save" onclick="alert('Saved to S3 & Persona store!')">Save Persona</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Persona 4: QA Agent -> Elena -->
+      <div class="persona-card" id="card-qa-agent">
+        <div class="avatar-wrapper">
+          <div class="avatar-box" id="avatar-qa-agent">
+            <svg viewBox="0 0 128 128">
+              <defs>
+                <linearGradient id="grad4" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#8B5CF6"/>
+                  <stop offset="100%" stop-color="#EC4899"/>
+                </linearGradient>
+              </defs>
+              <rect width="128" height="128" fill="url(#grad4)"/>
+              <circle cx="64" cy="50" r="22" fill="#FFFFFF" fill-opacity="0.9"/>
+              <path d="M28 116 C28 88, 100 88, 100 116 Z" fill="#FFFFFF" fill-opacity="0.9"/>
+              <rect x="76" y="76" width="44" height="44" rx="22" fill="#0F172A" stroke="#FFFFFF" stroke-width="2"/>
+              <text x="98" y="103" font-family="sans-serif" font-size="14" font-weight="700" fill="#F472B6" text-anchor="middle">E</text>
+            </svg>
+          </div>
+          <button class="btn-gen" onclick="randomizeAvatar('qa-agent')">↻ Regenerate</button>
+        </div>
+        <div class="persona-details">
+          <div class="field-group">
+            <label class="field-label">Human Name</label>
+            <input type="text" class="input-text" id="name-qa-agent" value="Elena">
+          </div>
+          <div class="field-group">
+            <label class="field-label">Position / Role</label>
+            <input type="text" class="input-text" id="role-qa-agent" value="Lead Quality & Test Engineer">
+          </div>
+          <div style="font-size: 12px; color: var(--text-muted);">
+            S3 URI: <code>s3://fuzeagent-org-default/brains/brain_org_global/avatars/avatar.svg</code>
+          </div>
+          <div class="save-bar">
+            <button class="btn-save" onclick="alert('Saved to S3 & Persona store!')">Save Persona</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    const gradients = [
+      ['#3B82F6', '#06B6D4'],
+      ['#10B981', '#34D399'],
+      ['#F59E0B', '#EF4444'],
+      ['#8B5CF6', '#EC4899'],
+      ['#6366F1', '#A855F7']
+    ];
+    function randomizeAvatar(agentId) {
+      const idx = Math.floor(Math.random() * gradients.length);
+      const [c1, c2] = gradients[idx];
+      const nameEl = document.getElementById('name-' + agentId);
+      const rawInitial = (nameEl ? nameEl.value.trim()[0] : '') || 'A';
+      const cleanChar = /^[a-zA-Z0-9]$/.test(rawInitial) ? rawInitial.toUpperCase() : 'A';
+      const box = document.getElementById('avatar-' + agentId);
+      if (!box) return;
+
+      const parser = new DOMParser();
+      const svgDoc = parser.parseFromString(`
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+          <defs>
+            <linearGradient id="grad_dyn_${agentId}" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="${c1}"/>
+              <stop offset="100%" stop-color="${c2}"/>
+            </linearGradient>
+          </defs>
+          <rect width="128" height="128" fill="url(#grad_dyn_${agentId})"/>
+          <circle cx="64" cy="50" r="22" fill="#FFFFFF" fill-opacity="0.9"/>
+          <path d="M28 116 C28 88, 100 88, 100 116 Z" fill="#FFFFFF" fill-opacity="0.9"/>
+          <rect x="76" y="76" width="44" height="44" rx="22" fill="#0F172A" stroke="#FFFFFF" stroke-width="2"/>
+          <text id="initial-text" x="98" y="103" font-family="sans-serif" font-size="14" font-weight="700" fill="${c1}" text-anchor="middle"></text>
+        </svg>
+      `, "image/svg+xml");
+      const textNode = svgDoc.getElementById('initial-text');
+      if (textNode) {
+        textNode.textContent = cleanChar;
+      }
+      box.replaceChildren(svgDoc.documentElement);
+    }
+  </script>
+</body>
+</html>

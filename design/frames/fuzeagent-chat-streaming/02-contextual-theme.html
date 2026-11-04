@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FuzeAgent — 02 Contextual Portal Theme</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  body {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    margin: 0;
+    padding: 0;
+  }
+  .wrap {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: var(--space-8) var(--space-6) var(--space-16);
+  }
+  .crumb {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    margin-bottom: var(--space-4);
+  }
+  .crumb a { color: var(--cyan-400); text-decoration: none; }
+  .crumb a:hover { text-decoration: underline; }
+  h1 {
+    font-family: var(--font-display);
+    font-size: var(--text-xl);
+    letter-spacing: var(--tracking-display);
+    margin: 0 0 var(--space-2);
+  }
+  .lead {
+    color: var(--text-secondary);
+    margin: 0 0 var(--space-8);
+    max-width: 68ch;
+  }
+  .comparison-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-6);
+  }
+  @media (max-width: 768px) {
+    .comparison-grid { grid-template-columns: 1fr; }
+  }
+  .theme-box {
+    border-radius: var(--radius-xl);
+    border: 1px solid var(--border-color);
+    padding: var(--space-5);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    box-shadow: var(--shadow-md);
+  }
+  .theme-box.dark-mode {
+    background: #0f131c;
+    color: #e7ecf5;
+    border-color: #232c3d;
+  }
+  .theme-box.light-mode {
+    background: #f6f8fb;
+    color: #0f172a;
+    border-color: #d8e0eb;
+  }
+  .theme-title {
+    font-family: var(--font-display);
+    font-size: var(--text-base);
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: var(--space-3);
+    border-bottom: 1px solid rgba(128,128,128,0.2);
+  }
+  .chip {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    padding: 2px 8px;
+    border-radius: var(--radius-pill);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+  }
+  .preview-panel {
+    border-radius: var(--radius-lg);
+    padding: var(--space-4);
+    position: relative;
+    overflow: hidden;
+  }
+  .dark-mode .preview-panel {
+    background: #141a26;
+    border: 1px solid #232c3d;
+  }
+  .light-mode .preview-panel {
+    background: #ffffff;
+    border: 1px solid #d8e0eb;
+  }
+  .preview-panel::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; height: 2px;
+    background: var(--seam);
+  }
+  .notes {
+    margin-top: var(--space-8);
+    font-size: var(--text-sm);
+    color: var(--text-tertiary);
+  }
+  .notes code {
+    font-family: var(--font-mono);
+    color: var(--text-secondary);
+  }
+</style>
+</head>
+<body>
+<div class="wrap" data-frame="02-contextual-theme">
+  <div class="crumb"><a href="index.html">← All FuzeAgent Frames</a> · Flow 02</div>
+  <h1>Contextual Dark/Light Portal Theme Adaptation</h1>
+  <p class="lead">
+    FuzeAgent dynamically inherits the host FuzeFront shell's theme via <code>data-theme</code> and local storage
+    mutation observers. The signature fuse seam gradient stays harmonious across both midnight dark and daylight modes.
+  </p>
+
+  <div class="comparison-grid" data-theme-comparison>
+    <!-- Dark Mode Frame -->
+    <div class="theme-box dark-mode" data-theme-card="dark">
+      <div class="theme-title">
+        <span>🌙 Dark Theme (Portal Default)</span>
+        <span class="chip" style="background: rgba(110,92,255,0.2); color: #a78bfa;">Active in Shell</span>
+      </div>
+      <div class="preview-panel">
+        <div style="font-size: var(--text-sm); font-weight: 600; margin-bottom: 4px;">Agent Chat Workspace</div>
+        <div style="font-size: var(--text-xs); color: #9fa9bc; margin-bottom: 12px;">Surface: #0f131c · Borders: #232c3d · Text: #e7ecf5</div>
+        <div style="padding: 8px 12px; border-radius: 8px; background: #1c2433; border: 1px solid #232c3d; font-size: 13px;">
+          What is the time now in LA?
+        </div>
+        <div style="margin-top: 10px; padding: 8px 12px; border-radius: 8px; background: rgba(110,92,255,0.12); border: 1px solid rgba(110,92,255,0.3); font-size: 13px; color: #29d3e6; font-family: var(--font-mono);">
+          🕒 01:55 AM PDT (Friday, Oct 16)
+        </div>
+      </div>
+    </div>
+
+    <!-- Light Mode Frame -->
+    <div class="theme-box light-mode" data-theme-card="light">
+      <div class="theme-title">
+        <span>☀️ Light Theme (Daylight Override)</span>
+        <span class="chip" style="background: rgba(2,132,199,0.15); color: #0284c7;">Contextual</span>
+      </div>
+      <div class="preview-panel">
+        <div style="font-size: var(--text-sm); font-weight: 600; margin-bottom: 4px; color: #0f172a;">Agent Chat Workspace</div>
+        <div style="font-size: var(--text-xs); color: #475569; margin-bottom: 12px;">Surface: #f6f8fb · Borders: #d8e0eb · Text: #0f172a</div>
+        <div style="padding: 8px 12px; border-radius: 8px; background: #e2e8f0; border: 1px solid #d8e0eb; font-size: 13px; color: #0f172a;">
+          What is the time now in LA?
+        </div>
+        <div style="margin-top: 10px; padding: 8px 12px; border-radius: 8px; background: rgba(110,92,255,0.08); border: 1px solid rgba(110,92,255,0.25); font-size: 13px; color: #6e5cff; font-family: var(--font-mono); font-weight: 600;">
+          🕒 01:55 AM PDT (Friday, Oct 16)
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="notes">
+    Test hooks: <code>[data-frame='02-contextual-theme']</code> · <code>[data-theme-comparison]</code> · 
+    <code>[data-theme-card='dark']</code> · <code>[data-theme-card='light']</code>.
+  </p>
+</div>
+</body>
+</html>

@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FuzeAgent - Multimodal S3 Resumable Uploader & Ingestion Tracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #090D16;
+      --card-bg: #111827;
+      --border: #1F293D;
+      --text: #F1F5F9;
+      --text-muted: #94A3B8;
+      --accent: #38BDF8;
+      --accent-glow: rgba(56, 189, 248, 0.15);
+      --success: #10B981;
+      --warning: #F59E0B;
+      --purple: #8B5CF6;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
+    body { background: var(--bg); color: var(--text); padding: 32px; min-height: 100vh; }
+    .container { max-width: 960px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
+    
+    .header { display: flex; justify-content: space-between; align-items: flex-start; }
+    .title { font-size: 24px; font-weight: 700; color: #FFF; }
+    .subtitle { font-size: 14px; color: var(--text-muted); margin-top: 4px; }
+    
+    /* Quota Card */
+    .quota-card {
+      background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px;
+      padding: 20px; display: flex; flex-direction: column; gap: 12px;
+    }
+    .quota-header { display: flex; justify-content: space-between; align-items: center; }
+    .quota-title { font-size: 14px; font-weight: 600; color: #CBD5E1; }
+    .quota-numbers { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--accent); }
+    .progress-bar-bg { width: 100%; height: 8px; background: #1E293B; border-radius: 4px; overflow: hidden; }
+    .progress-bar-fill { height: 100%; width: 24%; background: linear-gradient(90deg, var(--accent), var(--purple)); border-radius: 4px; transition: width 0.3s; }
+    .quota-details { display: flex; gap: 20px; font-size: 12px; color: var(--text-muted); }
+    
+    /* Upload Dropzone */
+    .dropzone {
+      border: 2px dashed #2A364F; border-radius: 14px; padding: 40px 24px;
+      text-align: center; cursor: pointer; transition: all 0.2s; background: rgba(17, 24, 39, 0.4);
+    }
+    .dropzone:hover { border-color: var(--accent); background: var(--accent-glow); }
+    .dropzone-icon { font-size: 36px; margin-bottom: 12px; }
+    .dropzone-title { font-size: 16px; font-weight: 600; color: #E2E8F0; }
+    .dropzone-desc { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+    .file-input { display: none; }
+    
+    /* Action Button */
+    .btn {
+      background: #0284C7; color: white; border: none; border-radius: 8px; padding: 10px 18px;
+      font-weight: 600; font-size: 14px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
+      transition: background 0.2s;
+    }
+    .btn:hover { background: #0369A1; }
+    
+    /* Ingestion File List */
+    .file-list { display: flex; flex-direction: column; gap: 14px; margin-top: 8px; }
+    .file-item {
+      background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px;
+      padding: 18px 20px; display: flex; flex-direction: column; gap: 12px;
+    }
+    .file-header { display: flex; justify-content: space-between; align-items: center; }
+    .file-info { display: flex; align-items: center; gap: 12px; }
+    .file-icon { font-size: 24px; }
+    .file-name { font-weight: 600; font-size: 14px; color: #F8FAFC; }
+    .file-meta { font-size: 12px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
+    
+    .file-actions { display: flex; gap: 8px; }
+    .btn-small {
+      background: #1E293B; border: 1px solid #334155; color: #CBD5E1; border-radius: 6px;
+      padding: 4px 10px; font-size: 12px; font-weight: 500; cursor: pointer;
+    }
+    .btn-small:hover { background: #334155; color: #FFF; }
+    
+    /* Pipeline Stage Badges */
+    .pipeline-stepper { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+    .badge {
+      display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px;
+      border-radius: 6px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .badge-done { background: rgba(16, 185, 129, 0.15); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.3); }
+    .badge-running { background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.3); animation: pulse 1.5s infinite; }
+    .badge-pending { background: #1E293B; color: #64748B; border: 1px solid #334155; }
+    
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div>
+        <h1 class="title">Multimodal S3 Ingestion & Resumable Uploader</h1>
+        <p class="subtitle">FuzeInfra-managed MinIO S3 object storage with Kafka pipelining and Neo4j graph indexing</p>
+      </div>
+      <button class="btn" onclick="document.getElementById('fileInput').click()">
+        <span>+ Select Files / Media</span>
+      </button>
+    </div>
+
+    <!-- Organization Storage Quota Card -->
+    <div class="quota-card">
+      <div class="quota-header">
+        <span class="quota-title">Organization S3 Bucket: <code style="color:#38BDF8">fuzeagent-org-default</code></span>
+        <span class="quota-numbers" id="quotaNumbers">1.22 GB / 5.00 GB (24.4%)</span>
+      </div>
+      <div class="progress-bar-bg">
+        <div class="progress-bar-fill" id="quotaBar"></div>
+      </div>
+      <div class="quota-details">
+        <span>Logical Bucket Prefix: <code>brains/brain_cross_backend/...</code></span>
+        <span>Storage Engine: MinIO S3 (FuzeInfra)</span>
+        <span>Configurable Quota: 5.00 GB</span>
+      </div>
+    </div>
+
+    <!-- Multi-select Dropzone -->
+    <div class="dropzone" onclick="document.getElementById('fileInput').click()">
+      <div class="dropzone-icon">📁</div>
+      <div class="dropzone-title">Drop documents, images, audio recordings, or videos here</div>
+      <div class="dropzone-desc">Supports multi-select with S3 multipart resumable uploading & HTTP Range streaming download</div>
+      <input type="file" id="fileInput" class="file-input" multiple onchange="handleFileSelect(event)">
+    </div>
+
+    <!-- Live Ingestion Tracking -->
+    <h3 style="font-size: 16px; font-weight: 600; margin-top: 10px;">Ingested Multimodal Assets & Background Lifecycle</h3>
+    <div class="file-list" id="fileList">
+      
+      <!-- Video Item -->
+      <div class="file-item">
+        <div class="file-header">
+          <div class="file-info">
+            <span class="file-icon">🎥</span>
+            <div>
+              <div class="file-name">backend-architecture-deepdive.mp4</div>
+              <div class="file-meta">142.8 MB • S3 Multipart Upload • brains/brain_cross_backend/media/</div>
+            </div>
+          </div>
+          <div class="file-actions">
+            <button class="btn-small">Pause</button>
+            <button class="btn-small">Download</button>
+          </div>
+        </div>
+        <div class="pipeline-stepper">
+          <span class="badge badge-done">✓ S3 Upload Complete</span>
+          <span class="badge badge-done">✓ Whisper Audio Transcribed</span>
+          <span class="badge badge-done">✓ Keyframes Extracted</span>
+          <span class="badge badge-running">⚡ pgvector (384-dim)</span>
+          <span class="badge badge-pending">Neo4j Graph Linking</span>
+        </div>
+      </div>
+
+      <!-- PDF Item -->
+      <div class="file-item">
+        <div class="file-header">
+          <div class="file-info">
+            <span class="file-icon">📄</span>
+            <div>
+              <div class="file-name">enterprise-zero-trust-guidelines.pdf</div>
+              <div class="file-meta">8.4 MB • Text + Tables • brains/brain_org_global/documents/</div>
+            </div>
+          </div>
+          <div class="file-actions">
+            <button class="btn-small">Download</button>
+          </div>
+        </div>
+        <div class="pipeline-stepper">
+          <span class="badge badge-done">✓ S3 Upload Complete</span>
+          <span class="badge badge-done">✓ Text & Table Extracted</span>
+          <span class="badge badge-done">✓ 42 Chunks Created</span>
+          <span class="badge badge-done">✓ pgvector Indexed</span>
+          <span class="badge badge-done">✓ Neo4j Graph Synced</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    function handleFileSelect(e) {
+      const files = Array.from(e.target.files);
+      if (!files.length) return;
+      const list = document.getElementById('fileList');
+      files.forEach(file => {
+        const item = document.createElement('div');
+        item.className = 'file-item';
+        const isMedia = file.type.startsWith('video') || file.type.startsWith('audio');
+        const icon = isMedia ? '🎬' : '📑';
+        item.innerHTML = `
+          <div class="file-header">
+            <div class="file-info">
+              <span class="file-icon">${icon}</span>
+              <div>
+                <div class="file-name">${file.name}</div>
+                <div class="file-meta">${(file.size / (1024*1024)).toFixed(2)} MB • S3 Resumable Upload • brains/brain_agent_python_dev/</div>
+              </div>
+            </div>
+            <div class="file-actions">
+              <button class="btn-small" onclick="this.innerText = this.innerText === 'Pause' ? 'Resume' : 'Pause'">Pause</button>
+              <button class="btn-small">Cancel</button>
+            </div>
+          </div>
+          <div class="pipeline-stepper">
+            <span class="badge badge-running">⚡ Resumable Uploading</span>
+            <span class="badge badge-pending">${isMedia ? 'Whisper Transcription' : 'Text Parsing'}</span>
+            <span class="badge badge-pending">Semantic Chunking</span>
+            <span class="badge badge-pending">pgvector Indexing</span>
+            <span class="badge badge-pending">Neo4j Graph</span>
+          </div>
+        `;
+        list.prepend(item);
+      });
+    }
+  </script>
+</body>
+</html>
