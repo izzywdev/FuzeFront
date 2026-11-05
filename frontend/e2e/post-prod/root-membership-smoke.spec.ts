@@ -16,11 +16,14 @@ import { loginSyntheticViaApi } from '../../tests/support/post-prod-auth'
  * 020 (security), every human — the platform owner included — was a GUEST of
  * the root org (`ROOT_ORG_ID` …010) and the "Your organizations" screen 500'd
  * on the root-absence path. The migrations (a) set the root's human owner and
- * (b) backfilled a `member` membership for EVERY user. So for ANY real signed-in
- * user, the organizations list must now:
+ * (b) backfilled a `member` membership for EVERY user. That baseline root
+ * membership is now deliberately NOT surfaced in the ordinary user's org list
+ * (owner decision: list only orgs with a DIRECT role; root stays visible to
+ * employees / platform admins only). So for an ordinary signed-in user the
+ * organizations list must:
  *   - return HTTP 200 (the #750 500 is gone), and
- *   - contain the root org with a REAL role — never `guest`/null (the universal
- *     membership backfill makes every user at least a `member`).
+ *   - NOT contain the root org, and
+ *   - carry a REAL role on every row it does list — never `guest`/null.
  *
  * Account-agnostic on purpose: this uses the ordinary self-provisioning
  * synthetic (not a privileged account), because "every user is a member of
@@ -81,7 +84,7 @@ function attachErrorCollectors(page: Page) {
 }
 
 test.describe('Root-org membership repair (#750/#1095) — live post-prod', () => {
-  test('1. a real user is a member of root — GET /api/organizations is 200 and root carries a real role (not GUEST)', async ({
+  test('1. GET /api/organizations is 200, lists only direct-role orgs, and hides root from an ordinary user', async ({
     request,
   }, testInfo) => {
     test.skip(
@@ -109,20 +112,32 @@ test.describe('Root-org membership repair (#750/#1095) — live post-prod', () =
     ).toBe(200)
 
     const orgs = orgsFrom(await resp.json())
-    const root = orgs.find(o => o.id === ROOT_ORG_ID)
-    expect(
-      root,
-      `the root org ${ROOT_ORG_ID} is absent from the signed-in user's org list — the universal ` +
-        'root-membership backfill (#1095 migration 029/020) did not hold on this deploy. ' +
-        `got ids: ${JSON.stringify(orgs.map(o => o.id))}`
-    ).toBeTruthy()
 
-    const role = (root!.user_role ?? '').toLowerCase()
+    // Owner decision (org-list direct-membership filter): the list shows ONLY
+    // orgs where the caller holds a DIRECT role. Every user is a baseline
+    // `member` of root (the #1095 backfill), so root is deliberately HIDDEN from
+    // ordinary users — only employees / platform admins keep it in their list.
+    // The synthetic is an ordinary self-provisioned user, so root must be
+    // absent. (Whether the backfill itself held is verified server-side by
+    // backend/security/tests/migrations.rootMembershipBackfill.test.ts and the
+    // out-of-band runbook docs/runbooks/verify-1095-root-owner-backfill.md.)
     expect(
-      REAL_ROLES.has(role),
-      `root org role is "${root!.user_role ?? '<null>'}", not a real membership — this is exactly ` +
-        'the #750 GUEST regression (the backfill gives every user at least `member`).'
-    ).toBe(true)
+      orgs.find(o => o.id === ROOT_ORG_ID),
+      `the root org ${ROOT_ORG_ID} is present in an ordinary user's org list — the ` +
+        'direct-membership-only visibility filter did not hold on this deploy ' +
+        '(fuzefront.identity.org-list-direct-only-kill-switch OFF, or the filter regressed). ' +
+        `got ids: ${JSON.stringify(orgs.map(o => o.id))}`
+    ).toBeUndefined()
+
+    // Whatever IS listed is a real direct membership — never a GUEST / null-role
+    // row (the #750 regression rendered an org with no role at all).
+    for (const o of orgs) {
+      const role = (o.user_role ?? '').toLowerCase()
+      expect(
+        REAL_ROLES.has(role),
+        `org ${o.id} is listed with role "${o.user_role ?? '<null>'}", not a real direct membership`
+      ).toBe(true)
+    }
   })
 
   test('2. the "Your organizations" screen renders live — /api/organizations 200 + no runtime crash', async ({
