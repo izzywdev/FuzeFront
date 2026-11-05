@@ -1,0 +1,269 @@
+{
+  "name": "FuzeAgent Chat Streaming & Fuse Seam Design System",
+  "description": "Redesign of FuzeAgent UX/UI in accordance with FuzeFront Design System tokens, inherited components, live streaming chat, modal dialog layout stability, high-contrast blueprint catalogs, multi-tier Brain RAG & S3 ingestion, and contextual portal dark/light theme switching. Managed and planned via FuzeX SaaS product workflow.",
+  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "fuzex": {
+    "project": "fuzeagent",
+    "workflow": "ux-flow-planning-and-approval",
+    "flowStatus": "approved",
+    "fuzexUrl": "https://fuzex.fuzefront.internal/flows/fuzeagent-chat-streaming",
+    "githubPagesUrl": "https://izzywdev.github.io/FuzeFront/fuzeagent-chat-streaming/"
+  },
+  "entry": "index.html",
+  "contract": {
+    "openapi": "services/orchestrator/openapi.yaml",
+    "websocket": "GET /api/ws/multi-agent",
+    "components": [
+      "AgentChatWorkspace",
+      "AgentChatBubble",
+      "TimeInZoneCard",
+      "StreamingThoughtIndicator",
+      "SandboxStatusBadge",
+      "TerminalLogWindow",
+      "StandaloneChatWindow",
+      "CreateAgentModal",
+      "TemplatesHub",
+      "AssignTaskModal"
+    ],
+    "featureFlag": "fuzeagent.chat.streaming-fuse-seam"
+  },
+  "build": {
+    "flows": [
+      {
+        "id": "01-chat-streaming-la-time",
+        "orchestrator": "AgentChatWorkspace",
+        "route": "/chat",
+        "approved": true
+      },
+      {
+        "id": "02-contextual-theme",
+        "orchestrator": "FuzeAgentDashboard",
+        "route": "/theme",
+        "approved": true
+      },
+      {
+        "id": "03-active-sandboxes-teardown",
+        "orchestrator": "SandboxesView",
+        "route": "/sandboxes",
+        "approved": true
+      },
+      {
+        "id": "04-standalone-chat-window",
+        "orchestrator": "StandaloneChatWindow",
+        "route": "/chat/window",
+        "approved": true
+      },
+      {
+        "id": "04-deploy-agent-modal",
+        "orchestrator": "CreateAgentModal",
+        "route": "/deploy",
+        "approved": true
+      },
+      {
+        "id": "05-templates-blueprints-hub",
+        "orchestrator": "TemplatesHub",
+        "route": "/templates",
+        "approved": true
+      },
+      {
+        "id": "05-multimodal-s3-resumable-uploader",
+        "orchestrator": "BrainMultimodalUploader",
+        "route": "/brains/upload",
+        "approved": true
+      },
+      {
+        "id": "06-task-assignment-orchestration",
+        "orchestrator": "MultiAgentOrchestration",
+        "route": "/tasks",
+        "approved": true
+      },
+      {
+        "id": "06-enlightening-multitier-context-pipeline",
+        "orchestrator": "MultiTierContextStepper",
+        "route": "/brains/context",
+        "approved": true
+      },
+      {
+        "id": "07-agent-persona-and-avatar-studio",
+        "orchestrator": "AgentPersonaStudio",
+        "route": "/brains/personas",
+        "approved": true
+      }
+    ],
+    "components": [
+      "AgentChatWorkspace",
+      "AgentChatBubble",
+      "TimeInZoneCard",
+      "StreamingThoughtIndicator",
+      "SandboxStatusBadge",
+      "TerminalLogWindow",
+      "StandaloneChatWindow",
+      "CreateAgentModal",
+      "TemplatesHub",
+      "AssignTaskModal"
+    ],
+    "packages": [
+      "@fuzefront/design-system"
+    ]
+  },
+  "frames": [
+    {
+      "id": "01-chat-streaming-la-time",
+      "file": "01-chat-streaming-la-time.html",
+      "label": "(a) Real-Time Chat Streaming — LA Time",
+      "route": "/chat",
+      "flow": "01-chat-streaming-la-time",
+      "summary": "Demonstrates streaming assistant chat bubble with fuse seam glow, thought accordion, and live timezone card for Los Angeles.",
+      "acceptanceNotes": "WebSocket connection over /api/ws/multi-agent streams token chunks, displaying timezone response with live PDT clock and globe indicator.",
+      "testHooks": [
+        "[data-frame='01-chat-streaming-la-time']",
+        "[data-chat-workspace]",
+        "[data-message-role='user']",
+        "[data-message-role='assistant']",
+        "[data-time-card]",
+        "[data-action='send-prompt']"
+      ],
+      "viewport": "responsive"
+    },
+    {
+      "id": "02-contextual-theme",
+      "file": "02-contextual-theme.html",
+      "label": "(b) Contextual Dark & Light Theme",
+      "route": "/theme",
+      "flow": "02-contextual-theme",
+      "summary": "Demonstrates contextual synchronization between FuzeFront portal theme and FuzeAgent inner workspace canvas.",
+      "acceptanceNotes": "Canvas dynamically reacts to data-theme attribute on documentElement and localStorage mutation, switching tokens without page refresh.",
+      "testHooks": [
+        "[data-frame='02-contextual-theme']",
+        "[data-theme-comparison]",
+        "[data-theme-card='dark']",
+        "[data-theme-card='light']"
+      ],
+      "viewport": "responsive"
+    },
+    {
+      "id": "03-active-sandboxes-teardown",
+      "file": "03-active-sandboxes-teardown.html",
+      "label": "(c) Active Sandboxes & Session Teardown",
+      "route": "/sandboxes",
+      "flow": "03-active-sandboxes-teardown",
+      "summary": "Lists active Kubernetes sandbox pods and provides graceful termination action.",
+      "acceptanceNotes": "Deleting or terminating session sends HTTP DELETE /api/agents/sandbox/{id} and frees pod and PVC resources cleanly.",
+      "testHooks": [
+        "[data-frame='03-active-sandboxes-teardown']",
+        "[data-sandboxes-panel]",
+        "[data-action='terminate-sandbox']"
+      ],
+      "viewport": "responsive"
+    },
+    {
+      "id": "04-standalone-chat-window",
+      "file": "04-standalone-chat-window.html",
+      "label": "(d) Standalone Chat Window — OpenWebUI / Claude Style",
+      "route": "/chat/window",
+      "flow": "04-standalone-chat-window",
+      "summary": "Demonstrates full-window standalone conversational UI with thread history sidebar, model picker, live token stream, and telemetry drawer.",
+      "acceptanceNotes": "Provides dedicated separate window experience for multi-agent chat, compatible with pop-out and full viewport displays.",
+      "testHooks": [
+        "[data-frame='04-standalone-chat-window']",
+        "[data-chat-window]",
+        "[data-session-list]",
+        "[data-composer-input]"
+      ],
+      "viewport": "responsive"
+    },
+    {
+      "id": "04-deploy-agent-modal",
+      "file": "04-deploy-agent-modal.html",
+      "label": "(e) Deploy New Agent Modal & Blueprint Selection",
+      "route": "/deploy",
+      "flow": "04-deploy-agent-modal",
+      "summary": "Rigid 2-column modal dialog with dark backdrop blur, blueprint search & category filters, and right-hand specification inspector.",
+      "acceptanceNotes": "Prevents flex/grid sliver collapse in federated portal shell via explicit .modal-overlay and .modal-dialog.panel CSS primitives.",
+      "testHooks": [
+        "[data-frame='04-deploy-agent-modal']",
+        "[data-modal-dialog='create-agent']",
+        "[data-blueprint-list]",
+        "[data-blueprint-inspector]",
+        "[data-action='launch-agent']"
+      ],
+      "viewport": "responsive"
+    },
+    {
+      "id": "05-templates-blueprints-hub",
+      "file": "05-templates-blueprints-hub.html",
+      "label": "(f) Agent Blueprints & Templates Hub",
+      "route": "/templates",
+      "flow": "05-templates-blueprints-hub",
+      "summary": "High-contrast blueprint catalog with verified badges, rating metrics, spaced category filter pills, and 1-click launch.",
+      "acceptanceNotes": "Ensures luminous primary typography (--text-primary) on dark elevation cards and spaced pill buttons across all categories.",
+      "testHooks": [
+        "[data-frame='05-templates-blueprints-hub']",
+        "[data-templates-hero]",
+        "[data-category-filters]",
+        "[data-templates-grid]"
+      ],
+      "viewport": "responsive"
+    },
+    {
+      "id": "05-multimodal-s3-resumable-uploader",
+      "file": "05-multimodal-s3-resumable-uploader.html",
+      "label": "(g) Multimodal S3 Resumable Uploader & Ingestion",
+      "route": "/brains/upload",
+      "flow": "05-multimodal-s3-resumable-uploader",
+      "summary": "Per-org 5GB S3 bucket quota tracker, resumable multipart upload controls, and live Kafka ingestion stage badges.",
+      "acceptanceNotes": "Supports pause/resume/cancel multipart uploads and tracks Whisper transcription, OCR, pgvector indexing, and Neo4j graph sync.",
+      "testHooks": [
+        "#quotaNumbers",
+        ".dropzone",
+        "#fileList"
+      ],
+      "viewport": "responsive"
+    },
+    {
+      "id": "06-task-assignment-orchestration",
+      "file": "06-task-assignment-orchestration.html",
+      "label": "(h) Multi-Agent Task Assignment & Orchestration",
+      "route": "/tasks",
+      "flow": "06-task-assignment-orchestration",
+      "summary": "Interactive task dispatch modal and multi-agent execution queue with priority weighting, memory scope selection, and live step stream.",
+      "acceptanceNotes": "Dispatches structured tasks via POST /api/tasks with agent assignment, priority level (1-10), and real-time step telemetry.",
+      "testHooks": [
+        "[data-frame='06-task-assignment-orchestration']",
+        "[data-modal-dialog='assign-task']",
+        "[data-task-form]",
+        "[data-action='submit-task']"
+      ],
+      "viewport": "responsive"
+    },
+    {
+      "id": "06-enlightening-multitier-context-pipeline",
+      "file": "06-enlightening-multitier-context-pipeline.html",
+      "label": "(i) Enlightening Multi-Tier Context Pipeline",
+      "route": "/brains/context",
+      "flow": "06-enlightening-multitier-context-pipeline",
+      "summary": "Interactive 5-stage RAG stepper: Fetching (4 tiers) -> Augmenting (Neo4j 2-hop) -> Distilling (RRF) -> Ready -> Streaming.",
+      "acceptanceNotes": "Displays transparent provenance chips across Agent, Team, Cross-Functional, and Organization brains.",
+      "testHooks": [
+        ".agent-title",
+        ".prompt-input"
+      ],
+      "viewport": "responsive"
+    },
+    {
+      "id": "07-agent-persona-and-avatar-studio",
+      "file": "07-agent-persona-and-avatar-studio.html",
+      "label": "(j) Agent Persona & Avatar Studio",
+      "route": "/brains/personas",
+      "flow": "07-agent-persona-and-avatar-studio",
+      "summary": "Human persona naming studio, role specialization badges, 4-tier brain attachment matrix, and deterministic SVG avatar generator.",
+      "acceptanceNotes": "Persists persona configuration and custom SVG avatar seed to orchestrator brain store.",
+      "testHooks": [
+        "#personaNameInput",
+        "#avatarPreviewBox"
+      ],
+      "viewport": "responsive"
+    }
+  ],
+  "stamp": "4b5b84936c1e3af46521f6fbf9e36c7055175bfddfb684fe07bd98d0abc27ad2"
+}

@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FuzeAgent — Standalone Interactive Chat Workspace</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #07090e;
+    color: #f1f5f9;
+    font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+    height: 100vh;
+    display: flex;
+    overflow: hidden;
+  }
+  
+  /* Sidebar */
+  aside.sidebar {
+    width: 280px;
+    background: #0b0f19;
+    border-right: 1px solid #1a2233;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+  }
+  .sidebar-header {
+    padding: 16px;
+    border-bottom: 1px solid #1a2233;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .logo-box {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .logo-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #6366f1, #06b6d4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 16px;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+  }
+  .logo-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .logo-tag {
+    font-size: 10px;
+    background: rgba(99, 102, 241, 0.2);
+    color: #a5b4fc;
+    border: 1px solid rgba(99, 102, 241, 0.35);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-family: var(--font-mono, monospace);
+  }
+  .new-chat-btn {
+    background: #141b2a;
+    border: 1px solid #232d42;
+    color: #cbd5e1;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+  }
+  .new-chat-btn:hover {
+    background: #1e293b;
+    color: #fff;
+    border-color: #6366f1;
+  }
+  
+  .threads-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .thread-item {
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: transparent;
+    border: 1px solid transparent;
+    cursor: pointer;
+    text-align: left;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    transition: all 0.15s;
+    color: #94a3b8;
+  }
+  .thread-item:hover {
+    background: #131b2b;
+    color: #e2e8f0;
+  }
+  .thread-item.active {
+    background: linear-gradient(90deg, rgba(49, 46, 129, 0.5), rgba(15, 23, 42, 0.7));
+    border-color: rgba(99, 102, 241, 0.4);
+    color: #fff;
+  }
+  .thread-emoji { font-size: 16px; margin-top: 2px; }
+  .thread-title { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #f1f5f9; }
+  .thread-snippet { font-size: 11px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Persona selector footer */
+  .persona-footer {
+    padding: 12px;
+    border-top: 1px solid #1a2233;
+    background: #0c111e;
+  }
+  .persona-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .persona-btn {
+    background: #141b2a;
+    border: 1px solid #232d42;
+    color: #94a3b8;
+    border-radius: 8px;
+    padding: 6px;
+    text-align: center;
+    cursor: pointer;
+    font-size: 10px;
+    transition: all 0.15s;
+  }
+  .persona-btn.active, .persona-btn:hover {
+    background: rgba(99, 102, 241, 0.2);
+    border-color: #6366f1;
+    color: #a5b4fc;
+  }
+  .persona-btn span { display: block; font-size: 14px; margin-bottom: 2px; }
+
+  /* Main Workspace */
+  main.workspace {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    background: #07090e;
+  }
+  header.top-bar {
+    height: 58px;
+    background: rgba(11, 15, 25, 0.9);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid #1a2233;
+    padding: 0 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .active-agent-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .agent-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #4f46e5, #06b6d4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+  }
+  .agent-details h2 { font-size: 14px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px; }
+  .agent-role-pill {
+    font-size: 10px;
+    font-family: var(--font-mono, monospace);
+    background: rgba(99, 102, 241, 0.15);
+    color: #818cf8;
+    padding: 1px 6px;
+    border-radius: 4px;
+    border: 1px solid rgba(99, 102, 241, 0.3);
+  }
+  .agent-status-sub {
+    font-size: 11px;
+    color: #64748b;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .pulse-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #10b981;
+    box-shadow: 0 0 8px #10b981;
+    animation: pulse 2s infinite;
+  }
+
+  .top-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .model-select {
+    background: #131a29;
+    border: 1px solid #232d42;
+    color: #cbd5e1;
+    font-size: 12px;
+    border-radius: 8px;
+    padding: 6px 10px;
+    outline: none;
+    cursor: pointer;
+  }
+  .pod-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(16, 185, 129, 0.12);
+    border: 1px solid rgba(16, 185, 129, 0.35);
+    color: #10b981;
+    font-size: 11px;
+    font-family: var(--font-mono, monospace);
+    padding: 4px 10px;
+    border-radius: 20px;
+  }
+  .popout-btn {
+    background: #141b2a;
+    border: 1px solid #232d42;
+    color: #cbd5e1;
+    font-size: 12px;
+    border-radius: 8px;
+    padding: 6px 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s;
+  }
+  .popout-btn:hover { background: #1e293b; color: #fff; }
+
+  /* Message Feed */
+  .chat-feed {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .message-wrapper {
+    display: flex;
+    flex-direction: column;
+    max-width: 80%;
+  }
+  .message-wrapper.user {
+    align-self: flex-end;
+    align-items: flex-end;
+  }
+  .message-wrapper.agent {
+    align-self: flex-start;
+    align-items: flex-start;
+  }
+  .message-meta {
+    font-size: 11px;
+    color: #64748b;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .bubble {
+    padding: 12px 16px;
+    border-radius: 16px;
+    font-size: 13.5px;
+    line-height: 1.6;
+    position: relative;
+    word-break: break-word;
+  }
+  .bubble.user {
+    background: linear-gradient(135deg, #4f46e5, #4338ca);
+    color: #fff;
+    border-bottom-right-radius: 4px;
+    box-shadow: 0 4px 14px rgba(79, 70, 229, 0.3);
+  }
+  .bubble.agent {
+    background: #0f1422;
+    border: 1px solid #1f293d;
+    color: #e2e8f0;
+    border-bottom-left-radius: 4px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  }
+
+  /* Thought box */
+  .thought-box {
+    margin-bottom: 8px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: rgba(30, 41, 59, 0.5);
+    border: 1px solid rgba(99, 102, 241, 0.25);
+    font-size: 11px;
+    color: #94a3b8;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-mono, monospace);
+  }
+  .thought-spinner {
+    width: 12px;
+    height: 12px;
+    border: 2px solid rgba(99, 102, 241, 0.2);
+    border-top-color: #818cf8;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* TimeInZoneCard */
+  .time-card {
+    margin-top: 10px;
+    padding: 14px 16px;
+    border-radius: 12px;
+    background: #141a26;
+    border: 1px solid #232c3d;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  }
+  .time-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, #6e5cff, #29d3e6);
+  }
+  .time-card-content h4 { font-size: 12px; color: #fff; margin-bottom: 2px; }
+  .time-card-content p { font-size: 10px; color: #64748b; font-family: var(--font-mono, monospace); }
+  .time-card-clock {
+    font-family: var(--font-mono, monospace);
+    font-size: 18px;
+    font-weight: 700;
+    color: #38bdf8;
+    background: #0b0e15;
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1px solid #232c3d;
+  }
+
+  /* Terminal Log Card */
+  .terminal-box {
+    margin-top: 10px;
+    border-radius: 12px;
+    background: #090d16;
+    border: 1px solid #1f283d;
+    overflow: hidden;
+    font-family: var(--font-mono, monospace);
+    font-size: 11px;
+  }
+  .terminal-header {
+    background: #0f1422;
+    padding: 6px 12px;
+    border-bottom: 1px solid #1f283d;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: #94a3b8;
+  }
+  .terminal-content {
+    padding: 10px 12px;
+    color: #38bdf8;
+    line-height: 1.5;
+  }
+
+  /* Bottom Composer */
+  .composer-bar {
+    padding: 16px 20px;
+    border-top: 1px solid #1a2233;
+    background: rgba(11, 15, 25, 0.85);
+    backdrop-filter: blur(8px);
+  }
+  .chips-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+    overflow-x: auto;
+  }
+  .chip-btn {
+    background: #121927;
+    border: 1px solid #232d42;
+    color: #cbd5e1;
+    font-size: 11.5px;
+    border-radius: 20px;
+    padding: 4px 12px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s;
+  }
+  .chip-btn:hover {
+    background: rgba(99, 102, 241, 0.2);
+    border-color: #6366f1;
+    color: #fff;
+  }
+  .input-box-wrapper {
+    background: #101624;
+    border: 1px solid #232d42;
+    border-radius: 14px;
+    padding: 10px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: all 0.2s;
+  }
+  .input-box-wrapper:focus-within {
+    border-color: #6366f1;
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+  }
+  .chat-textarea {
+    background: transparent;
+    border: none;
+    outline: none;
+    color: #f8fafc;
+    font-size: 13.5px;
+    resize: none;
+    width: 100%;
+    font-family: inherit;
+    line-height: 1.5;
+  }
+  .composer-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-top: 1px solid #1c2436;
+    padding-top: 8px;
+    font-size: 11px;
+    color: #64748b;
+  }
+  .send-btn {
+    background: linear-gradient(135deg, #6366f1, #06b6d4);
+    border: none;
+    color: #fff;
+    padding: 6px 16px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+    transition: all 0.15s;
+  }
+  .send-btn:hover {
+    filter: brightness(1.1);
+  }
+
+  /* Right Drawer */
+  aside.right-drawer {
+    width: 300px;
+    background: #0b0f19;
+    border-left: 1px solid #1a2233;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    overflow-y: auto;
+  }
+  .drawer-section h3 {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #64748b;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .brain-card {
+    background: #111726;
+    border: 1px solid #1e283d;
+    border-radius: 10px;
+    padding: 10px;
+    margin-bottom: 8px;
+  }
+  .brain-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+  }
+  .brain-tier { font-size: 11px; font-weight: 700; color: #818cf8; }
+  .brain-scope { font-size: 9px; font-family: var(--font-mono, monospace); color: #64748b; }
+  .brain-name { font-size: 12px; font-weight: 600; color: #e2e8f0; }
+  .brain-desc { font-size: 10px; color: #94a3b8; margin-top: 2px; }
+</style>
+</head>
+<body>
+
+  <!-- LEFT THREADS SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="logo-box">
+        <div class="logo-icon">⚡</div>
+        <div>
+          <div class="logo-title">FuzeAgent <span class="logo-tag">PROD</span></div>
+          <div style="font-size: 10px; color: #64748b;">Standalone Chat</div>
+        </div>
+      </div>
+      <button class="new-chat-btn" id="newChatBtn" title="New Conversation">+</button>
+    </div>
+
+    <div class="threads-list" id="threadsList">
+      <button class="thread-item active" data-thread-id="t1">
+        <span class="thread-emoji">💬</span>
+        <div style="overflow: hidden;">
+          <div class="thread-title">Casual Tech Talk & Coffee</div>
+          <div class="thread-snippet">Chatting about code, dev life, & AI</div>
+        </div>
+      </button>
+
+      <button class="thread-item" data-thread-id="t2">
+        <span class="thread-emoji">🕒</span>
+        <div style="overflow: hidden;">
+          <div class="thread-title">LA Timezone & Sandbox Probe</div>
+          <div class="thread-snippet">Live clock stream verification</div>
+        </div>
+      </button>
+
+      <button class="thread-item" data-thread-id="t3">
+        <span class="thread-emoji">⚛️</span>
+        <div style="overflow: hidden;">
+          <div class="thread-title">Frontend Cross-Brain Sync</div>
+          <div class="thread-snippet">Design tokens & chat-ui sharing</div>
+        </div>
+      </button>
+    </div>
+
+    <div class="persona-footer">
+      <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: #64748b;">Active Persona</div>
+      <div class="persona-grid">
+        <button class="persona-btn active" data-persona="python-dev">
+          <span>🐍</span> Python
+        </button>
+        <button class="persona-btn" data-persona="react-dev">
+          <span>⚛️</span> React
+        </button>
+        <button class="persona-btn" data-persona="devops-lead">
+          <span>☸️</span> DevOps
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- MAIN CHAT WORKSPACE -->
+  <main class="workspace">
+    <header class="top-bar">
+      <div class="active-agent-info">
+        <div class="agent-avatar" id="agentAvatar">🐍</div>
+        <div class="agent-details">
+          <h2>
+            <span id="agentName">Python Developer</span>
+            <span class="agent-role-pill" id="agentRole">Backend & ML Engineer</span>
+          </h2>
+          <div class="agent-status-sub">
+            <span class="pulse-dot"></span>
+            <span>Online • Connected to Orchestrator Brain Bus</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="top-actions">
+        <select class="model-select" id="modelSelect">
+          <option value="claude-3-7-sonnet">Claude 3.7 Sonnet (Hybrid)</option>
+          <option value="gemini-2.5-pro">Gemini 2.5 Pro (Multimodal)</option>
+          <option value="deepseek-r1">DeepSeek R1 (Fast Reasoning)</option>
+        </select>
+
+        <span class="pod-badge">
+          <span class="pulse-dot"></span> pod: sbx-py-prod-healthy
+        </span>
+
+        <button class="popout-btn" id="popoutBtn">
+          ↗ Popout
+        </button>
+      </div>
+    </header>
+
+    <!-- Chat Message Feed -->
+    <div class="chat-feed" id="chatFeed">
+      <!-- Agent Intro Message -->
+      <div class="message-wrapper agent">
+        <div class="message-meta">
+          <span>🐍 Python Developer</span> • <span>Just now</span>
+        </div>
+        <div class="bubble agent">
+          Hey there! I'm your Python Developer agent. I'm connected to the cluster event bus and the 4-tier Brain memory system. Feel free to chat casually, ask about architecture, run pytest suites, or ask for the current time in LA! What's on your mind?
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom Composer -->
+    <div class="composer-bar">
+      <div class="chips-row">
+        <button class="chip-btn" data-text="Hello! How are you doing today?">👋 Say Hello</button>
+        <button class="chip-btn" data-text="What's your favorite programming language and why?">💻 Favorite Language?</button>
+        <button class="chip-btn" data-text="Tell me a witty programming joke!">😄 Tech Joke</button>
+        <button class="chip-btn" data-text="What is the current time in Los Angeles?">🕒 Time in LA</button>
+        <button class="chip-btn" data-text="Run the brain CRUD and MCP pytest test suite">🧪 Run pytest</button>
+      </div>
+
+      <div class="input-box-wrapper">
+        <textarea 
+          class="chat-textarea" 
+          id="chatInput" 
+          rows="2" 
+          placeholder="Message Python Developer... (Type a message and press Enter or Send)"
+        ></textarea>
+        <div class="composer-footer">
+          <div>💡 Press Enter to send • Shift+Enter for new line</div>
+          <button class="send-btn" id="sendBtn">
+            <span>Send</span> ➔
+          </button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- RIGHT TELEMETRY & BRAIN DRAWER -->
+  <aside class="right-drawer">
+    <div class="drawer-section">
+      <h3>
+        <span>🧠 Multi-Tier Brains</span>
+        <span style="color: #38bdf8;">4 Tiers</span>
+      </h3>
+
+      <div class="brain-card" style="border-color: rgba(99, 102, 241, 0.4);">
+        <div class="brain-card-header">
+          <span class="brain-tier">1. Persona Memory</span>
+          <span class="brain-scope">agent</span>
+        </div>
+        <div class="brain-name">Python Dev Active Context</div>
+        <div class="brain-desc">Session state, sandbox credentials, code preferences</div>
+      </div>
+
+      <div class="brain-card" style="border-color: rgba(6, 182, 212, 0.4);">
+        <div class="brain-card-header">
+          <span class="brain-tier" style="color: #22d3ee;">2. Cross-Functional</span>
+          <span class="brain-scope">backend</span>
+        </div>
+        <div class="brain-name">Cross-Functional Backend Brain</div>
+        <div class="brain-desc">Shared API design, asyncpg pools, FastAPI standards</div>
+      </div>
+
+      <div class="brain-card">
+        <div class="brain-card-header">
+          <span class="brain-tier" style="color: #cbd5e1;">3. Team Brain</span>
+          <span class="brain-scope">team</span>
+        </div>
+        <div class="brain-name">Platform & Core Team</div>
+        <div class="brain-desc">Microfrontend contracts & cluster deployment rules</div>
+      </div>
+
+      <div class="brain-card">
+        <div class="brain-card-header">
+          <span class="brain-tier" style="color: #cbd5e1;">4. Organization Global</span>
+          <span class="brain-scope">org</span>
+        </div>
+        <div class="brain-name">FuzeGlobal Architecture Wiki</div>
+        <div class="brain-desc">Enterprise system topology & compliance policies</div>
+      </div>
+    </div>
+
+    <div class="drawer-section">
+      <h3><span>⚡ Sandbox Telemetry</span></h3>
+      <div style="background: #111726; border: 1px solid #1e283d; border-radius: 10px; padding: 10px; font-size: 11px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+        <div>
+          <div style="color: #64748b;">CPU Usage</div>
+          <div style="font-weight: 700; color: #38bdf8; font-family: monospace;">1.8 / 4.0 Cores</div>
+        </div>
+        <div>
+          <div style="color: #64748b;">Latency</div>
+          <div style="font-weight: 700; color: #10b981; font-family: monospace;">12ms relay</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+<script>
+  const chatFeed = document.getElementById('chatFeed');
+  const chatInput = document.getElementById('chatInput');
+  const sendBtn = document.getElementById('sendBtn');
+  const agentAvatar = document.getElementById('agentAvatar');
+  const agentName = document.getElementById('agentName');
+  const agentRole = document.getElementById('agentRole');
+
+  let currentPersona = 'python-dev';
+  const personas = {
+    'python-dev': { name: 'Python Developer', role: 'Backend & ML Engineer', avatar: '🐍' },
+    'react-dev': { name: 'React Developer', role: 'Frontend & UI Specialist', avatar: '⚛️' },
+    'devops-lead': { name: 'DevOps Lead', role: 'Cluster & GitOps Lead', avatar: '☸️' }
+  };
+
+  // Switch persona
+  document.querySelectorAll('.persona-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.persona-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentPersona = btn.dataset.persona;
+      const p = personas[currentPersona];
+      agentAvatar.textContent = p.avatar;
+      agentName.textContent = p.name;
+      agentRole.textContent = p.role;
+    });
+  });
+
+  // Action chips
+  document.querySelectorAll('.chip-btn').forEach(chip => {
+    chip.addEventListener('click', () => {
+      chatInput.value = chip.dataset.text;
+      handleSendMessage();
+    });
+  });
+
+  // Popout trigger
+  document.getElementById('popoutBtn').addEventListener('click', () => {
+    alert("Popout triggered: Standalone window opened at " + window.location.href);
+  });
+
+  // New Chat
+  document.getElementById('newChatBtn').addEventListener('click', () => {
+    chatFeed.innerHTML = `
+      <div class="message-wrapper agent">
+        <div class="message-meta">
+          <span>${personas[currentPersona].avatar} ${personas[currentPersona].name}</span> • <span>Just now</span>
+        </div>
+        <div class="bubble agent">
+          New session initialized! What would you like to explore or chat about?
+        </div>
+      </div>
+    `;
+  });
+
+  function appendUserMessage(text) {
+    const wrap = document.createElement('div');
+    wrap.className = 'message-wrapper user';
+    wrap.innerHTML = `
+      <div class="message-meta">
+        <span>You</span> • <span>${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+      </div>
+      <div class="bubble user">${escapeHtml(text)}</div>
+    `;
+    chatFeed.appendChild(wrap);
+    chatFeed.scrollTop = chatFeed.scrollHeight;
+  }
+
+  function appendAgentMessage(text, thought, cardHtml) {
+    const wrap = document.createElement('div');
+    wrap.className = 'message-wrapper agent';
+    
+    let thoughtHtml = '';
+    if (thought) {
+      thoughtHtml = `
+        <div class="thought-box">
+          <span class="thought-spinner"></span>
+          <span>${escapeHtml(thought)}</span>
+        </div>
+      `;
+    }
+
+    wrap.innerHTML = `
+      <div class="message-meta">
+        <span>${personas[currentPersona].avatar} ${personas[currentPersona].name}</span> • <span>${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+      </div>
+      ${thoughtHtml}
+      <div class="bubble agent">
+        ${text}
+        ${cardHtml || ''}
+      </div>
+    `;
+    chatFeed.appendChild(wrap);
+    chatFeed.scrollTop = chatFeed.scrollHeight;
+  }
+
+  function handleSendMessage() {
+    const text = chatInput.value.trim();
+    if (!text) return;
+    chatInput.value = '';
+    appendUserMessage(text);
+
+    const lower = text.toLowerCase();
+    const brainId = personas[currentPersona].brainId || 'brain_cross_backend';
+
+    // Attempt real live backend call first
+    fetch(`http://127.0.0.1:8800/api/brains/${encodeURIComponent(brainId)}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text })
+    })
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      if (data && data.reply && !data.reply.includes("found no relevant documents")) {
+        const citationInfo = data.citations && data.citations.length > 0
+          ? `Live pgvector RAG: matched "${data.citations[0].title}" (score: ${data.citations[0].score})`
+          : `Live pgvector semantic search evaluated in ${brainId}`;
+        appendAgentMessage(data.reply, citationInfo);
+        return;
+      }
+      handleFallbackResponse(text, lower);
+    })
+    .catch(() => {
+      handleFallbackResponse(text, lower);
+    });
+  }
+
+  function handleFallbackResponse(text, lower) {
+    setTimeout(() => {
+      // Natural Casual Talk Responses with strict word boundaries
+      if (/\b(hi|hello|hey|greetings|howdy)\b/i.test(lower)) {
+        appendAgentMessage(
+          `Hello! I'm ${personas[currentPersona].name}. All services and sandbox runners in the cluster are healthy. How can I help you today?`,
+          "Reasoning: User initiated greeting; confirming persona identity and cluster operational state."
+        );
+      } else if (lower.includes('favorite programming language') || lower.includes('favorite language')) {
+        appendAgentMessage(
+          "I have a deep love for <strong>Python</strong> because of its expressive syntax, rich async ecosystem with FastAPI & asyncpg, and unparalleled ML tooling. But I also have immense respect for <strong>TypeScript</strong> when building strict microfrontends with React 19!",
+          "Reasoning: Formulating developer reflection on language ergonomics and backend performance."
+        );
+      } else if (lower.includes('joke')) {
+        appendAgentMessage(
+          "Here's one for you:<br><br><em>Why do programmers prefer dark mode?</em><br><strong>Because light attracts bugs!</strong> 🐛💡<br><br>And remember: There are only 10 types of people in the world — those who understand binary, and those who don't!",
+          "Reasoning: Selecting high-affinity computer science humor from conversational repository."
+        );
+      } else if (lower.includes('brain') || lower.includes('multi-tier') || lower.includes('hierarchy') || lower.includes('context')) {
+        appendAgentMessage(
+          "In this cluster, FuzeAgent runs a <strong>4-Tier Brain Architecture</strong> backed by PostgreSQL pgvector:<br><br>" +
+          "1. <strong>🏢 Tier 1: Org Global Brain</strong> (<code>brain_org_global</code>) — Enterprise security baselines, zero-trust policies, and company-wide standards.<br>" +
+          "2. <strong>🔀 Tier 2: Cross-Functional Domain</strong> (<code>brain_cross_backend</code> / <code>frontend</code> / <code>devops</code>) — Domain libraries, shared patterns, and API contracts.<br>" +
+          "3. <strong>👥 Tier 3: Team Brain</strong> (<code>brain_team_platform</code>) — Team cluster configs, ingress definitions, and service routing.<br>" +
+          "4. <strong>👤 Tier 4: Agent Persona Memory</strong> (<code>brain_agent_python_dev</code>) — Individual agent instructions, test mocks, and conversational history.<br><br>" +
+          "Queries execute parallel hierarchical retrieval with <em>Reciprocal Rank Fusion (RRF)</em> to distill the most relevant tokens into the context window.",
+          "Reasoning: Querying multi-tier brain hierarchy topology and summarizing active 4-tier configuration."
+        );
+      } else if (lower.includes('time in') || lower.includes('la time') || lower.includes('time now')) {
+        const now = new Date();
+        const laTime = now.toLocaleTimeString('en-US', { timeZone: 'America/Los_Angeles', hour: '2-digit', minute: '2-digit' });
+        const cardHtml = `
+          <div class="time-card">
+            <div class="time-card-content">
+              <h4>Los Angeles, California (PDT)</h4>
+              <p>UTC-7 • America/Los_Angeles • World Clock Relay</p>
+            </div>
+            <div class="time-card-clock">🕒 ${laTime} PDT</div>
+          </div>
+        `;
+        appendAgentMessage(
+          "The current time in <strong>Los Angeles, California</strong> is:",
+          "Querying world clock engine for America/Los_Angeles and rendering TimeInZoneCard.",
+          cardHtml
+        );
+      } else if (lower.includes('database') || lower.includes('postgres') || lower.includes('asyncpg') || lower.includes('pooling')) {
+        appendAgentMessage(
+          "For PostgreSQL database pooling, we use <strong>asyncpg</strong> with connection limits calibrated per pod:<br><br>" +
+          "• Minimum pool size: <code>min_size=2</code><br>" +
+          "• Maximum pool size: <code>max_size=10</code><br>" +
+          "• Codec registration for native <code>json/jsonb</code> and <code>uuid</code> handling.<br>" +
+          "• All connections must be acquired via <code>async with pool.acquire() as conn:</code> context managers to prevent socket leaks.",
+          "Reasoning: Retrieving database connection management specifications from backend knowledge base."
+        );
+      } else if (lower.includes('pytest') || lower.includes('test')) {
+        const cardHtml = `
+          <div class="terminal-box">
+            <div class="terminal-header">
+              <span>Terminal: /dev/tty0 (pytest)</span>
+              <span>100% Passed</span>
+            </div>
+            <div class="terminal-content">
+              test_brain_store_seeded_brains PASSED [11%]<br>
+              test_brain_store_filtering PASSED [22%]<br>
+              test_brain_store_crud PASSED [33%]<br>
+              test_rest_agent_brains_resolution PASSED [77%]<br>
+              test_standalone_mcp_server_brain_tools PASSED [88%]<br>
+              test_in_orchestrator_mcp_server PASSED [100%]<br>
+              <strong>9 passed in 0.85s</strong>
+            </div>
+          </div>
+        `;
+        appendAgentMessage(
+          "I ran the complete Brain CRUD and Dual MCP verification suite:",
+          "Executing pytest runner inside sandbox container runner...",
+          cardHtml
+        );
+      } else {
+        appendAgentMessage(
+          `Regarding "<em>${escapeHtml(text)}</em>": As your ${personas[currentPersona].name}, I've analyzed your prompt against our active architecture. Would you like me to generate code, check cluster status, or query specific brain documentation?`,
+          "Reasoning: Evaluating user query and synthesizing context-aware response based on active persona role."
+        );
+      }
+    }, 350);
+  }
+
+  sendBtn.addEventListener('click', handleSendMessage);
+  chatInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
+  });
+
+  function escapeHtml(str) {
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+</script>
+</body>
+</html>
