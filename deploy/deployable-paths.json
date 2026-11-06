@@ -15,7 +15,7 @@
     "WHY A MANIFEST AND NOT DERIVATION.",
     "auto-merge.yml's equivalent mirror was collapsed outright: it asks its question at",
     "RUNTIME, so it can shell out to `node scripts/publish-packages.mjs --list-dirs`.",
-    "`on.push.paths` cannot be collapsed that way — GitHub reads the trigger block before",
+    "`on.push.paths` cannot be collapsed that way \u2014 GitHub reads the trigger block before",
     "any step runs, so it MUST be static YAML committed in the workflow. The manifest is",
     "therefore the source and the workflow block is a rendered artifact, kept honest by a",
     "gate rather than by discipline.",
@@ -23,7 +23,7 @@
     "WHY THE GATE IS THE LOAD-BEARING PART.",
     "This mirror's failure mode is silent and inverted: a MISSING path means the release",
     "workflow does not trigger at all, so the change merges green and simply never ships.",
-    "There is no red run to notice — there is no run. That is how chat-service,",
+    "There is no red run to notice \u2014 there is no run. That is how chat-service,",
     "notification-service, payment-service, selection-list-service and config-service each",
     "acquired a build step whose source dir could not trigger it. Without the drift gate a",
     "manifest is just a FOURTH copy of the same truth; the gate is what makes it the only",
@@ -37,11 +37,11 @@
   ],
   "workflow": ".github/workflows/release.yml",
   "header": [
-    "GENERATED BLOCK — do not hand-edit. Source of truth: deploy/deployable-paths.json.",
+    "GENERATED BLOCK \u2014 do not hand-edit. Source of truth: deploy/deployable-paths.json.",
     "Change it there, run `npm run deployable-paths:write`, commit both.",
     "gate-deployable-paths.yml fails if these two disagree, because the failure mode of a",
     "missing path is silent: the release workflow simply does not run, so the change merges",
-    "green and never ships. There is no red run to notice — there is no run."
+    "green and never ships. There is no red run to notice \u2014 there is no run."
   ],
   "paths": [
     {
@@ -59,7 +59,7 @@
         "Workspace packages are COMPILED INTO the images (the backend/applications",
         "images build @fuzefront/feature-flags; the frontend bundles the UI",
         "packages from source via vite aliases). Without this, a change confined",
-        "to packages/** merges green and ships nothing — the images keep the old",
+        "to packages/** merges green and ships nothing \u2014 the images keep the old",
         "code, which is exactly how a \"merged\" fix can fail to reach production."
       ]
     },
@@ -71,6 +71,49 @@
         "their manifests (check-dockerfile-lockfile requires the full workspace",
         "set, or npm hoists a different tree than the lockfile). That makes them",
         "image inputs, so a change confined to either must rebuild."
+      ]
+    },
+    {
+      "path": "design-system/**",
+      "why": [
+        "@fuzefront/design-system is aliased to source by frontend/vite.config.ts and",
+        "vendored into the website/devportal images by their sync-design-system.mjs, so a",
+        "change confined here must rebuild those images or they ship stale (silent-ship gap)."
+      ]
+    },
+    {
+      "path": "apps-client/**",
+      "why": [
+        "frontend/vite.config.ts aliases @fuzefront/app-registry-client to apps-client/src,",
+        "so the frontend bundle embeds it from source; a change confined here must rebuild."
+      ]
+    },
+    {
+      "path": "billing-client/**",
+      "why": [
+        "Aliased to source by frontend/vite.config.ts and bundled into the frontend image;",
+        "a change confined here must rebuild or the image ships stale."
+      ]
+    },
+    {
+      "path": "portal-client/**",
+      "why": [
+        "Aliased to source by frontend/vite.config.ts and bundled into the frontend image;",
+        "a change confined here must rebuild or the image ships stale."
+      ]
+    },
+    {
+      "path": "config-client/**",
+      "why": [
+        "Aliased to source by frontend/vite.config.ts and bundled into the frontend image;",
+        "a change confined here must rebuild or the image ships stale."
+      ]
+    },
+    {
+      "path": "custom-hostname-client/**",
+      "why": [
+        "backend/Dockerfile COPYs custom-hostname-client/ into the backend image,",
+        "so a change confined here must rebuild the backend image."
       ]
     },
     {
@@ -95,7 +138,7 @@
         "\"Build & push chat-service\" step below, but never added chat-service's",
         "own path here, so a change confined to services/chat-service/** (not",
         "touching packages/**, deploy/helm/fuzefront/**, or this file) would",
-        "merge green and NEVER trigger a release — the exact same silent-ship",
+        "merge green and NEVER trigger a release \u2014 the exact same silent-ship",
         "failure mode the packages/** comment above describes, just for a",
         "different path. This was live for every commit between #432 and now."
       ]
@@ -122,7 +165,7 @@
     {
       "path": "services/devportal-service/**",
       "why": [
-        "docs/planning/developers-portal.md — devportal-service's own Dockerfile",
+        "docs/planning/developers-portal.md \u2014 devportal-service's own Dockerfile",
         "also COPYs scripts/collect-devportal-specs.mjs and every services/*/openapi.yaml",
         "it bundles (see that Dockerfile's `specs` build stage), so a change confined to",
         "this dir alone still needs the SAME silent-ship protection every other service",
@@ -132,7 +175,7 @@
     {
       "path": "devportal-frontend/**",
       "why": [
-        "Top-level, sibling to fuzefront-website/ — same self-contained-Dockerfile shape,",
+        "Top-level, sibling to fuzefront-website/ \u2014 same self-contained-Dockerfile shape,",
         "same silent-ship gap if this path were absent."
       ]
     },
@@ -163,6 +206,9 @@
     },
     {
       "path": "scripts/publish-release-gitops.sh"
+    },
+    {
+      "path": "scripts/release-allow-bump.sh"
     },
     {
       "path": "scripts/__tests__/test_release_gitops.py"
